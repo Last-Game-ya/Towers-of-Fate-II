@@ -19,6 +19,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate missing platform folders (android/) if not present
+        run: |
+          if [ ! -d "android" ]; then
+            flutter create --platforms=android .
+          fi
+
       - name: Build debug APK
         run: flutter build apk --debug
 
