@@ -290,9 +290,24 @@ class _RelicBurstOverlayState extends State<RelicBurstOverlay> with SingleTicker
 // vlastní CustomPainter kresbu, aby cast skutečně "vypadal" jinak (Prokletý úder ≠ Exploze
 // prokletí). Malé/běžné spelly jsou rychlé a decentní, epické (finishery/ultimáty) jsou
 // pomalejší a razantnější - viz `epic` flag v _SpellFxSpec.
+// ===== SPELL FX - unikátní vizuál PER SPELL (viz SpellFxKind v data_models.dart).
+// dkCursedStrike/dkCurseExplosion/healerBlessing/healerJudgment mají vlastní ručně malovaný
+// CustomPainter (_paintCursedStrike a spol. níž) - byly první a zůstávají nejdetailnější.
+// Všechny ostatní (jedna specializace = jeden SpellFxKind, viz komentář u enumu) jedou přes
+// generický "archetyp" systém (_SpellFxArchetype + _paintArchetype) - společný tvarový motiv
+// (blade_slash/arcane_rune/nature_bloom/...) přebarvený a doladěný podle dvojice primary/
+// secondary barev dané specializace, ať má KAŽDÁ z ~30 specializací ve hře vlastní odlišitelný
+// vizuál, aniž by pro každou musel existovat samostatný ručně psaný painter (nereálné pro ~30+
+// spellů). Malé/běžné spelly (tier 15 "Advanced") jsou rychlé a decentní (epic:false), epické
+// (tier 40 "Ultimate" a tier 75 "God") jsou pomalejší a razantnější (epic:true).
+enum _SpellFxArchetype { bladeSlash, groundSlam, stormLightning, shadowVoid, holyRadiance, arcaneRune, chiBurst, natureBloom, boneDecay }
+
 class _SpellFxSpec {
   final bool epic;
-  const _SpellFxSpec({this.epic = false});
+  final _SpellFxArchetype? archetype; // null = má vlastní bespoke _paint* metodu (viz 4 legacy kindy výš)
+  final Color primary;
+  final Color secondary;
+  const _SpellFxSpec({this.epic = false, this.archetype, this.primary = Colors.white, this.secondary = Colors.white70});
 }
 
 const Map<SpellFxKind, _SpellFxSpec> kSpellFxSpec = {
@@ -300,6 +315,65 @@ const Map<SpellFxKind, _SpellFxSpec> kSpellFxSpec = {
   SpellFxKind.dkCurseExplosion: _SpellFxSpec(epic: true),
   SpellFxKind.healerBlessing: _SpellFxSpec(epic: false),
   SpellFxKind.healerJudgment: _SpellFxSpec(epic: true),
+  // Warrior - čepel/údery, sytá červená.
+  SpellFxKind.berserk: _SpellFxSpec(archetype: _SpellFxArchetype.bladeSlash, epic: false, primary: Color(0xFFE53935), secondary: Color(0xFFFF8A65)),
+  SpellFxKind.warlord: _SpellFxSpec(archetype: _SpellFxArchetype.groundSlam, epic: true, primary: Color(0xFFC62828), secondary: Color(0xFFFFD54F)),
+  SpellFxKind.valhallaWarrior: _SpellFxSpec(archetype: _SpellFxArchetype.stormLightning, epic: true, primary: Color(0xFFFFD700), secondary: Color(0xFFFFF9C4)),
+  // Hunter - stín/temnota, fialová.
+  SpellFxKind.assassin: _SpellFxSpec(archetype: _SpellFxArchetype.shadowVoid, epic: false, primary: Color(0xFF6A1B9A), secondary: Color(0xFF1A1A2E)),
+  SpellFxKind.shadowMaster: _SpellFxSpec(archetype: _SpellFxArchetype.shadowVoid, epic: true, primary: Color(0xFF4A148C), secondary: Color(0xFF26C6DA)),
+  SpellFxKind.voidStalker: _SpellFxSpec(archetype: _SpellFxArchetype.shadowVoid, epic: true, primary: Color(0xFF1A1A2E), secondary: Color(0xFF00E5FF)),
+  // Healer (LightBearer, tier 75) - chladnější "božské" bílo-zlaté světlo, ať se liší od
+  // healerBlessing/healerJudgment (tier 15/40, teplejší žlutá).
+  SpellFxKind.lightBearer: _SpellFxSpec(archetype: _SpellFxArchetype.holyRadiance, epic: true, primary: Color(0xFFE1F5FE), secondary: Color(0xFFFFD700)),
+  // Death Knight (DeathReaper, tier 75) - temná žnec/rozklad barva odlišná od Prokletí (fialovo-
+  // zelené) - hluboká petrolejová + krvavě rudý akcent.
+  SpellFxKind.deathReaper: _SpellFxSpec(archetype: _SpellFxArchetype.boneDecay, epic: true, primary: Color(0xFF004D40), secondary: Color(0xFFB71C1C)),
+  // Mage - oheň pro Elementalistu, arkánová geometrie pro Arcanist/Archmage.
+  SpellFxKind.elementalist: _SpellFxSpec(archetype: _SpellFxArchetype.arcaneRune, epic: false, primary: Color(0xFFFF6F00), secondary: Color(0xFFFFEB3B)),
+  SpellFxKind.arcanist: _SpellFxSpec(archetype: _SpellFxArchetype.arcaneRune, epic: true, primary: Color(0xFF3949AB), secondary: Color(0xFFB39DDB)),
+  SpellFxKind.archmage: _SpellFxSpec(archetype: _SpellFxArchetype.arcaneRune, epic: true, primary: Color(0xFF1A237E), secondary: Color(0xFFFFD700)),
+  // Duelist - čepele (stříbrná/cyan), Stormblade přechází do blesku.
+  SpellFxKind.bladeDancer: _SpellFxSpec(archetype: _SpellFxArchetype.bladeSlash, epic: false, primary: Color(0xFFB0BEC5), secondary: Color(0xFF26C6DA)),
+  SpellFxKind.bladeMaster: _SpellFxSpec(archetype: _SpellFxArchetype.bladeSlash, epic: true, primary: Color(0xFF90A4AE), secondary: Color(0xFFE53935)),
+  SpellFxKind.stormblade: _SpellFxSpec(archetype: _SpellFxArchetype.stormLightning, epic: true, primary: Color(0xFF00BCD4), secondary: Color(0xFFFFFFFF)),
+  // Monk - "chi" koncentrické vlny, teal/zlatá.
+  SpellFxKind.disciple: _SpellFxSpec(archetype: _SpellFxArchetype.chiBurst, epic: false, primary: Color(0xFF26A69A), secondary: Color(0xFFFFFFFF)),
+  SpellFxKind.grandmaster: _SpellFxSpec(archetype: _SpellFxArchetype.chiBurst, epic: true, primary: Color(0xFF00897B), secondary: Color(0xFFFFD54F)),
+  SpellFxKind.enlightened: _SpellFxSpec(archetype: _SpellFxArchetype.chiBurst, epic: true, primary: Color(0xFFFFD700), secondary: Color(0xFFFFFFFF)),
+  // Druid - přírodní/měsíční organické květy.
+  SpellFxKind.astralDruid: _SpellFxSpec(archetype: _SpellFxArchetype.natureBloom, epic: false, primary: Color(0xFF66BB6A), secondary: Color(0xFFA5D6A7)),
+  SpellFxKind.moonfury: _SpellFxSpec(archetype: _SpellFxArchetype.natureBloom, epic: true, primary: Color(0xFF7E57C2), secondary: Color(0xFFC5CAE9)),
+  SpellFxKind.elderTreant: _SpellFxSpec(archetype: _SpellFxArchetype.natureBloom, epic: true, primary: Color(0xFF4E342E), secondary: Color(0xFF66BB6A)),
+  // Paladin - svaté světlo (teplejší/zlatější než Healer).
+  SpellFxKind.faithGuardian: _SpellFxSpec(archetype: _SpellFxArchetype.holyRadiance, epic: false, primary: Color(0xFFFFD700), secondary: Color(0xFFFFFFFF)),
+  SpellFxKind.retributor: _SpellFxSpec(archetype: _SpellFxArchetype.holyRadiance, epic: true, primary: Color(0xFFFFB300), secondary: Color(0xFFE53935)),
+  SpellFxKind.crusader: _SpellFxSpec(archetype: _SpellFxArchetype.holyRadiance, epic: true, primary: Color(0xFFFFFFFF), secondary: Color(0xFFFFD700)),
+  // Demon Hunter - fel zelená čepel, Abyss Walker přechází do stínu.
+  SpellFxKind.felBlade: _SpellFxSpec(archetype: _SpellFxArchetype.bladeSlash, epic: false, primary: Color(0xFF66BB6A), secondary: Color(0xFF1B1B1B)),
+  SpellFxKind.demonSlayer: _SpellFxSpec(archetype: _SpellFxArchetype.bladeSlash, epic: true, primary: Color(0xFF2E7D32), secondary: Color(0xFFE53935)),
+  SpellFxKind.abyssWalker: _SpellFxSpec(archetype: _SpellFxArchetype.shadowVoid, epic: true, primary: Color(0xFF1B5E20), secondary: Color(0xFF000000)),
+  // Necromancer - rozklad/kosti, sytě jedovatá zelená → fialová → teal napříč tiery.
+  SpellFxKind.boneLord: _SpellFxSpec(archetype: _SpellFxArchetype.boneDecay, epic: false, primary: Color(0xFF558B2F), secondary: Color(0xFF212121)),
+  SpellFxKind.deathSovereign: _SpellFxSpec(archetype: _SpellFxArchetype.boneDecay, epic: true, primary: Color(0xFF6A1B9A), secondary: Color(0xFF212121)),
+  SpellFxKind.graveWarden: _SpellFxSpec(archetype: _SpellFxArchetype.boneDecay, epic: true, primary: Color(0xFF00695C), secondary: Color(0xFF212121)),
+  // ===== Nepřátelská schopnost bosse (Doupě/Věž/World Boss - viz enemyAbilityEffects) =====
+  // Vždy epic:true - boss ability se odehraje jen jednou za souboj (2. kolo), je to vždy
+  // "moment", ne běžný útok, takže si zaslouží tu delší/razantnější verzi.
+  // Přímé/posílené útoky (trueDamage/ignoreArmor/ignoreBlockDodge/guaranteedCrit/doubleAttack) -
+  // temně karmínová čepel.
+  SpellFxKind.lairBossStrike: _SpellFxSpec(archetype: _SpellFxArchetype.bladeSlash, epic: true, primary: Color(0xFF8B0000), secondary: Color(0xFF212121)),
+  // Kletby/dispely na hráče (statDebuff/stackingDebuff/cancelBuff/cancelShield) - temně fialový vsát.
+  SpellFxKind.lairBossCurse: _SpellFxSpec(archetype: _SpellFxArchetype.shadowVoid, epic: true, primary: Color(0xFF4A148C), secondary: Color(0xFF1A1A2E)),
+  // Jed/oheň (dot) - jedovatě zelený rozklad.
+  SpellFxKind.lairBossPlague: _SpellFxSpec(archetype: _SpellFxArchetype.boneDecay, epic: true, primary: Color(0xFF33691E), secondary: Color(0xFF1B1B1B)),
+  // Ovládací efekty na hráče (stun/blockSpell) - ocelově modrá aranová vazba.
+  SpellFxKind.lairBossBind: _SpellFxSpec(archetype: _SpellFxArchetype.arcaneRune, epic: true, primary: Color(0xFF37474F), secondary: Color(0xFF90A4AE)),
+  // Boss se posiluje/léčí sám sebe (bossBuff/bossArmorBuff/bossShield/bossHeal/bossLifesteal) -
+  // temně karmínová záře (variace na svaté záření, ale zlověstná).
+  SpellFxKind.lairBossEmpower: _SpellFxSpec(archetype: _SpellFxArchetype.holyRadiance, epic: true, primary: Color(0xFFB71C1C), secondary: Color(0xFF212121)),
+  // Vysátí zdroje/zlata z hráče (resourceDrain/goldDrain) - šedo-černý vsát.
+  SpellFxKind.lairBossDrain: _SpellFxSpec(archetype: _SpellFxArchetype.shadowVoid, epic: true, primary: Color(0xFF424242), secondary: Color(0xFF000000)),
 };
 
 class _SpellFxPainter extends CustomPainter {
@@ -311,6 +385,9 @@ class _SpellFxPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final spec = kSpellFxSpec[kind];
+    final epic = spec?.epic ?? false;
+    _paintVignette(canvas, size, epic);
     switch (kind) {
       case SpellFxKind.dkCursedStrike:
         _paintCursedStrike(canvas, size);
@@ -324,12 +401,65 @@ class _SpellFxPainter extends CustomPainter {
       case SpellFxKind.healerJudgment:
         _paintHealerJudgment(canvas, size);
         break;
+      default:
+        // Zbylých ~30 specializací jede přes generický archetyp systém (viz _SpellFxSpec výš) -
+        // společný tvarový motiv přebarvený podle primary/secondary dané specializace.
+        if (spec?.archetype != null) {
+          _paintArchetype(canvas, size, spec!.archetype!, spec.primary, spec.secondary, epic);
+        }
+    }
+    _paintFilmGrain(canvas, size, epic);
+  }
+
+  // ===== "ART" VRSTVA - společná pro všechny spelly, dělá to víc "malovaný"/kinematografický
+  // dojem místo čistě geometrických tvarů =====
+  // Měkká tmavá viněta po okrajích karty, zesiluje se do poloviny animace a pak zase mizí -
+  // dává vizuálu hloubku a soustředí pohled na střed dění, podobně jako filmový "bullet time".
+  void _paintVignette(Canvas canvas, Size size, bool epic) {
+    final bell = (sin(t.clamp(0.0, 1.0) * pi)).clamp(0.0, 1.0); // 0→1→0 přes celou animaci
+    final strength = bell * (epic ? 0.4 : 0.24);
+    if (strength <= 0.01) return;
+    final rect = Offset.zero & size;
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxR = size.longestSide * 0.75;
+    canvas.drawRect(rect, Paint()..shader = RadialGradient(
+      colors: [Colors.black.withOpacity(0), Colors.black.withOpacity(strength)],
+      stops: const [0.45, 1.0],
+    ).createShader(Rect.fromCircle(center: center, radius: maxR)));
+  }
+
+  // Jemné zrnění (film grain) přes celou plochu - pár desítek nahodilých tmavých/světlých
+  // tečiček s velmi nízkou opacitou, seed se posouvá s `t`, takže to jemně "žije"/blikotá jako
+  // stará filmová surovina, místo aby vizuál působil jako čistá vektorová grafika.
+  void _paintFilmGrain(Canvas canvas, Size size, bool epic) {
+    final bell = (sin(t.clamp(0.0, 1.0) * pi)).clamp(0.0, 1.0);
+    if (bell <= 0.02) return;
+    final grainSeed = (t * 37).floor(); // mění se ~1x za pár framů, ne úplně každý frame
+    final rnd = Random(grainSeed * 911 + kind.index * 13);
+    final count = epic ? 46 : 28;
+    for (int i = 0; i < count; i++) {
+      final pos = Offset(rnd.nextDouble() * size.width, rnd.nextDouble() * size.height);
+      final light = rnd.nextBool();
+      final r = 0.5 + rnd.nextDouble() * 1.1;
+      canvas.drawCircle(pos, r, Paint()..color = (light ? Colors.white : Colors.black).withOpacity(bell * 0.05));
     }
   }
 
-  // Prokletý úder: temně fialovo-zelený runový hexagram se "vypálí" doprostřed cíle (rychlý
-  // punch scale-in), doprovázený 3 trhlinami-blesky ven ze středu a pár stoupajícími
-  // kouřovými smítky prokletí. Vše doznívá do ~500 ms - má to být rychlý, časný impact.
+  // Malý pomocník: Paint s měkkou září (MaskFilter blur) - používá se napříč všemi spelly
+  // níž, aby efekty působily hutněji/"epičtěji" a ne jen jako ploché tvary.
+  Paint _glow(Color c, double opacity, double sigma, {PaintingStyle style = PaintingStyle.fill, double strokeWidth = 2}) {
+    final p = Paint()
+      ..color = c.withOpacity(opacity.clamp(0.0, 1.0))
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, sigma)
+      ..style = style;
+    if (style == PaintingStyle.stroke) p.strokeWidth = strokeWidth;
+    return p;
+  }
+
+  // Prokletý úder: temně fialovo-zelený DVOJITÝ runový hexagram (vnitřní + vnější, rotují proti
+  // sobě) se "vypálí" doprostřed cíle (rychlý punch scale-in s krátkou rázovou vlnou), doprovázený
+  // 5 zářícími klikatými trhlinami-blesky s vedlejšími výhonky ven ze středu a stoupajícími
+  // zářivými kouřovými smítky prokletí. Vše doznívá do ~500 ms - má to být rychlý, časný impact.
   void _paintCursedStrike(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
@@ -339,10 +469,35 @@ class _SpellFxPainter extends CustomPainter {
     if (fade <= 0.02) return;
     final r = size.shortestSide * 0.15;
 
+    // Krátká rázová vlna při impactu (rychle expanduje a zmizí).
+    final shockT = (t / 0.28).clamp(0.0, 1.0);
+    if (shockT < 1.0) {
+      final shockR = r * (0.6 + shockT * 1.5);
+      canvas.drawCircle(center, shockR, _glow(const Color(0xFF7B2FBE), (1 - shockT) * 0.45, 6, style: PaintingStyle.stroke, strokeWidth: 3 * (1 - shockT) + 1));
+    }
+
     canvas.save();
     canvas.translate(center.dx, center.dy);
     canvas.scale(scale <= 0 ? 0.01 : scale);
+    // Vnější hexagram - větší, tlumenější, rotuje opačným směrem = pocit hloubky.
+    canvas.save();
+    canvas.rotate(-eased * pi * 0.35);
+    canvas.drawCircle(Offset.zero, r * 1.35, _glow(const Color(0xFF7B2FBE), fade * 0.35, 4, style: PaintingStyle.stroke, strokeWidth: 1.6));
+    Path outerTriangle(double rot) {
+      final path = Path();
+      for (int i = 0; i < 3; i++) {
+        final a = rot + i * (2 * pi / 3) - pi / 2;
+        final p = Offset(cos(a) * r * 1.35, sin(a) * r * 1.35);
+        if (i == 0) path.moveTo(p.dx, p.dy); else path.lineTo(p.dx, p.dy);
+      }
+      path.close();
+      return path;
+    }
+    canvas.drawPath(outerTriangle(0.5), _glow(const Color(0xFF8BC34A), fade * 0.3, 3, style: PaintingStyle.stroke, strokeWidth: 1.4));
+    canvas.restore();
+    // Vnitřní hexagram - hlavní, ostřejší, se září.
     canvas.rotate(eased * pi * 0.5);
+    canvas.drawCircle(Offset.zero, r, _glow(const Color(0xFF7B2FBE), fade * 0.4, 5));
     canvas.drawCircle(Offset.zero, r, Paint()..style = PaintingStyle.stroke..strokeWidth = 2.2..color = const Color(0xFF7B2FBE).withOpacity(fade * 0.9));
     Path triangle(double rot) {
       final path = Path();
@@ -356,32 +511,41 @@ class _SpellFxPainter extends CustomPainter {
     }
     canvas.drawPath(triangle(0), Paint()..style = PaintingStyle.stroke..strokeWidth = 1.8..color = const Color(0xFF8BC34A).withOpacity(fade * 0.85));
     canvas.drawPath(triangle(pi), Paint()..style = PaintingStyle.stroke..strokeWidth = 1.8..color = const Color(0xFF7B2FBE).withOpacity(fade * 0.85));
+    // Malé jádro uprostřed hexagramu.
+    canvas.drawCircle(Offset.zero, r * 0.12, Paint()..color = const Color(0xFFD1C4E9).withOpacity(fade * 0.9));
     canvas.restore();
 
-    // 3 klikaté trhliny vystřelující ze středu ven.
-    for (int i = 0; i < 3; i++) {
+    // 5 klikatých trhlin (dřív 3) se zářícími vedlejšími výhonky, vystřelujících ze středu ven.
+    for (int i = 0; i < 5; i++) {
       final rnd = Random(i * 97 + 3);
-      final a = (i / 3) * 2 * pi + 0.35;
-      final len = size.shortestSide * 0.24 * eased;
+      final a = (i / 5) * 2 * pi + 0.35;
+      final len = size.shortestSide * 0.26 * eased;
       final jag = Offset((rnd.nextDouble() - 0.5) * 12, (rnd.nextDouble() - 0.5) * 12);
       final mid = center + Offset(cos(a), sin(a)) * len * 0.55 + jag;
       final end = center + Offset(cos(a), sin(a)) * len;
       final path = Path()..moveTo(center.dx, center.dy)..lineTo(mid.dx, mid.dy)..lineTo(end.dx, end.dy);
-      canvas.drawPath(path, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.5..color = const Color(0xFF8BC34A).withOpacity(fade * 0.75));
+      canvas.drawPath(path, _glow(const Color(0xFF8BC34A), fade * 0.5, 3, style: PaintingStyle.stroke, strokeWidth: 3));
+      canvas.drawPath(path, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.5..color = const Color(0xFF8BC34A).withOpacity(fade * 0.8));
+      // Malý vedlejší výhonek uprostřed hlavní trhliny.
+      final branchA = a + (rnd.nextDouble() - 0.5) * 1.2;
+      final branchEnd = mid + Offset(cos(branchA), sin(branchA)) * len * 0.32;
+      canvas.drawLine(mid, branchEnd, Paint()..style = PaintingStyle.stroke..strokeWidth = 1..color = const Color(0xFF8BC34A).withOpacity(fade * 0.5));
     }
-    // Stoupající smítka temného kouře.
+    // Stoupající zářivá smítka temného kouře (s glow).
     for (final w in wisps) {
       final dy = -size.shortestSide * 0.28 * eased * (0.6 + w.dx.abs());
       final dx = w.dx * 22 * eased;
       final pos = center + Offset(dx, dy);
-      canvas.drawCircle(pos, 3.2 * (1 - eased * 0.4), Paint()..color = const Color(0xFF7B2FBE).withOpacity(fade * 0.35));
+      canvas.drawCircle(pos, 5 * (1 - eased * 0.3), _glow(const Color(0xFF7B2FBE), fade * 0.25, 4));
+      canvas.drawCircle(pos, 3.2 * (1 - eased * 0.4), Paint()..color = const Color(0xFF9C7FCE).withOpacity(fade * 0.45));
     }
   }
 
   // Exploze prokletí: dušičky (soul wisps) se první třetinu animace stahují dovnitř ze všech
-  // stran (implode), splynou do jednoho bodu, a pak to celé vybuchne ven jako tmavě fialová
-  // nova - screen flash, shockwave ring, radiální glow a kostěné/zubaté úlomky. Delší (~900 ms)
-  // a razantnější než Prokletý úder - tohle je ten "epický" finisher spell.
+  // stran se zářivými kometovými stopami (implode), splynou do jednoho bodu s pulzujícím temným
+  // jádrem, a pak to celé vybuchne ven jako tmavě fialová nova - screen flash, DVOJITÁ rázová
+  // vlna, radiální blesky, sytý radiální glow a kostěné/zubaté úlomky s dohasínajícím "duchem"
+  // za sebou. Delší (~900 ms) a razantnější než Prokletý úder - epický finisher spell.
   void _paintCurseExplosion(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     if (t < 0.32) {
@@ -392,8 +556,14 @@ class _SpellFxPainter extends CustomPainter {
         final angle = i * (2 * pi / wisps.length);
         final start = center + Offset(cos(angle), sin(angle)) * startDist;
         final pos = Offset.lerp(start, center, eased)!;
+        // Kometová stopa - krátký úsek za dušičkou směrem, odkud přiletěla.
+        final trailP = (p - 0.06).clamp(0.0, 1.0);
+        final trailPos = Offset.lerp(start, center, Curves.easeIn.transform(trailP))!;
+        canvas.drawLine(trailPos, pos, Paint()..style = PaintingStyle.stroke..strokeWidth = 2.5..color = const Color(0xFF9C27B0).withOpacity(0.15 + eased * 0.3));
+        canvas.drawCircle(pos, 4.2, _glow(const Color(0xFF9C27B0), 0.2 + eased * 0.4, 4));
         canvas.drawCircle(pos, 4.2, Paint()..color = const Color(0xFF9C27B0).withOpacity(0.25 + eased * 0.6));
       }
+      canvas.drawCircle(center, 4 + eased * 8, _glow(const Color(0xFF4A148C), 0.6 * eased, 6));
       canvas.drawCircle(center, 4 + eased * 8, Paint()..color = const Color(0xFF4A148C).withOpacity(0.5 * eased));
     } else {
       final p = ((t - 0.32) / 0.68).clamp(0.0, 1.0);
@@ -402,18 +572,43 @@ class _SpellFxPainter extends CustomPainter {
       if (flashT < 1.0) {
         canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFF4A148C).withOpacity((1 - flashT) * 0.55));
       }
+      // Dvojitá rázová vlna - ostrá vnitřní + měkká vnější se zpožděním pro dojem síly.
       final ringRadius = size.shortestSide * (0.08 + 0.5 * eased);
+      canvas.drawCircle(center, ringRadius, _glow(const Color(0xFF9C27B0), (1 - eased) * 0.5, 5, style: PaintingStyle.stroke, strokeWidth: 6));
       canvas.drawCircle(center, ringRadius, Paint()..style = PaintingStyle.stroke..strokeWidth = 4 * (1 - eased * 0.6)..color = const Color(0xFF9C27B0).withOpacity((1 - eased) * 0.9));
+      final ring2P = ((p - 0.12).clamp(0.0, 1.0));
+      if (ring2P > 0) {
+        final ring2Radius = size.shortestSide * (0.05 + 0.4 * Curves.easeOutCubic.transform(ring2P));
+        canvas.drawCircle(center, ring2Radius, Paint()..style = PaintingStyle.stroke..strokeWidth = 2 * (1 - ring2P)..color = const Color(0xFFCE93D8).withOpacity((1 - ring2P) * 0.7));
+      }
       final glowRadius = size.shortestSide * (0.32 * (1 - eased * 0.7));
       final glowOpacity = (1 - eased).clamp(0.0, 1.0);
       if (glowOpacity > 0) {
         canvas.drawCircle(center, glowRadius, Paint()..shader = RadialGradient(colors: [const Color(0xFF7B2FBE).withOpacity(glowOpacity * 0.9), const Color(0xFF7B2FBE).withOpacity(0)]).createShader(Rect.fromCircle(center: center, radius: glowRadius)));
+      }
+      // Radiální blesky tryskající ven z jádra exploze (8, se září).
+      if (eased < 0.7) {
+        final boltFade = (1 - eased / 0.7).clamp(0.0, 1.0);
+        for (int i = 0; i < 8; i++) {
+          final rnd = Random(i * 53 + 7);
+          final a = (i / 8) * 2 * pi;
+          final len = size.shortestSide * 0.3 * eased;
+          final jag = Offset((rnd.nextDouble() - 0.5) * 14, (rnd.nextDouble() - 0.5) * 14);
+          final mid = center + Offset(cos(a), sin(a)) * len * 0.5 + jag;
+          final end = center + Offset(cos(a), sin(a)) * len;
+          final path = Path()..moveTo(center.dx, center.dy)..lineTo(mid.dx, mid.dy)..lineTo(end.dx, end.dy);
+          canvas.drawPath(path, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6..color = const Color(0xFFCE93D8).withOpacity(boltFade * 0.6));
+        }
       }
       for (final s in shards) {
         final dist = s.maxDist * eased;
         final pos = center + Offset(cos(s.angle), sin(s.angle)) * dist;
         final opacity = (1 - eased).clamp(0.0, 1.0);
         if (opacity <= 0.02) continue;
+        // Slabý "duch" úlomku o kousek pozadu - dojem rychlosti/motion-blur.
+        final ghostDist = s.maxDist * (eased * 0.86).clamp(0.0, 1.0);
+        final ghostPos = center + Offset(cos(s.angle), sin(s.angle)) * ghostDist;
+        canvas.drawCircle(ghostPos, s.size * 0.4, Paint()..color = const Color(0xFF9C27B0).withOpacity(opacity * 0.2));
         canvas.save();
         canvas.translate(pos.dx, pos.dy);
         canvas.rotate(s.spin * eased * pi * 2 * s.spinDir);
@@ -426,44 +621,94 @@ class _SpellFxPainter extends CustomPainter {
           ..lineTo(-s.size * 0.55, s.size * 0.55)
           ..lineTo(-s.size * 0.35, -s.size * 0.1)
           ..close();
+        canvas.drawPath(path, _glow((s.secondary ? const Color(0xFF212121) : const Color(0xFF9C27B0)), opacity * 0.5, 3));
         canvas.drawPath(path, Paint()..color = (s.secondary ? const Color(0xFF212121) : const Color(0xFF9C27B0)).withOpacity(opacity));
         canvas.restore();
       }
     }
   }
 
-  // Boží požehnání: teplá zlatá záře pulzuje ven ze středu, rotující halo z krátkých obloučků
-  // a pár jiskřiček stoupajících vzhůru jako "vyléčení" - vše prosvětlené a měkké, žádné ostré
+  // Boží požehnání: teplý zlatý světelný SLOUP stoupá skrz cíl, pulzující dvojité rotující halo
+  // z krátkých obloučků (vnitřní + vnější, opačný směr), jemná křížová záře v momentu vrcholu a
+  // jiskřičky/hvězdičky stoupající vzhůru jako "vyléčení" - vše prosvětlené a měkké, žádné ostré
   // hrany (na rozdíl od DK efektů výš), rychlé a jemné (~500 ms).
   void _paintHealerBlessing(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
     final fade = (1 - ((t - 0.4) / 0.6).clamp(0.0, 1.0));
     if (fade <= 0.02) return;
+
+    // Jemný svislý světelný sloup skrz cíl.
+    final pillarW = size.width * 0.1 * (0.5 + eased * 0.5);
+    final pillarRect = Rect.fromLTRB(center.dx - pillarW / 2, center.dy - size.height * 0.4, center.dx + pillarW / 2, center.dy + size.height * 0.4);
+    canvas.drawRect(pillarRect, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [
+      const Color(0xFFFFD700).withOpacity(0),
+      const Color(0xFFFFF176).withOpacity(fade * 0.35),
+      const Color(0xFFFFD700).withOpacity(0),
+    ], stops: const [0.0, 0.5, 1.0]).createShader(pillarRect));
+
     final glowRadius = size.shortestSide * (0.10 + 0.22 * eased);
     canvas.drawCircle(center, glowRadius, Paint()..shader = RadialGradient(colors: [const Color(0xFFFFF176).withOpacity(fade * 0.55), const Color(0xFFFFD700).withOpacity(0)]).createShader(Rect.fromCircle(center: center, radius: glowRadius)));
+
+    // Křížová záře v momentu vrcholu jasu.
+    final crossPeak = (1 - (t - 0.18).abs() / 0.18).clamp(0.0, 1.0);
+    if (crossPeak > 0) {
+      final crossLen = size.shortestSide * 0.22;
+      canvas.drawLine(center - Offset(crossLen, 0), center + Offset(crossLen, 0), _glow(const Color(0xFFFFF9C4), crossPeak * 0.6, 4, style: PaintingStyle.stroke, strokeWidth: 2.5));
+      canvas.drawLine(center - Offset(0, crossLen), center + Offset(0, crossLen), _glow(const Color(0xFFFFF9C4), crossPeak * 0.6, 4, style: PaintingStyle.stroke, strokeWidth: 2.5));
+    }
+
     canvas.save();
     canvas.translate(center.dx, center.dy);
+    // Vnější halo - jemnější, opačný směr rotace (pocit hloubky).
+    canvas.save();
+    canvas.rotate(-eased * pi * 0.5);
+    final haloOuterR = size.shortestSide * 0.19;
+    for (int i = 0; i < 6; i++) {
+      final a0 = i * (pi / 3) + pi / 6;
+      final rect = Rect.fromCircle(center: Offset.zero, radius: haloOuterR);
+      canvas.drawArc(rect, a0, pi / 7, false, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6..color = const Color(0xFFFFF176).withOpacity(fade * 0.5));
+    }
+    canvas.restore();
+    // Vnitřní halo - hlavní.
     canvas.rotate(eased * pi * 0.8);
     final haloR = size.shortestSide * 0.14;
     for (int i = 0; i < 6; i++) {
       final a0 = i * (pi / 3);
       final rect = Rect.fromCircle(center: Offset.zero, radius: haloR);
+      canvas.drawArc(rect, a0, pi / 5, false, _glow(const Color(0xFFFFD700), fade * 0.5, 3, style: PaintingStyle.stroke, strokeWidth: 3));
       canvas.drawArc(rect, a0, pi / 5, false, Paint()..style = PaintingStyle.stroke..strokeWidth = 2.2..color = const Color(0xFFFFD700).withOpacity(fade * 0.85));
     }
     canvas.restore();
-    for (final w in wisps) {
+    // Jiskřičky/hvězdičky stoupající vzhůru (glow + čtyřcípá hvězdička u části z nich).
+    for (int i = 0; i < wisps.length; i++) {
+      final w = wisps[i];
       final dy = -size.shortestSide * 0.32 * eased * (0.5 + w.dy.abs());
       final dx = w.dx * 18 * eased;
       final pos = center + Offset(dx, dy);
       final twinkle = (sin(t * pi * 6 + w.dx * 10) + 1) / 2;
-      canvas.drawCircle(pos, 2.4 + twinkle * 1.6, Paint()..color = const Color(0xFFFFF9C4).withOpacity(fade * (0.5 + twinkle * 0.4)));
+      canvas.drawCircle(pos, 4 + twinkle * 2, _glow(const Color(0xFFFFF9C4), fade * 0.3, 3));
+      if (i.isEven) {
+        canvas.save();
+        canvas.translate(pos.dx, pos.dy);
+        canvas.rotate(t * pi * 2);
+        final sSize = 2.4 + twinkle * 1.6;
+        final star = Path()
+          ..moveTo(0, -sSize)..lineTo(sSize * 0.3, -sSize * 0.3)..lineTo(sSize, 0)..lineTo(sSize * 0.3, sSize * 0.3)
+          ..lineTo(0, sSize)..lineTo(-sSize * 0.3, sSize * 0.3)..lineTo(-sSize, 0)..lineTo(-sSize * 0.3, -sSize * 0.3)..close();
+        canvas.drawPath(star, Paint()..color = const Color(0xFFFFF9C4).withOpacity(fade * (0.5 + twinkle * 0.4)));
+        canvas.restore();
+      } else {
+        canvas.drawCircle(pos, 2.4 + twinkle * 1.6, Paint()..color = const Color(0xFFFFF9C4).withOpacity(fade * (0.5 + twinkle * 0.4)));
+      }
     }
   }
 
-  // Boží soud: sloup světla dopadne shora na cíl (fáze 1, 0-32 %), pak vybuchne do zlatého
-  // "sunburst" nova - sluneční paprsky, prstenec a létající zlatá pírka místo ostrých úlomků
-  // (fáze 2). Delší a razantnější (~900 ms) - ultimátní finisher spell léčitele.
+  // Boží soud: sloup světla (nyní doprovázený dvěma tenčími bočními paprsky a rostoucím
+  // světelným kruhem na zemi) dopadne shora na cíl (fáze 1, 0-32 %), pak vybuchne do zlatého
+  // "sunburst" nova - DVOJITÝ prstenec, hustší sluneční paprsky proměnlivé délky, křížová záře
+  // uprostřed a létající zlatá pírka s jemným zavlněním místo ostrých úlomků (fáze 2). Delší a
+  // razantnější (~900 ms) - ultimátní finisher spell léčitele.
   void _paintHealerJudgment(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     if (t < 0.32) {
@@ -472,6 +717,17 @@ class _SpellFxPainter extends CustomPainter {
       final beamWidth = size.width * 0.16 * (0.6 + eased * 0.4);
       final beamRect = Rect.fromLTRB(center.dx - beamWidth / 2, 0, center.dx + beamWidth / 2, center.dy + size.height * 0.05);
       canvas.drawRect(beamRect, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [const Color(0xFFFFF9C4).withOpacity(0), const Color(0xFFFFD700).withOpacity(eased * 0.75)]).createShader(beamRect));
+      // Dva tenčí boční paprsky lemující hlavní sloup - dojem šířky/mohutnosti.
+      for (final side in [-1.0, 1.0]) {
+        final sideOffset = beamWidth * 0.9 * side;
+        final sideW = beamWidth * 0.3;
+        final sideRect = Rect.fromLTRB(center.dx + sideOffset - sideW / 2, 0, center.dx + sideOffset + sideW / 2, center.dy);
+        canvas.drawRect(sideRect, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [const Color(0xFFFFF9C4).withOpacity(0), const Color(0xFFFFD700).withOpacity(eased * 0.35)]).createShader(sideRect));
+      }
+      // Rostoucí světelný kruh na "zemi" pod cílem - anticipace dopadu.
+      final groundR = size.shortestSide * 0.14 * eased;
+      canvas.drawOval(Rect.fromCenter(center: center, width: groundR * 2, height: groundR * 0.5), Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = const Color(0xFFFFD700).withOpacity(eased * 0.5));
+      canvas.drawCircle(center, 6 + eased * 10, _glow(const Color(0xFFFFF176), 0.6 * eased, 6));
       canvas.drawCircle(center, 6 + eased * 10, Paint()..color = const Color(0xFFFFF176).withOpacity(0.6 * eased));
     } else {
       final p = ((t - 0.32) / 0.68).clamp(0.0, 1.0);
@@ -480,31 +736,377 @@ class _SpellFxPainter extends CustomPainter {
       if (flashT < 1.0) {
         canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFFFFF9C4).withOpacity((1 - flashT) * 0.6));
       }
-      final rayCount = 10;
+      // Hustší sunburst - 14 paprsků proměnlivé délky (liché delší) pro organičtější tvar.
+      final rayCount = 14;
       for (int i = 0; i < rayCount; i++) {
         final a = (i / rayCount) * 2 * pi;
-        final len = size.shortestSide * (0.10 + 0.34 * eased);
+        final lenMul = i.isOdd ? 0.34 : 0.24;
+        final len = size.shortestSide * (0.10 + lenMul * eased);
         final end = center + Offset(cos(a), sin(a)) * len;
         final opacity = (1 - eased).clamp(0.0, 1.0);
+        canvas.drawLine(center, end, _glow(const Color(0xFFFFD700), opacity * 0.4, 3, style: PaintingStyle.stroke, strokeWidth: 4));
         canvas.drawLine(center, end, Paint()..strokeWidth = 2.5 * (1 - eased * 0.5)..color = const Color(0xFFFFD700).withOpacity(opacity * 0.8));
       }
+      // Dvojitý prstenec - vnitřní ostrý + vnější měkký doznívající se zpožděním.
       final ringRadius = size.shortestSide * (0.08 + 0.42 * eased);
+      canvas.drawCircle(center, ringRadius, _glow(const Color(0xFFFFF176), (1 - eased) * 0.4, 5, style: PaintingStyle.stroke, strokeWidth: 6));
       canvas.drawCircle(center, ringRadius, Paint()..style = PaintingStyle.stroke..strokeWidth = 3.5 * (1 - eased * 0.6)..color = const Color(0xFFFFF176).withOpacity((1 - eased) * 0.85));
+      final ring2P = (p - 0.1).clamp(0.0, 1.0);
+      if (ring2P > 0) {
+        final ring2Radius = size.shortestSide * (0.05 + 0.3 * Curves.easeOutCubic.transform(ring2P));
+        canvas.drawCircle(center, ring2Radius, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.8 * (1 - ring2P)..color = const Color(0xFFFFECB3).withOpacity((1 - ring2P) * 0.65));
+      }
+      // Křížová záře v jádru exploze.
+      final crossFade = (1 - eased / 0.5).clamp(0.0, 1.0);
+      if (crossFade > 0) {
+        final crossLen = size.shortestSide * 0.16 * (0.5 + eased);
+        canvas.drawLine(center - Offset(crossLen, 0), center + Offset(crossLen, 0), _glow(const Color(0xFFFFFDE7), crossFade * 0.55, 4, style: PaintingStyle.stroke, strokeWidth: 3));
+        canvas.drawLine(center - Offset(0, crossLen), center + Offset(0, crossLen), _glow(const Color(0xFFFFFDE7), crossFade * 0.55, 4, style: PaintingStyle.stroke, strokeWidth: 3));
+      }
       for (final s in shards) {
         final dist = s.maxDist * eased;
-        final pos = center + Offset(cos(s.angle), sin(s.angle)) * dist;
+        final wobble = sin(eased * pi * 4 + s.angle * 3) * 0.15;
+        final pos = center + Offset(cos(s.angle + wobble), sin(s.angle + wobble)) * dist;
         final opacity = (1 - eased).clamp(0.0, 1.0);
         if (opacity <= 0.02) continue;
         canvas.save();
         canvas.translate(pos.dx, pos.dy);
-        canvas.rotate(s.spin * eased * pi * 2 * s.spinDir);
+        canvas.rotate(s.spin * eased * pi * 2 * s.spinDir + wobble);
         final path = Path()
           ..moveTo(0, -s.size)
           ..quadraticBezierTo(s.size * 0.6, -s.size * 0.2, 0, s.size * 0.7)
           ..quadraticBezierTo(-s.size * 0.6, -s.size * 0.2, 0, -s.size);
+        canvas.drawPath(path, _glow((s.secondary ? const Color(0xFFFFF9C4) : const Color(0xFFFFD700)), opacity * 0.4, 2));
         canvas.drawPath(path, Paint()..color = (s.secondary ? const Color(0xFFFFF9C4) : const Color(0xFFFFD700)).withOpacity(opacity));
         canvas.restore();
       }
+    }
+  }
+
+  // ===== GENERICKÝ "ARCHETYP" SYSTÉM - viz _SpellFxArchetype/_SpellFxSpec výš =====
+  // Jeden tvarový motiv sdílený víc specializacemi, vždy přebarvený podle primary/secondary té
+  // konkrétní specializace (a měřítko/intenzita podle `epic`) - takhle má KAŽDÁ specializace ve
+  // hře viditelně odlišný cast, aniž by musela mít úplně samostatnou ručně malovanou funkci.
+  void _paintArchetype(Canvas canvas, Size size, _SpellFxArchetype archetype, Color primary, Color secondary, bool epic) {
+    switch (archetype) {
+      case _SpellFxArchetype.bladeSlash:
+        _paintBladeSlash(canvas, size, primary, secondary, epic);
+        break;
+      case _SpellFxArchetype.groundSlam:
+        _paintGroundSlam(canvas, size, primary, secondary, epic);
+        break;
+      case _SpellFxArchetype.stormLightning:
+        _paintStormLightning(canvas, size, primary, secondary, epic);
+        break;
+      case _SpellFxArchetype.shadowVoid:
+        _paintShadowVoid(canvas, size, primary, secondary, epic);
+        break;
+      case _SpellFxArchetype.holyRadiance:
+        _paintHolyRadianceGeneric(canvas, size, primary, secondary, epic);
+        break;
+      case _SpellFxArchetype.arcaneRune:
+        _paintArcaneRune(canvas, size, primary, secondary, epic);
+        break;
+      case _SpellFxArchetype.chiBurst:
+        _paintChiBurst(canvas, size, primary, secondary, epic);
+        break;
+      case _SpellFxArchetype.natureBloom:
+        _paintNatureBloom(canvas, size, primary, secondary, epic);
+        break;
+      case _SpellFxArchetype.boneDecay:
+        _paintBoneDecayGeneric(canvas, size, primary, secondary, epic);
+        break;
+    }
+  }
+
+  // Čepel/sek: rychlý diagonální "slash" streak přes cíl (jasná stopa co se rozšíří a zmizí),
+  // + krátká druhá afterimage čepel se zpožděním, + pár jisker vylétávajících podél řezu.
+  void _paintBladeSlash(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final slashT = (t / (epic ? 0.5 : 0.4)).clamp(0.0, 1.0);
+    final eased = Curves.easeOutExpo.transform(slashT);
+    final fade = (1 - ((t - 0.4) / 0.6).clamp(0.0, 1.0));
+    if (fade <= 0.02) return;
+    final len = size.longestSide * (epic ? 0.95 : 0.8);
+    void drawSlash(double angleOffset, double delay, double opacityMul, double widthMul) {
+      final dt = ((t - delay) / (epic ? 0.5 : 0.4)).clamp(0.0, 1.0);
+      if (dt <= 0) return;
+      final e = Curves.easeOutExpo.transform(dt);
+      final a = pi * 0.22 + angleOffset;
+      final dir = Offset(cos(a), sin(a));
+      final half = len / 2 * e;
+      final p1 = center - dir * half;
+      final p2 = center + dir * half;
+      final perp = Offset(-dir.dy, dir.dx);
+      final bow = perp * (size.shortestSide * 0.06 * (1 - e));
+      final path = Path()..moveTo(p1.dx, p1.dy)..quadraticBezierTo(center.dx + bow.dx, center.dy + bow.dy, p2.dx, p2.dy);
+      canvas.drawPath(path, Paint()..style = PaintingStyle.stroke..strokeCap = StrokeCap.round..strokeWidth = (epic ? 10 : 7) * widthMul * (1 - e * 0.3)..color = primary.withOpacity(fade * 0.9 * opacityMul)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
+      canvas.drawPath(path, Paint()..style = PaintingStyle.stroke..strokeCap = StrokeCap.round..strokeWidth = (epic ? 3.5 : 2.5) * widthMul..color = secondary.withOpacity(fade * opacityMul));
+    }
+    drawSlash(0, 0.0, 1.0, 1.0);
+    if (epic) drawSlash(0.5, 0.08, 0.5, 0.7); // druhý protisměrný sek u epických verzí
+    // Jiskry podél řezu.
+    for (final w in wisps) {
+      final along = (w.dx + 1) / 2; // 0..1 pozice podél čepele
+      final a = pi * 0.22;
+      final pos = center + Offset(cos(a), sin(a)) * (len / 2) * (along * 2 - 1) * eased;
+      canvas.drawCircle(pos, 2.4 + eased * 1.2, _glow(secondary, fade * 0.5, 3));
+      canvas.drawCircle(pos, 1.4, Paint()..color = secondary.withOpacity(fade * 0.8));
+    }
+  }
+
+  // Dopad do země: rázová vlna od spodního okraje + prasklá zem (cikcak čáry po vodorovné ose)
+  // + úlomky/suť vyletující nahoru - "velitelský" úder namísto sekání čepelí.
+  void _paintGroundSlam(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
+    final ground = Offset(size.width / 2, size.height * 0.82);
+    final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
+    final fade = (1 - ((t - 0.5) / 0.5).clamp(0.0, 1.0));
+    if (fade <= 0.02) return;
+    final impactT = (t / 0.22).clamp(0.0, 1.0);
+    if (impactT < 1.0) {
+      canvas.drawCircle(ground, size.shortestSide * 0.3 * (1 - impactT), Paint()..color = secondary.withOpacity((1 - impactT) * 0.5));
+    }
+    final ringR = size.shortestSide * (0.06 + 0.55 * eased);
+    canvas.drawOval(Rect.fromCenter(center: ground, width: ringR * 2, height: ringR * 0.5), _glow(primary, fade * 0.5, 5, style: PaintingStyle.stroke, strokeWidth: 5));
+    canvas.drawOval(Rect.fromCenter(center: ground, width: ringR * 2, height: ringR * 0.5), Paint()..style = PaintingStyle.stroke..strokeWidth = 3 * (1 - eased * 0.5)..color = primary.withOpacity(fade * 0.85));
+    for (int i = 0; i < (epic ? 6 : 4); i++) {
+      final rnd = Random(i * 71 + 5);
+      final dir = rnd.nextBool() ? 1 : -1;
+      final len = size.width * (0.15 + rnd.nextDouble() * 0.2) * eased * dir;
+      final endX = ground.dx + len;
+      final jagY = ground.dy + (rnd.nextDouble() - 0.5) * 8;
+      canvas.drawLine(ground, Offset(endX, jagY), Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = secondary.withOpacity(fade * 0.6));
+    }
+    for (final s in shards) {
+      final dist = s.maxDist * 0.6 * eased;
+      final pos = ground + Offset(cos(s.angle) * dist, sin(s.angle).abs() * -dist * 0.8);
+      final opacity = (1 - eased).clamp(0.0, 1.0) * fade;
+      if (opacity <= 0.02) continue;
+      canvas.save();
+      canvas.translate(pos.dx, pos.dy);
+      canvas.rotate(s.spin * eased * pi * 2 * s.spinDir);
+      canvas.drawRect(Rect.fromCenter(center: Offset.zero, width: s.size * 0.7, height: s.size * 0.7), Paint()..color = (s.secondary ? secondary : primary).withOpacity(opacity));
+      canvas.restore();
+    }
+  }
+
+  // Blesk: cikcak paprsek shora dolů (2-3 zablikání), tenké radiální výboje ze středu, krátký
+  // bílý flash - rychlé, ostré, elektrizující.
+  void _paintStormLightning(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
+    if (fade <= 0.02) return;
+    final flicker = (sin(t * pi * (epic ? 14 : 10)).abs());
+    final boltPath = Path()..moveTo(center.dx, 0);
+    final rnd = Random(kind.index);
+    double y = 0;
+    double x = center.dx;
+    while (y < center.dy) {
+      y += size.height * 0.12;
+      x += (rnd.nextDouble() - 0.5) * size.width * 0.12;
+      boltPath.lineTo(x, y);
+    }
+    canvas.drawPath(boltPath, Paint()..style = PaintingStyle.stroke..strokeWidth = 6..color = primary.withOpacity(fade * flicker * 0.5)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
+    canvas.drawPath(boltPath, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = secondary.withOpacity(fade * flicker * 0.9));
+    for (int i = 0; i < (epic ? 8 : 6); i++) {
+      final a = (i / (epic ? 8 : 6)) * 2 * pi;
+      final len = size.shortestSide * 0.22 * Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
+      canvas.drawLine(center, center + Offset(cos(a), sin(a)) * len, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6..color = secondary.withOpacity(fade * flicker * 0.7));
+    }
+    canvas.drawCircle(center, size.shortestSide * (0.05 + 0.05 * flicker), _glow(secondary, fade * flicker * 0.6, 6));
+  }
+
+  // Stínové vsátí: dušičky implodují do temného portálu (kruh s prstencem), krátký záblesk a
+  // rozplynutí v kouři - variace na Explozi prokletí, ale kompaktnější a bez kostěných úlomků.
+  void _paintShadowVoid(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final implodeEnd = epic ? 0.38 : 0.3;
+    if (t < implodeEnd) {
+      final p = (t / implodeEnd).clamp(0.0, 1.0);
+      final eased = Curves.easeIn.transform(p);
+      final startDist = size.shortestSide * 0.4;
+      for (int i = 0; i < wisps.length; i++) {
+        final angle = i * (2 * pi / wisps.length);
+        final start = center + Offset(cos(angle), sin(angle)) * startDist;
+        final pos = Offset.lerp(start, center, eased)!;
+        canvas.drawCircle(pos, 3.6, Paint()..color = primary.withOpacity(0.2 + eased * 0.55));
+      }
+      canvas.drawCircle(center, 3 + eased * 9, _glow(primary, 0.5 * eased, 5));
+    } else {
+      final p = ((t - implodeEnd) / (1 - implodeEnd)).clamp(0.0, 1.0);
+      final eased = Curves.easeOutCubic.transform(p);
+      final fade = (1 - eased).clamp(0.0, 1.0);
+      final flashT = (p / 0.2).clamp(0.0, 1.0);
+      if (flashT < 1.0) canvas.drawRect(Offset.zero & size, Paint()..color = primary.withOpacity((1 - flashT) * 0.4));
+      final ringR = size.shortestSide * (0.06 + (epic ? 0.4 : 0.3) * eased);
+      canvas.drawCircle(center, ringR, _glow(secondary, fade * 0.5, 5, style: PaintingStyle.stroke, strokeWidth: 5));
+      canvas.drawCircle(center, ringR, Paint()..style = PaintingStyle.stroke..strokeWidth = 3..color = secondary.withOpacity(fade * 0.85));
+      canvas.drawCircle(center, ringR * 0.5, Paint()..color = primary.withOpacity(fade * 0.4));
+      if (epic) {
+        for (final s in shards) {
+          final dist = s.maxDist * 0.7 * eased;
+          final pos = center + Offset(cos(s.angle), sin(s.angle)) * dist;
+          final opacity = fade;
+          if (opacity <= 0.02) continue;
+          canvas.drawCircle(pos, s.size * 0.35, Paint()..color = primary.withOpacity(opacity * 0.6));
+        }
+      }
+    }
+  }
+
+  // Svaté záření: variace na _paintHealerBlessing/_paintHealerJudgment, ale s vlastními barvami
+  // (Paladin/LightBearer) - měkký glow, rotující halo, stoupající jiskřičky; epické verze navíc
+  // dostanou krátký paprsek shora.
+  void _paintHolyRadianceGeneric(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
+    final fade = (1 - ((t - 0.4) / 0.6).clamp(0.0, 1.0));
+    if (fade <= 0.02) return;
+    if (epic) {
+      final beamW = size.width * 0.1 * eased;
+      final beamRect = Rect.fromLTRB(center.dx - beamW / 2, 0, center.dx + beamW / 2, center.dy);
+      canvas.drawRect(beamRect, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [primary.withOpacity(0), secondary.withOpacity(fade * 0.5)]).createShader(beamRect));
+    }
+    final glowRadius = size.shortestSide * (0.10 + 0.22 * eased);
+    canvas.drawCircle(center, glowRadius, Paint()..shader = RadialGradient(colors: [primary.withOpacity(fade * 0.55), secondary.withOpacity(0)]).createShader(Rect.fromCircle(center: center, radius: glowRadius)));
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(eased * pi * 0.8);
+    final haloR = size.shortestSide * 0.14;
+    for (int i = 0; i < 6; i++) {
+      final a0 = i * (pi / 3);
+      canvas.drawArc(Rect.fromCircle(center: Offset.zero, radius: haloR), a0, pi / 5, false, Paint()..style = PaintingStyle.stroke..strokeWidth = 2.2..color = secondary.withOpacity(fade * 0.85));
+    }
+    canvas.restore();
+    for (final w in wisps) {
+      final dy = -size.shortestSide * 0.3 * eased * (0.5 + w.dy.abs());
+      final pos = center + Offset(w.dx * 18 * eased, dy);
+      final twinkle = (sin(t * pi * 6 + w.dx * 10) + 1) / 2;
+      canvas.drawCircle(pos, 2.4 + twinkle * 1.6, Paint()..color = secondary.withOpacity(fade * (0.5 + twinkle * 0.4)));
+    }
+  }
+
+  // Arkánová runa: geometrický rotující kruh s vepsaným čtvercem + 4 orbitující kosočtverce -
+  // "chladnější"/přesnější než DK hexagram, hodí se pro Mage linii (Elementalist/Arcanist/
+  // Archmage).
+  void _paintArcaneRune(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final stampT = (t / 0.35).clamp(0.0, 1.0);
+    final scale = Curves.easeOutBack.transform(stampT);
+    final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
+    if (fade <= 0.02) return;
+    final r = size.shortestSide * (epic ? 0.18 : 0.14);
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.scale(scale <= 0 ? 0.01 : scale);
+    canvas.drawCircle(Offset.zero, r, _glow(primary, fade * 0.4, 5));
+    canvas.drawCircle(Offset.zero, r, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = primary.withOpacity(fade * 0.9));
+    canvas.rotate(t * pi * 0.6);
+    final sq = Rect.fromCircle(center: Offset.zero, radius: r * 0.85);
+    canvas.drawRect(sq, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6..color = secondary.withOpacity(fade * 0.8));
+    canvas.restore();
+    // Orbitující kosočtverce.
+    for (int i = 0; i < (epic ? 6 : 4); i++) {
+      final a = (i / (epic ? 6 : 4)) * 2 * pi + t * pi * (epic ? 2 : 1.4);
+      final orbitR = r * 1.5;
+      final pos = center + Offset(cos(a), sin(a)) * orbitR;
+      canvas.save();
+      canvas.translate(pos.dx, pos.dy);
+      canvas.rotate(a);
+      final d = 5.0;
+      final diamond = Path()..moveTo(0, -d)..lineTo(d * 0.7, 0)..lineTo(0, d)..lineTo(-d * 0.7, 0)..close();
+      canvas.drawPath(diamond, Paint()..color = secondary.withOpacity(fade * 0.85));
+      canvas.restore();
+    }
+  }
+
+  // "Chi" úder: koncentrické rozšiřující se kruhy (jako tlaková vlna z úderu dlaní), pár
+  // radiálních krátkých obloučků a jemné stoupající tečky - čisté, rychlé, meditativní.
+  void _paintChiBurst(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final fade = (1 - ((t - 0.5) / 0.5).clamp(0.0, 1.0));
+    if (fade <= 0.02) return;
+    void ring(double delay, double maxR, double opacityMul) {
+      final p = ((t - delay) / (1 - delay)).clamp(0.0, 1.0);
+      if (p <= 0) return;
+      final eased = Curves.easeOutCubic.transform(p);
+      final r = size.shortestSide * maxR * eased;
+      canvas.drawCircle(center, r, Paint()..style = PaintingStyle.stroke..strokeWidth = 3 * (1 - eased * 0.7)..color = primary.withOpacity((1 - eased) * 0.8 * opacityMul));
+    }
+    ring(0.0, 0.4, 1.0);
+    ring(0.12, 0.32, 0.7);
+    if (epic) ring(0.24, 0.5, 0.5);
+    canvas.drawCircle(center, size.shortestSide * 0.06 * (1 - (t / 0.3).clamp(0.0, 1.0)), _glow(secondary, fade * 0.6, 4));
+    for (final w in wisps) {
+      final a = w.dx * pi;
+      final dist = size.shortestSide * 0.22 * t;
+      final pos = center + Offset(cos(a), sin(a)) * dist;
+      canvas.drawCircle(pos, 2, Paint()..color = secondary.withOpacity(fade * 0.6));
+    }
+  }
+
+  // Přírodní květ: měkké překrývající se "lístky" (blob tvary) expandující ven ze středu + pár
+  // stoupajících pylových částic - organický, žádné ostré hrany.
+  void _paintNatureBloom(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final eased = Curves.easeOutBack.transform(t.clamp(0.0, 1.0));
+    final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
+    if (fade <= 0.02) return;
+    final petals = epic ? 7 : 5;
+    final r = size.shortestSide * (epic ? 0.16 : 0.12) * eased.clamp(0.0, 1.2);
+    for (int i = 0; i < petals; i++) {
+      final a = (i / petals) * 2 * pi;
+      final pos = center + Offset(cos(a), sin(a)) * r * 0.6;
+      canvas.save();
+      canvas.translate(pos.dx, pos.dy);
+      canvas.rotate(a);
+      final petal = Path()..moveTo(0, 0)..quadraticBezierTo(r * 0.5, -r * 0.35, r * 0.9, 0)..quadraticBezierTo(r * 0.5, r * 0.35, 0, 0);
+      canvas.drawPath(petal, Paint()..color = primary.withOpacity(fade * 0.55));
+      canvas.restore();
+    }
+    canvas.drawCircle(center, r * 0.3, Paint()..color = secondary.withOpacity(fade * 0.8));
+    for (final w in wisps) {
+      final dy = -size.shortestSide * 0.26 * eased.clamp(0.0, 1.0) * (0.5 + w.dy.abs());
+      final pos = center + Offset(w.dx * 20 * eased.clamp(0.0, 1.0), dy);
+      canvas.drawCircle(pos, 2.2, Paint()..color = secondary.withOpacity(fade * 0.5));
+    }
+  }
+
+  // Rozklad/kosti: sytě jedovatý implode+burst s "kostěnými" zubatými úlomky (sdílený tvar
+  // s _paintCurseExplosion) - kompaktnější verze pro Necromancer/DeathReaper linii.
+  void _paintBoneDecayGeneric(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final stampT = (t / 0.3).clamp(0.0, 1.0);
+    final scale = Curves.easeOutBack.transform(stampT);
+    final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
+    if (fade <= 0.02) return;
+    canvas.drawCircle(center, size.shortestSide * 0.14 * scale, _glow(primary, fade * 0.4, 5));
+    for (int i = 0; i < 3; i++) {
+      final rnd = Random(i * 61 + 9);
+      final a = (i / 3) * 2 * pi + 0.4;
+      final len = size.shortestSide * 0.22 * scale;
+      final jag = Offset((rnd.nextDouble() - 0.5) * 10, (rnd.nextDouble() - 0.5) * 10);
+      final mid = center + Offset(cos(a), sin(a)) * len * 0.5 + jag;
+      final end = center + Offset(cos(a), sin(a)) * len;
+      canvas.drawPath(Path()..moveTo(center.dx, center.dy)..lineTo(mid.dx, mid.dy)..lineTo(end.dx, end.dy), Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6..color = secondary.withOpacity(fade * 0.6));
+    }
+    for (final s in shards) {
+      final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
+      final dist = s.maxDist * 0.7 * eased;
+      final pos = center + Offset(cos(s.angle), sin(s.angle)) * dist;
+      final opacity = (1 - eased).clamp(0.0, 1.0);
+      if (opacity <= 0.02) continue;
+      canvas.save();
+      canvas.translate(pos.dx, pos.dy);
+      canvas.rotate(s.spin * eased * pi * 2 * s.spinDir);
+      final path = Path()..moveTo(0, -s.size * 0.8)..lineTo(s.size * 0.3, -s.size * 0.05)..lineTo(s.size * 0.45, s.size * 0.45)..lineTo(0, s.size * 0.25)..lineTo(-s.size * 0.45, s.size * 0.45)..lineTo(-s.size * 0.3, -s.size * 0.05)..close();
+      canvas.drawPath(path, Paint()..color = primary.withOpacity(opacity * 0.85));
+      canvas.restore();
+    }
+    for (final w in wisps) {
+      final dy = -size.shortestSide * 0.22 * t * (0.6 + w.dx.abs());
+      final pos = center + Offset(w.dx * 16 * t, dy);
+      canvas.drawCircle(pos, 3, Paint()..color = primary.withOpacity(fade * 0.3));
     }
   }
 
@@ -533,7 +1135,11 @@ class _SpellFxOverlayState extends State<SpellFxOverlay> with SingleTickerProvid
   void initState() {
     super.initState();
     final epic = kSpellFxSpec[widget.kind]?.epic ?? false;
-    _c = AnimationController(vsync: this, duration: Duration(milliseconds: epic ? 900 : 500));
+    // Delší trvání než dřív (bylo 900/500 ms) - půl vteřiny je pro lidské oko málo na to, aby se
+    // stihl vizuál "vstřebat". MUSÍ odpovídat _spellFxSlowMoMs v game_state.dart, který podle
+    // těchto časů pozastavuje auto-boj (viz isSpellSlowMo) - jinak by se rozjel dřív/později,
+    // než animace doopravdy doběhne.
+    _c = AnimationController(vsync: this, duration: Duration(milliseconds: epic ? 1600 : 950));
     final rnd = Random();
     final shardCount = epic ? 14 : 0;
     _shards = List.generate(shardCount, (i) {
@@ -554,6 +1160,57 @@ class _SpellFxOverlayState extends State<SpellFxOverlay> with SingleTickerProvid
         animation: _c,
         builder: (_, __) => CustomPaint(size: Size.infinite, painter: _SpellFxPainter(t: _c.value, kind: widget.kind, shards: _shards, wisps: _wisps)),
       ),
+    );
+  }
+}
+
+// Tmavá "bullet-time" clona přes CELOU kartu (hero i nepřítel současně), dokud běží
+// GameState.isSpellSlowMo okno (viz _pushFx/_spellFxSlowMoMs v game_state.dart) - vizuálně
+// prodává pocit, že se čas na chvíli zpomalil/zastavil, ne že hoří jen jedna karta. Vlastní
+// lehký Timer (40ms), který se sám spustí při první notifikaci od GameState a sám se ukončí,
+// jakmile isSpellSlowMo doběhne - nezávisí na tom, jestli GameState mezitím ještě notifikuje.
+class _SlowMoDim extends StatefulWidget {
+  final GameState state;
+  const _SlowMoDim({required this.state});
+  @override
+  State<_SlowMoDim> createState() => _SlowMoDimState();
+}
+
+class _SlowMoDimState extends State<_SlowMoDim> {
+  Timer? _ticker;
+  double _opacity = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeStartTicking();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SlowMoDim old) {
+    super.didUpdateWidget(old);
+    _maybeStartTicking();
+  }
+
+  void _maybeStartTicking() {
+    if (_ticker != null) return;
+    if (!widget.state.isSpellSlowMo) return;
+    _ticker = Timer.periodic(const Duration(milliseconds: 40), (timer) {
+      if (!mounted) { timer.cancel(); return; }
+      final active = widget.state.isSpellSlowMo;
+      setState(() { _opacity = active ? 0.24 : 0.0; });
+      if (!active) { timer.cancel(); _ticker = null; }
+    });
+  }
+
+  @override
+  void dispose() { _ticker?.cancel(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_opacity <= 0.001) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: AnimatedContainer(duration: const Duration(milliseconds: 160), color: Colors.black.withOpacity(_opacity)),
     );
   }
 }
@@ -580,10 +1237,16 @@ class _CombatFxOverlayState extends State<CombatFxOverlay> {
     for (final e in newBurstEvents) { _shownBurstIds.add(e.id); }
     final newSpellFxEvents = events.where((e) => e.spellFxKind != null && !_shownSpellFxIds.contains(e.id)).toList();
     for (final e in newSpellFxEvents) { _shownSpellFxIds.add(e.id); }
-    if (events.isEmpty && newBurstEvents.isEmpty && newSpellFxEvents.isEmpty) return const SizedBox.shrink();
+    // Na rozdíl od dřívějška NEvracíme SizedBox.shrink jen podle lokálních eventů - i strana bez
+    // vlastního spell efektu (např. nepřítel, když kouzlí hrdina) musí umět zobrazit _SlowMoDim,
+    // ať se ztmaví obě karty současně.
+    if (events.isEmpty && newBurstEvents.isEmpty && newSpellFxEvents.isEmpty && !widget.state.isSpellSlowMo) {
+      return const SizedBox.shrink();
+    }
     return Positioned.fill(
       child: IgnorePointer(
         child: Stack(children: [
+          _SlowMoDim(state: widget.state),
           ...events.map((e) => _CombatFxText(event: e, onDone: () => widget.state.removeFx(e.id))),
           ...newSpellFxEvents.map((e) => SpellFxOverlay(key: ValueKey('spellfx_${e.id}'), kind: e.spellFxKind!, onDone: () { if (mounted) setState(() {}); })),
           ...newBurstEvents.map((e) => RelicBurstOverlay(key: ValueKey('burst_${e.id}'), kind: e.burstKind!, onDone: () { if (mounted) setState(() {}); })),
@@ -3334,14 +3997,14 @@ class TowerScreen extends StatelessWidget {
                     _ClassPickerOption(iconType: FantasyIconType.classWarrior, name: tr("Válečník", "Warrior"), heroClass: HeroClass.warrior, onTap: () => state.selectClass(HeroClass.warrior)),
                     _ClassPickerOption(iconType: FantasyIconType.classHunter, name: tr("Lovec", "Hunter"), heroClass: HeroClass.hunter, onTap: () => state.selectClass(HeroClass.hunter)),
                     _ClassPickerOption(iconType: FantasyIconType.classPriest, name: tr("Léčitel", "Healer"), heroClass: HeroClass.healer, onTap: () => state.selectClass(HeroClass.healer)),
-                    _ClassPickerOption(iconType: FantasyIconType.classDeathKnight, name: tr("Rytíř Smrti ☠", "Death Knight ☠"), heroClass: HeroClass.deathknight, onTap: () => state.selectClass(HeroClass.deathknight)),
-                    _ClassPickerOption(iconType: FantasyIconType.classMage, name: tr("Mág 🔮", "Mage 🔮"), heroClass: HeroClass.mage, onTap: () => state.selectClass(HeroClass.mage)),
-                    _ClassPickerOption(iconType: FantasyIconType.classDuelist, name: tr("Šermíř 🗡️", "Duelist 🗡️"), heroClass: HeroClass.duelist, onTap: () => state.selectClass(HeroClass.duelist)),
-                    _ClassPickerOption(iconType: FantasyIconType.classMonk, name: tr("Mnich 🧘", "Monk 🧘"), heroClass: HeroClass.monk, onTap: () => state.selectClass(HeroClass.monk)),
-                    _ClassPickerOption(iconType: FantasyIconType.classDruid, name: tr("Druid 🌿", "Druid 🌿"), heroClass: HeroClass.druid, onTap: () => state.selectClass(HeroClass.druid)),
-                    _ClassPickerOption(iconType: FantasyIconType.classPaladin, name: tr("Paladin 🛡️", "Paladin 🛡️"), heroClass: HeroClass.paladin, onTap: () => state.selectClass(HeroClass.paladin)),
-                    _ClassPickerOption(iconType: FantasyIconType.classDemonHunter, name: tr("Lovec Démonů 😈", "Demon Hunter 😈"), heroClass: HeroClass.demonhunter, onTap: () => state.selectClass(HeroClass.demonhunter)),
-                    _ClassPickerOption(iconType: FantasyIconType.classNecromancer, name: tr("Nekromant 💀", "Necromancer 💀"), heroClass: HeroClass.necromancer, onTap: () => state.selectClass(HeroClass.necromancer)),
+                    _ClassPickerOption(iconType: FantasyIconType.classDeathKnight, name: tr("Rytíř Smrti", "Death Knight"), heroClass: HeroClass.deathknight, onTap: () => state.selectClass(HeroClass.deathknight)),
+                    _ClassPickerOption(iconType: FantasyIconType.classMage, name: tr("Mág", "Mage"), heroClass: HeroClass.mage, onTap: () => state.selectClass(HeroClass.mage)),
+                    _ClassPickerOption(iconType: FantasyIconType.classDuelist, name: tr("Šermíř", "Duelist"), heroClass: HeroClass.duelist, onTap: () => state.selectClass(HeroClass.duelist)),
+                    _ClassPickerOption(iconType: FantasyIconType.classMonk, name: tr("Mnich", "Monk"), heroClass: HeroClass.monk, onTap: () => state.selectClass(HeroClass.monk)),
+                    _ClassPickerOption(iconType: FantasyIconType.classDruid, name: tr("Druid", "Druid"), heroClass: HeroClass.druid, onTap: () => state.selectClass(HeroClass.druid)),
+                    _ClassPickerOption(iconType: FantasyIconType.classPaladin, name: tr("Paladin", "Paladin"), heroClass: HeroClass.paladin, onTap: () => state.selectClass(HeroClass.paladin)),
+                    _ClassPickerOption(iconType: FantasyIconType.classDemonHunter, name: tr("Lovec Démonů", "Demon Hunter"), heroClass: HeroClass.demonhunter, onTap: () => state.selectClass(HeroClass.demonhunter)),
+                    _ClassPickerOption(iconType: FantasyIconType.classNecromancer, name: tr("Nekromant", "Necromancer"), heroClass: HeroClass.necromancer, onTap: () => state.selectClass(HeroClass.necromancer)),
                   ],
                 ),
               ],
@@ -3511,7 +4174,14 @@ class TowerScreen extends StatelessWidget {
                                   decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [(state.specialization != 0 ? state.currentSpecRelic.color : heroAccent).withOpacity(.5), const Color(0xFF14181C)]), border: Border.all(color: (state.specialization != 0 ? state.currentSpecRelic.color : heroAccent).withOpacity(.7), width: 2), boxShadow: [BoxShadow(color: (state.specialization != 0 ? state.currentSpecRelic.color : heroAccent).withOpacity(.6), blurRadius: 14)]),
                                   child: state.specialization != 0
                                       ? Icon(state.currentSpecRelic.icon, size: 32, color: state.currentSpecRelic.color)
-                                      : CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent)),
+                                      : (kClassPortraitAssets[state.heroClass] != null
+                                          ? ClipOval(
+                                              child: Image.asset(
+                                                kClassPortraitAssets[state.heroClass]!,
+                                                width: 40, height: 40, fit: BoxFit.cover,
+                                              ),
+                                            )
+                                          : CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent))),
                                 ),
                                 const SizedBox(height: 6),
                                 Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: heroAccent)),
@@ -3524,7 +4194,14 @@ class TowerScreen extends StatelessWidget {
                             Container(
                               width: 26, height: 26, padding: const EdgeInsets.all(5),
                               decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [heroAccent.withOpacity(.45), const Color(0xFF14181C)]), boxShadow: [BoxShadow(color: heroAccent.withOpacity(.6), blurRadius: 8)]),
-                              child: CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent)),
+                              child: kClassPortraitAssets[state.heroClass] != null
+                                  ? ClipOval(
+                                      child: Image.asset(
+                                        kClassPortraitAssets[state.heroClass]!,
+                                        width: 16, height: 16, fit: BoxFit.cover,
+                                      ),
+                                    )
+                                  : CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent)),
                             ),
                             const SizedBox(width: 7),
                             Expanded(child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: heroAccent))),
@@ -3955,7 +4632,31 @@ class MarketScreen extends StatelessWidget {
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(tr("Tržiště", "Market"), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(tr("Tržiště", "Market"), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFFFB100), width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text("🪙", style: TextStyle(fontSize: 16)),
+                    const SizedBox(width: 6),
+                    Text(
+                      "${state.gold}",
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFFFB100)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 10),
           _MarketFeaturedSection(state: state),
           const Divider(),

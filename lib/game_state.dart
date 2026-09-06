@@ -2293,6 +2293,60 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   int _autoCombatElapsedMs = 0; // akumulátor pro proměnný interval auto-boje (viz Timer.periodic v konstruktoru) - čistě "živý" stav, neukládá se
   List<CombatFxEvent> combatFx = [];
   int comboStreak = 0;
+  // ===== SPELL SLOW-MOTION =====
+  // Když se odpálí spell s vlastní SpellFxOverlay animací (viz spellFxKind v _pushFx níž), hra
+  // se na dobu trvání toho efektu "zadrhne" - auto-boj (viz Timer.periodic v konstruktoru) se
+  // pozastaví, ať hráč stihne tu animaci skutečně vidět, místo aby ji hned přebil další kolo.
+  // Časy MUSÍ odpovídat duration v SpellFxOverlay (screens.dart) - jinak by auto-boj naskočil
+  // dřív/později, než animace doopravdy skončí.
+  static const Map<SpellFxKind, int> _spellFxSlowMoMs = {
+    SpellFxKind.dkCursedStrike: 950,
+    SpellFxKind.healerBlessing: 950,
+    SpellFxKind.dkCurseExplosion: 1600,
+    SpellFxKind.healerJudgment: 1600,
+    // Tier 15 "Advanced" - rychlé/nonepic (950ms), stejně jako výš. Explicitně vypsáno kvůli
+    // čitelnosti, i když by to bez záznamu spadlo na stejný default 950ms.
+    SpellFxKind.berserk: 950,
+    SpellFxKind.assassin: 950,
+    SpellFxKind.elementalist: 950,
+    SpellFxKind.bladeDancer: 950,
+    SpellFxKind.disciple: 950,
+    SpellFxKind.astralDruid: 950,
+    SpellFxKind.faithGuardian: 950,
+    SpellFxKind.felBlade: 950,
+    SpellFxKind.boneLord: 950,
+    // Tier 40 "Ultimate" a tier 75 "God" - epické (1600ms) - MUSÍ odpovídat epic:true v
+    // kSpellFxSpec (screens.dart), jinak by se auto-boj rozjel dřív, než animace doběhne.
+    SpellFxKind.warlord: 1600,
+    SpellFxKind.valhallaWarrior: 1600,
+    SpellFxKind.shadowMaster: 1600,
+    SpellFxKind.voidStalker: 1600,
+    SpellFxKind.lightBearer: 1600,
+    SpellFxKind.deathReaper: 1600,
+    SpellFxKind.arcanist: 1600,
+    SpellFxKind.archmage: 1600,
+    SpellFxKind.bladeMaster: 1600,
+    SpellFxKind.stormblade: 1600,
+    SpellFxKind.grandmaster: 1600,
+    SpellFxKind.enlightened: 1600,
+    SpellFxKind.moonfury: 1600,
+    SpellFxKind.elderTreant: 1600,
+    SpellFxKind.retributor: 1600,
+    SpellFxKind.crusader: 1600,
+    SpellFxKind.demonSlayer: 1600,
+    SpellFxKind.abyssWalker: 1600,
+    SpellFxKind.deathSovereign: 1600,
+    SpellFxKind.graveWarden: 1600,
+    // Nepřátelská schopnost bosse - vždy epic (jednorázový "moment" v souboji).
+    SpellFxKind.lairBossStrike: 1600,
+    SpellFxKind.lairBossCurse: 1600,
+    SpellFxKind.lairBossPlague: 1600,
+    SpellFxKind.lairBossBind: 1600,
+    SpellFxKind.lairBossEmpower: 1600,
+    SpellFxKind.lairBossDrain: 1600,
+  };
+  DateTime? _spellSlowMoUntil;
+  bool get isSpellSlowMo => _spellSlowMoUntil != null && DateTime.now().isBefore(_spellSlowMoUntil!);
   // Zvýší se při každém skutečně novém Tower nepříteli (ne merchant encounter) - UI ho použije
   // jako AnimatedSwitcher klíč, aby nový nepřítel "naskočil" přes fade/scale místo instant swapu.
   int enemySpawnSeq = 0;
@@ -2301,6 +2355,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   void _pushFx(FxKind kind, FxSide side, {int value = 0, String? label, RelicBurstKind? burstKind, SpellFxKind? spellFxKind}) {
     combatFx.add(CombatFxEvent(id: _fxIdCounter++, kind: kind, side: side, value: value, jitter: (Random().nextDouble() - 0.5), label: label, burstKind: burstKind, spellFxKind: spellFxKind));
     if (combatFx.length > 14) combatFx.removeAt(0); // bezpečnostní strop, ať fronta neroste do nekonečna
+    if (spellFxKind != null) {
+      final ms = _spellFxSlowMoMs[spellFxKind] ?? 950;
+      final until = DateTime.now().add(Duration(milliseconds: ms));
+      // Pokud už jedno slow-mo okno běží (např. rychlé po sobě jdoucí spelly), prodloužíme ho,
+      // nikdy nezkrátíme - vždy se čeká na tu POSLEDNÍ spuštěnou animaci.
+      if (_spellSlowMoUntil == null || until.isAfter(_spellSlowMoUntil!)) {
+        _spellSlowMoUntil = until;
+      }
+    }
   }
 
   // Voláno z UI widgetu po dohrání jeho vlastní vylétávací animace.
@@ -5297,6 +5360,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 2) dmg = (dmg * 1.25).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.berserk);
       _applyAbilityDot(dmg);
       if (specialization == 3 && activeHardcoreSetTier >= 2 && appliesBleedOnAbility) {
         final bonusBleed = ((dmg * 0.20 / 3) * 0.5).round();
@@ -5314,6 +5378,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 2) dmg = (dmg * critDamageMultiplier).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.assassin);
       int heal = (dmg * 0.5).toInt();
       if (specialization == 2 && activeHardcoreSetTier >= 2) heal *= 2;
       hp = (hp + heal).clamp(0, maxHp);
@@ -5382,6 +5447,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         arcaneChargeStacks = (arcaneChargeStacks + 2).clamp(0, arcaneChargeMaxStacks);
       }
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.elementalist);
       message = tr("$prefix: Elementální výbuch! Způsobeno $dmg poškození.", "$prefix: Elementální výbuch! Dealt $dmg damage.");
     } else if (isBladeDancer) {
       int dmg = (physAtk * 2.2 * specAbilityDamageMod).toInt();
@@ -5391,6 +5457,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 2) dmg = (dmg * critDamageMultiplier).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.bladeDancer);
       _applyAbilityDot(dmg);
       if (specialization == 2 && activeHardcoreSetTier >= 2) {
         heroEffects.removeWhere((e) => e.name == "Elegantní Tanec");
@@ -5402,6 +5469,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 2) dmg = (dmg * 1.25).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.disciple);
       if (specialization == 1) {
         final dot = (dmg * 0.15 / 3).round();
         // Krvácení (Vichr) se SČÍTÁ, ne resetuje - další zásah přidá dmg k stávajícímu tiku a
@@ -5431,6 +5499,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 2.3 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.astralDruid);
       final dot = (dmg * 0.18 / 3).round();
       enemyEffects.removeWhere((e) => e.name == "Uvadnutí");
       enemyEffects.add(StatusEffect(name: "Uvadnutí", description: "Přírodní DoT $dot/kolo", duration: 3, isBuff: false, dotDamage: dot));
@@ -5449,6 +5518,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 2.2 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.faithGuardian);
       double shieldMult = 0.12;
       if (specialization == 1) shieldMult = 0.18;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -5464,6 +5534,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 2.4 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.felBlade);
       final dot = (dmg * 0.15 / 3).round();
       enemyEffects.removeWhere((e) => e.name == "Fel oheň");
       enemyEffects.add(StatusEffect(name: "Fel oheň", description: "Fel DoT $dot/kolo", duration: 3, isBuff: false, dotDamage: dot));
@@ -5497,6 +5568,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 2.3 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.boneLord);
       final petDmg = (magAtk * 0.6 * specAbilityDamageMod * (specialization == 1 ? 1.25 : 1.0)).toInt();
       dealAbilityDamage(petDmg);
       if (specialization == 3) {
@@ -5538,6 +5610,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 4.0 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.warlord);
       double shieldMult = 0.25;
       if (specialization == 2 && activeHardcoreSetTier >= 4) shieldMult *= 2;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -5559,6 +5632,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 4) dmg = (dmg * 1.5).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.shadowMaster);
       _applyAbilityDot(dmg);
       if (specialization == 3 && activeHardcoreSetTier >= 4) {
         final dot = (dmg * 0.10 / 3).round();
@@ -5634,6 +5708,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.arcanist);
       double manaRefundMult = 0.3;
       if (specialization == 1 && activeHardcoreSetTier >= 4) manaRefundMult *= 2;
       mana = (mana + (ability2Cost * manaRefundMult).toInt()).clamp(0, maxMana);
@@ -5646,6 +5721,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 4) dmg = (dmg * 1.5).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.bladeMaster);
       _applyAbilityDot(dmg);
       message = tr("$prefix: Precizní výpad za $dmg poškození.", "$prefix: Precizní výpad for $dmg damage.");
     } else if (isGrandmaster) {
@@ -5655,6 +5731,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.grandmaster);
       double shieldMult = 0.20;
       if (specialization == 2 && activeHardcoreSetTier >= 4) shieldMult *= 2;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -5687,6 +5764,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 3.2 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.moonfury);
       if (specialization == 2) {
         final shieldGain = (maxHp * 0.18 * specAbilitySustainMod).toInt();
         bonusShield += shieldGain;
@@ -5702,6 +5780,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 4.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.retributor);
       if (specialization == 1) {
         final shieldGain = (maxHp * 0.15 * specAbilitySustainMod).toInt();
         bonusShield += shieldGain;
@@ -5717,6 +5796,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 4.8 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.demonSlayer);
       if (specialization == 2) {
         final selfHeal = (dmg * 0.25 * specAbilitySustainMod).toInt();
         hp = (hp + selfHeal).clamp(0, maxHp);
@@ -5727,6 +5807,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 4.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.deathSovereign);
       if (specialization == 2) {
         final dot = (dmg * 0.15 / 3).round();
         enemyEffects.removeWhere((e) => e.name == "Rozklad");
@@ -5748,6 +5829,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 7.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.valhallaWarrior);
       final shieldGain = (maxHp * 0.50 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
       _applyShieldCap();
@@ -5766,6 +5848,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 8.0).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.voidStalker);
       hp = maxHp;
       _applyAbilityDot(dmg);
       if (specialization == 3 && activeHardcoreSetTier >= 6) {
@@ -5786,6 +5869,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 6) dmg *= 2;
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.lightBearer);
       double shieldMult = 0.50;
       if (specialization == 2 && activeHardcoreSetTier >= 6) shieldMult *= 2;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -5805,6 +5889,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       physDmg = _minDmg(physDmg, physDmg - effDef);
       int magDmg  = (magAtk  * 2.0 * triple).toInt();
       dealAbilityDamage(physDmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: physDmg, spellFxKind: SpellFxKind.deathReaper);
       _applyKrevPassiveLifesteal(physDmg);
       if (specialization == 3 && activeHardcoreSetTier >= 6) {
         final dotDmg = (magAtk * 0.5 * curseDmgMod).toInt();
@@ -5834,6 +5919,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.archmage);
       double shieldMult = 0.40;
       if (specialization == 2 && activeHardcoreSetTier >= 6) shieldMult *= 2;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -5852,6 +5938,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 6) dmg = (dmg * critDamageMultiplier).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.stormblade);
       hp = maxHp;
       _applyAbilityDot(dmg);
       message = tr("$prefix: Bouře čepelí za $dmg poškození a plné HP.", "$prefix: Bouře čepelí for $dmg damage and full HP.");
@@ -5864,6 +5951,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 7.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.enlightened);
       hp = maxHp;
       final shieldGain = (maxHp * 0.40 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
@@ -5896,6 +5984,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 3.6 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.elderTreant);
       hp = maxHp;
       final shieldGain = (maxHp * 0.35 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
@@ -5906,6 +5995,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 3.6 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.crusader);
       hp = maxHp;
       final shieldGain = (maxHp * 0.40 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
@@ -5916,6 +6006,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 3.2 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.abyssWalker);
       lifestealTurns += 10;
       if (specialization == 2) {
         final shieldGain = (maxHp * 0.30 * specAbilitySustainMod).toInt();
@@ -5928,6 +6019,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 3.2 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       dealAbilityDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.graveWarden);
       hp = maxHp;
       lifestealTurns += 8;
       message = tr("$prefix: Rituál Krve a Kostí! $dmg poškození, plné HP a lifesteal na 8 kol.", "$prefix: Rituál Krve a Kostí! $dmg damage, full HP, and lifesteal for 8 rounds.");
@@ -7329,6 +7421,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       // Auto-boj dřív tikal napevno každých 500ms. Teď je interval proměnný (1.5s základ,
       // kupovatelné -0.1s/10g až na strop 0.5s - viz autoCombatIntervalMs/upgradeAutoCombatSpeed),
       // takže tickujeme jemněji (100ms) a spouštíme skutečnou akci až po nasbírání dost času.
+      // Pokud právě dohrává SpellFxOverlay animace (viz isSpellSlowMo/_pushFx výš), auto-boj se
+      // úplně zastaví - "slow motion" pocit, ať hráč tu animaci stihne doopravdy vidět.
+      if (isSpellSlowMo) return;
       _autoCombatElapsedMs += 100;
       if (_autoCombatElapsedMs < autoCombatIntervalMs) return;
       _autoCombatElapsedMs = 0;
@@ -9129,6 +9224,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 2) dmg = (dmg * 1.25).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.berserk);
       _applyAbilityDot(dmg);
       if (specialization == 3 && activeHardcoreSetTier >= 2 && appliesBleedOnAbility) {
         final bonusBleed = ((dmg * 0.20 / 3) * 0.5).round();
@@ -9146,6 +9242,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 2) dmg = (dmg * critDamageMultiplier).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.assassin);
       int heal = (dmg * 0.5).toInt();
       if (specialization == 2 && activeHardcoreSetTier >= 2) heal *= 2;
       hp = (hp + heal).clamp(0, maxHp);
@@ -9212,6 +9309,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.elementalist);
       message = tr("🔄 Auto-cast: Elementální výbuch! Způsobeno $dmg poškození.", "🔄 Auto-cast: Elementální výbuch! Dealt $dmg damage.");
     } else if (isBladeDancer) {
       int dmg = (physAtk * 2.2 * specAbilityDamageMod).toInt();
@@ -9221,6 +9319,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 2) dmg = (dmg * critDamageMultiplier).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.bladeDancer);
       _applyAbilityDot(dmg);
       if (specialization == 2 && activeHardcoreSetTier >= 2) {
         heroEffects.removeWhere((e) => e.name == "Elegantní Tanec");
@@ -9232,6 +9331,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 2) dmg = (dmg * 1.25).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.disciple);
       if (specialization == 1) {
         final dot = (dmg * 0.15 / 3).round();
         // Krvácení (Vichr) se SČÍTÁ, ne resetuje - další zásah přidá dmg k stávajícímu tiku a
@@ -9267,6 +9367,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 4.0 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.warlord);
       double shieldMult = 0.25;
       if (specialization == 2 && activeHardcoreSetTier >= 4) shieldMult *= 2;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -9288,6 +9389,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 4) dmg = (dmg * 1.5).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.shadowMaster);
       _applyAbilityDot(dmg);
       if (specialization == 3 && activeHardcoreSetTier >= 4) {
         final dot = (dmg * 0.10 / 3).round();
@@ -9360,6 +9462,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.arcanist);
       double manaRefundMult = 0.3;
       if (specialization == 1 && activeHardcoreSetTier >= 4) manaRefundMult *= 2;
       mana = (mana + (ability2Cost * manaRefundMult).toInt()).clamp(0, maxMana);
@@ -9372,6 +9475,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 4) dmg = (dmg * 1.5).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.bladeMaster);
       _applyAbilityDot(dmg);
       message = tr("🔄 Auto-cast: Precizní výpad za $dmg poškození.", "🔄 Auto-cast: Precizní výpad for $dmg damage.");
     } else if (isGrandmaster) {
@@ -9381,6 +9485,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.grandmaster);
       double shieldMult = 0.20;
       if (specialization == 2 && activeHardcoreSetTier >= 4) shieldMult *= 2;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -9419,6 +9524,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 7.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.valhallaWarrior);
       final shieldGain = (maxHp * 0.50 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
       _applyShieldCap();
@@ -9435,6 +9541,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 8.0).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.voidStalker);
       hp = maxHp;
       _applyAbilityDot(dmg);
       if (specialization == 3 && activeHardcoreSetTier >= 6) {
@@ -9455,6 +9562,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 6) dmg *= 2;
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.lightBearer);
       double shieldMult = 0.50;
       if (specialization == 2 && activeHardcoreSetTier >= 6) shieldMult *= 2;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -9474,6 +9582,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       physDmg = _minDmg(physDmg, physDmg - effDef);
       int magDmg  = (magAtk  * 2.0 * triple).toInt();
       currentRiftGuardianHp -= physDmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: physDmg, spellFxKind: SpellFxKind.deathReaper);
       _applyKrevPassiveLifesteal(physDmg);
       if (specialization == 3 && activeHardcoreSetTier >= 6) {
         final dotDmg = (magAtk * 0.5 * curseDmgMod).toInt();
@@ -9503,6 +9612,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.archmage);
       double shieldMult = 0.40;
       if (specialization == 2 && activeHardcoreSetTier >= 6) shieldMult *= 2;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -9521,6 +9631,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 6) dmg = (dmg * critDamageMultiplier).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.stormblade);
       hp = maxHp;
       _applyAbilityDot(dmg);
       message = tr("🔄 Auto-cast: Bouře čepelí za $dmg poškození a plné HP.", "🔄 Auto-cast: Bouře čepelí for $dmg damage and full HP.");
@@ -9533,6 +9644,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 7.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentRiftGuardianHp -= dmg;
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.enlightened);
       hp = maxHp;
       final shieldGain = (maxHp * 0.40 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
@@ -10853,65 +10965,87 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         switch (def.kind) {
           case EnemyAbilityKind.statDebuff:
             heroEffects.add(StatusEffect.statDebuff(name: "Schopnost: $currentLairBossAbility", description: tr("$currentLairBossName použil svou schopnost.", "$currentLairBossName used its ability."), duration: def.duration, mods: def.mods));
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossCurse);
             break;
           case EnemyAbilityKind.stackingDebuff:
             heroEffects.removeWhere((e) => e.name == "Schopnost: $currentLairBossAbility");
             heroEffects.add(StatusEffect.statDebuff(name: "Schopnost: $currentLairBossAbility", description: tr("$currentLairBossName použil svou schopnost (stackuje se).", "$currentLairBossName used its ability (stacks)."), duration: def.duration, mods: def.mods));
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossCurse);
             break;
           case EnemyAbilityKind.dot:
             heroEffects.add(StatusEffect(name: "Schopnost: $currentLairBossAbility", description: tr("$currentLairBossName tě otrávil/zapálil.", "$currentLairBossName poisoned/burned you."), duration: def.duration, isBuff: false, dotDamage: (maxHp * def.amount).round()));
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossPlague);
             break;
           case EnemyAbilityKind.trueDamage:
-            hp = max(0, hp - (maxHp * def.amount).round());
+            final trueDmg = (maxHp * def.amount).round();
+            hp = max(0, hp - trueDmg);
+            _pushFx(FxKind.normalDamage, FxSide.hero, value: trueDmg, spellFxKind: SpellFxKind.lairBossStrike);
             break;
           case EnemyAbilityKind.ignoreArmor:
             abilityDamageBonusPct += def.amount;
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossStrike);
             break;
           case EnemyAbilityKind.ignoreBlockDodge:
             heroEffects.add(StatusEffect.statDebuff(name: "Schopnost: $currentLairBossAbility", description: tr("Tenhle útok nejde blokovat ani uhnout.", "This attack can't be blocked or dodged."), duration: 1, mods: {'dodge': -1.0, 'block': -1.0}));
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossStrike);
             break;
           case EnemyAbilityKind.guaranteedCrit:
             abilityGuaranteedCrit = true;
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossStrike);
             break;
           case EnemyAbilityKind.doubleAttack:
             abilityDamageBonusPct += 1.0;
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossStrike);
             break;
           case EnemyAbilityKind.stun:
             heroStunTurns += def.duration;
+            _pushFx(FxKind.stunned, FxSide.hero, spellFxKind: SpellFxKind.lairBossBind);
             break;
           case EnemyAbilityKind.blockSpell:
             heroSpellBlockTurns += def.duration;
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossBind);
             break;
           case EnemyAbilityKind.bossBuff:
             currentLairBossAtk = (currentLairBossAtk * (1 + def.amount)).round();
             enemyEffects.add(StatusEffect(name: "Schopnost: $currentLairBossAbility", description: tr("Posílený útok.", "Empowered attack."), duration: def.duration, isBuff: true));
+            _pushFx(FxKind.statusApplied, FxSide.enemy, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossEmpower);
             break;
           case EnemyAbilityKind.bossArmorBuff:
             currentLairBossDef = (currentLairBossDef * (1 + def.amount)).round();
             enemyEffects.add(StatusEffect(name: "Schopnost: $currentLairBossAbility", description: tr("Posílená obrana.", "Empowered defense."), duration: def.duration, isBuff: true));
+            _pushFx(FxKind.statusApplied, FxSide.enemy, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossEmpower);
             break;
           case EnemyAbilityKind.bossShield:
             // Doupě bosse nemá vlastní shield stat u bosse (na rozdíl od Věže) - nahrazeno healem.
+            final bossShieldGain = min(currentLairBossMaxHp - currentLairBossHp, (currentLairBossMaxHp * def.amount).round());
             currentLairBossHp = min(currentLairBossMaxHp, currentLairBossHp + (currentLairBossMaxHp * def.amount).round());
+            _pushFx(FxKind.shieldGained, FxSide.enemy, value: bossShieldGain, spellFxKind: SpellFxKind.lairBossEmpower);
             break;
           case EnemyAbilityKind.bossHeal:
+            final bossHealGain = min(currentLairBossMaxHp - currentLairBossHp, (currentLairBossMaxHp * def.amount).round());
             currentLairBossHp = min(currentLairBossMaxHp, currentLairBossHp + (currentLairBossMaxHp * def.amount).round());
+            _pushFx(FxKind.shieldGained, FxSide.enemy, value: bossHealGain, spellFxKind: SpellFxKind.lairBossEmpower);
             break;
           case EnemyAbilityKind.bossLifesteal:
             abilityBossLifestealPct = def.amount;
+            _pushFx(FxKind.statusApplied, FxSide.enemy, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossEmpower);
             break;
           case EnemyAbilityKind.resourceDrain:
             _drainResourcePct(def.amount);
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossDrain);
             break;
           case EnemyAbilityKind.goldDrain:
             gold = max(0, (gold * (1 - def.amount)).round());
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossDrain);
             break;
           case EnemyAbilityKind.cancelShield:
             bonusShield = 0;
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossCurse);
             break;
           case EnemyAbilityKind.cancelBuff:
             final activeBuffs = heroEffects.where((e) => e.isBuff).toList();
             if (activeBuffs.isNotEmpty) heroEffects.remove(activeBuffs.first);
+            _pushFx(FxKind.statusApplied, FxSide.hero, label: currentLairBossAbility, spellFxKind: SpellFxKind.lairBossCurse);
             break;
         }
         message = tr("⚔️ $currentLairBossName použil schopnost: $currentLairBossAbility!", "⚔️ $currentLairBossName used its ability: $currentLairBossAbility!");
@@ -11269,6 +11403,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 2) dmg = (dmg * 1.25).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.berserk);
       _applyAbilityDot(dmg);
       // Hardcore set "Krvavá Žeň" (Krvežíznivý, 2pc): krvácení z tohohle útoku +50 % dmg.
       if (specialization == 3 && activeHardcoreSetTier >= 2 && appliesBleedOnAbility) {
@@ -11290,6 +11425,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 2) dmg = (dmg * critDamageMultiplier).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.assassin);
       int heal = (dmg * 0.5).toInt();
       // Hardcore set "Divoký Hon" (Divočina, 2pc): dvojnásobné léčení.
       if (specialization == 2 && activeHardcoreSetTier >= 2) heal *= 2;
@@ -11357,6 +11493,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 2.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.elementalist);
       // Hardcore set "Věčný Plamen" (Plamen, 2pc): navíc zapálí nepřítele.
       if (specialization == 1 && activeHardcoreSetTier >= 2) {
         final burnDmg = (magAtk * 0.15).toInt();
@@ -11385,6 +11522,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 2) dmg = (dmg * critDamageMultiplier).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.bladeDancer);
       _applyAbilityDot(dmg);
       // Hardcore set "Elegantní Tanec" (Grácie, 2pc): +10 % úhyb na 3 kola.
       if (specialization == 2 && activeHardcoreSetTier >= 2) {
@@ -11399,6 +11537,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 2) dmg = (dmg * 1.25).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.disciple);
       // Vichr (DMG): fyzické ability aplikují krvácení (15 % dmg / 3 kola).
       if (specialization == 1) {
         final dot = (dmg * 0.15 / 3).round();
@@ -11434,6 +11573,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 2.3 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.astralDruid);
       final dot = (dmg * 0.18 / 3).round();
       enemyEffects.removeWhere((e) => e.name == "Uvadnutí");
       enemyEffects.add(StatusEffect(name: "Uvadnutí", description: "Přírodní DoT $dot/kolo", duration: 3, isBuff: false, dotDamage: dot));
@@ -11519,6 +11659,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 2.2 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.faithGuardian);
       double shieldMult = 0.12;
       if (specialization == 1) shieldMult = 0.18;
       final shieldGain = (maxHp * shieldMult * specAbilitySustainMod).toInt();
@@ -11552,6 +11693,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 2.4 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.felBlade);
       final dot = (dmg * 0.15 / 3).round();
       enemyEffects.removeWhere((e) => e.name == "Fel oheň");
       enemyEffects.add(StatusEffect(name: "Fel oheň", description: "Fel DoT $dot/kolo", duration: 3, isBuff: false, dotDamage: dot));
@@ -11585,6 +11727,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 2.3 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(dmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.boneLord);
       final petDmg = (magAtk * 0.6 * specAbilityDamageMod * (specialization == 1 ? 1.25 : 1.0)).toInt();
       currentEnemyHp -= _mitigateEnemyDamage(petDmg);
       if (specialization == 3) {
@@ -11628,6 +11771,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 4.0 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.warlord);
       double shieldMult = 0.25;
       // Hardcore set "Nezdolná Pevnost" (Ochránce, 4pc): dvojnásobný štít.
       if (specialization == 2 && activeHardcoreSetTier >= 4) shieldMult *= 2;
@@ -11654,6 +11798,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 1 && activeHardcoreSetTier >= 4) dmg = (dmg * 1.5).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.shadowMaster);
       _applyAbilityDot(dmg);
       // Hardcore set "Stínový Vládce" (Stín, 4pc): aplikuje i Jed.
       if (specialization == 3 && activeHardcoreSetTier >= 4) {
@@ -11742,6 +11887,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.arcanist);
       double manaRefundMult = 0.3;
       // Hardcore set "Věčný Plamen" (Plamen, 4pc): vrátí dvojnásobek many.
       if (specialization == 1 && activeHardcoreSetTier >= 4) manaRefundMult *= 2;
@@ -11760,6 +11906,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 4) dmg = (dmg * 1.5).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.bladeMaster);
       _applyAbilityDot(dmg);
       secondAbilityCooldown = _scaledCooldown(9);
       // Hardcore set "Elegantní Tanec" (Grácie, 4pc): -30 % cooldown.
@@ -11773,6 +11920,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.grandmaster);
       double shieldMult = 0.20;
       // Hardcore set "Skalní Pevnost" (Skála, 4pc): dvojnásobný štít.
       if (specialization == 2 && activeHardcoreSetTier >= 4) shieldMult *= 2;
@@ -11809,6 +11957,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 3.2 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.moonfury);
       if (specialization == 2) {
         final shieldGain = (maxHp * 0.18 * specAbilitySustainMod).toInt();
         bonusShield += shieldGain;
@@ -11824,6 +11973,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 4.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.retributor);
       if (specialization == 1) {
         final shieldGain = (maxHp * 0.15 * specAbilitySustainMod).toInt();
         bonusShield += shieldGain;
@@ -11839,6 +11989,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 4.8 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.demonSlayer);
       if (specialization == 2) {
         final selfHeal = (dmg * 0.25 * specAbilitySustainMod).toInt();
         hp = (hp + selfHeal).clamp(0, maxHp);
@@ -11849,6 +12000,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 4.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.deathSovereign);
       if (specialization == 2) {
         final dot = (dmg * 0.15 / 3).round();
         enemyEffects.removeWhere((e) => e.name == "Rozklad");
@@ -11874,6 +12026,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 7.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.valhallaWarrior);
       final shieldGain = (maxHp * 0.50 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
       _applyShieldCap();
@@ -11897,6 +12050,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 8.0).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.voidStalker);
       hp = maxHp;
       _applyAbilityDot(dmg);
       // Hardcore set "Stínový Vládce" (Stín, 6pc): Jed prodloužen na 10 kol.
@@ -11922,6 +12076,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 6) dmg *= 2;
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.lightBearer);
       final shieldGain = (maxHp * 0.50 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
       _applyShieldCap();
@@ -11946,6 +12101,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       physDmg = _minDmg(physDmg, physDmg - effDef);
       int magDmg  = (magAtk  * 2.0 * triple).toInt();
       currentEnemyHp -= _mitigateEnemyDamage(physDmg);
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: physDmg, spellFxKind: SpellFxKind.deathReaper);
       _applyKrevPassiveLifesteal(physDmg);
       // Hardcore set "Morová Rána" (Nákaza, 6pc): navíc nasadí Prokletí.
       if (specialization == 3 && activeHardcoreSetTier >= 6) {
@@ -11985,6 +12141,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.archmage);
       double shieldMult = 0.40;
       // Hardcore set "Věčný Led" (Led, 6pc): dvojnásobný štít.
       if (specialization == 2 && activeHardcoreSetTier >= 6) shieldMult *= 2;
@@ -12008,6 +12165,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (specialization == 3 && activeHardcoreSetTier >= 6) dmg = (dmg * critDamageMultiplier).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.stormblade);
       hp = maxHp;
       _applyAbilityDot(dmg);
       thirdAbilityCooldown = _scaledCooldown(15);
@@ -12022,6 +12180,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 7.5 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.enlightened);
       hp = maxHp;
       double shieldMult = 0.40;
       // Hardcore set "Skalní Pevnost" (Skála, 6pc): 1 kolo naprosté nezranitelnosti - řešeno níž samostatně.
@@ -12062,6 +12221,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 3.6 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.elderTreant);
       hp = maxHp;
       final shieldGain = (maxHp * 0.35 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
@@ -12073,6 +12233,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 3.6 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.crusader);
       hp = maxHp;
       final shieldGain = (maxHp * 0.40 * specAbilitySustainMod).toInt();
       bonusShield += shieldGain;
@@ -12084,6 +12245,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (physAtk * 3.2 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.abyssWalker);
       lifestealTurns += 10;
       if (specialization == 2) {
         final shieldGain = (maxHp * 0.30 * specAbilitySustainMod).toInt();
@@ -12096,6 +12258,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int dmg = (magAtk * 3.2 * specAbilityDamageMod).toInt();
       dmg = _minDmg(dmg, dmg - effDef);
       currentEnemyHp -= _mitigateEnemyDamage(applyAbilityExecute(dmg, currentEnemyHp, currentEnemyMaxHp));
+      _pushFx(FxKind.normalDamage, FxSide.enemy, value: dmg, spellFxKind: SpellFxKind.graveWarden);
       hp = maxHp;
       lifestealTurns += 8;
       thirdAbilityCooldown = _scaledCooldown(15);

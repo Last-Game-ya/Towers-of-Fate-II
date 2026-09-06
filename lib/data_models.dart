@@ -662,7 +662,39 @@ enum RelicBurstKind { iceShatter, plagueApocalypse, bloodEmperor, executionShot,
 // výš, který je jen recolor jednoho sdíleného shockwave+shard efektu pro relic finishery.
 // Tohle jsou vlastní, per-spell odlišné tvary (viz _SpellFxPainter ve screens.dart).
 // Postupně doplňováno napříč třídami - zatím Death Knight (jeho jediné 2 aktivní spelly).
-enum SpellFxKind { dkCursedStrike, dkCurseExplosion, healerBlessing, healerJudgment }
+// SpellFxKind: dkCursedStrike/dkCurseExplosion/healerBlessing/healerJudgment mají vlastní ručně
+// malovaný CustomPainter (viz _SpellFxPainter v screens.dart). Všechny ostatní níž jedou přes
+// generický "archetyp" systém (_paintArchetype + kSpecTheme v screens.dart) - barvy + tvarový
+// motiv podle specializace, ať má KAŽDÁ zbývající specializace ve hře vlastní odlišný vizuál,
+// aniž by pro každou musel existovat ručně psaný painter.
+enum SpellFxKind {
+  dkCursedStrike, dkCurseExplosion, healerBlessing, healerJudgment,
+  // Warrior
+  berserk, warlord, valhallaWarrior,
+  // Hunter
+  assassin, shadowMaster, voidStalker,
+  // Healer (zbývající tier - Priest/Prorok už mají vlastní výš)
+  lightBearer,
+  // Death Knight (zbývající tier - DarkKnight/PlagueLord už mají vlastní výš)
+  deathReaper,
+  // Mage
+  elementalist, arcanist, archmage,
+  // Duelist
+  bladeDancer, bladeMaster, stormblade,
+  // Monk
+  disciple, grandmaster, enlightened,
+  // Druid
+  astralDruid, moonfury, elderTreant,
+  // Paladin
+  faithGuardian, retributor, crusader,
+  // Demon Hunter
+  felBlade, demonSlayer, abyssWalker,
+  // Necromancer
+  boneLord, deathSovereign, graveWarden,
+  // ===== Nepřátelská schopnost (EnemyAbilityKind, viz enemyAbilityEffects) - seskupeno
+  // tematicky, ne 1:1 na kind, protože 19 kindů je hlavně mechanika, ne unikátní vizuál. =====
+  lairBossStrike, lairBossCurse, lairBossPlague, lairBossBind, lairBossEmpower, lairBossDrain,
+}
 
 class CombatFxEvent {
   final int id;
