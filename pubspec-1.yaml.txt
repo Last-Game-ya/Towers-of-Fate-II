@@ -1,0 +1,31 @@
+name: towers_of_fate_ii
+description: "Towers of Fate II - idle RPG"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.2
+  shared_preferences: ^2.2.3
+  google_fonts: ^6.2.1
+  flutter_svg: ^2.0.10+1
+
+  # Zakomentováno - RewardedAdService v main.dart je zatím MOCK (viz komentář u třídy).
+  # Odkomentuj až budeš chtít napojit skutečné rewarded reklamy, a uprav main() podle
+  # instrukcí přímo u třídy RewardedAdService v main.dart.
+  # google_mobile_ads: ^5.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/portraits/
