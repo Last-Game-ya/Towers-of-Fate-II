@@ -1779,12 +1779,34 @@ class _MainMenuScreenState extends State<MainMenuScreen> with SingleTickerProvid
 
       return Scaffold(
         body: Container(
-          // Atmosférické pozadí - dřív úplně plochá barva, teď radiální vinětka + jemný
-          // "dýchající" zlatý glow za erbem, ať je vstupní obrazovka hry hned na první pohled epická.
+          // Atmosférické pozadí - radiální vinětka + dýchající zlatý glow za erbem.
+          // TODO až bude hotový i horský background (backroud.png): přidat Positioned.fill
+          // s Image.asset('assets/images/scenes/adventure_bg.png', fit: BoxFit.cover) úplně
+          // dole ve Stacku (pod siluetou Věže i pod _SceneLifeOverlay), ať Věž stojí na skutečné
+          // krajině místo na gradientu.
           decoration: const BoxDecoration(
             gradient: RadialGradient(center: Alignment.topCenter, radius: 1.3, colors: [Color(0xFF241C10), FantasyColors.abyss]),
           ),
-          child: SafeArea(
+          child: Stack(
+            children: [
+              // Silueta Věže - kotví celou scénu vizuálně (stejná role jako v Dobrodružství mapě,
+              // jen zblízka a bez ostatních budov okolo). Umístěná nahoře uprostřed, za obsahem.
+              Positioned(
+                top: -20, left: 0, right: 0,
+                child: Center(
+                  child: Opacity(
+                    opacity: 0.85,
+                    child: Image.asset('assets/images/scenes/tower_silhouette.png', height: 420, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+              // Živá vrstva - poletující jiskry/embery (danger paleta, stejná jako
+              // Dobrodružství) + jemně blikající světlo poblíž arkánového okna Věže, ať vstupní
+              // obrazovka není jediné mrtvé místo ve hře.
+              Positioned.fill(
+                child: _SceneLifeOverlay(danger: true, smokePoints: const [], glowPoints: const [Offset(0.5, 0.13)]),
+              ),
+              SafeArea(
             child: Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
@@ -1947,7 +1969,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> with SingleTickerProvid
               ),
             ),
           ),
-        ),
+              ),
+            ],
+          ),
         ),
       );
     });
@@ -2466,7 +2490,21 @@ class LairScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(state.currentLairBossName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                            Builder(builder: (context) {
+                              final (bossIcon, bossColor) = state.bossThemeIconFor({'name': state.currentLairBossName, 'ability': state.currentLairBossAbility});
+                              final bossPortrait = kBossPortraitAssets[state.currentLairBossName];
+                              return Row(children: [
+                                Container(
+                                  width: 32, height: 32, padding: bossPortrait != null ? EdgeInsets.zero : const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [bossColor.withOpacity(.5), const Color(0xFF1E1613)]), border: Border.all(color: bossColor.withOpacity(.7), width: 1.5), boxShadow: [BoxShadow(color: bossColor.withOpacity(.6), blurRadius: 10)]),
+                                  child: bossPortrait != null
+                                      ? ClipOval(child: LivingPortrait(assetPath: bossPortrait, accent: bossColor, mode: PortraitLifeMode.subtle))
+                                      : Icon(bossIcon, size: 16, color: bossColor),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(state.currentLairBossName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.redAccent))),
+                              ]);
+                            }),
                             const SizedBox(height: 4),
                             Text(tr("Schopnost: ${state.currentLairBossAbility}", "Ability: ${state.currentLairBossAbility}"), style: const TextStyle(fontSize: 10, color: Colors.amberAccent)),
                             if (state.currentLairBossLore.isNotEmpty) ...[
@@ -3899,11 +3937,10 @@ class _ClassBadgeState extends State<_ClassBadge> with SingleTickerProviderState
               ),
               if (portraitPath != null)
                 ClipOval(
-                  child: Image.asset(
-                    portraitPath,
+                  child: SizedBox(
                     width: widget.size - 6,
                     height: widget.size - 6,
-                    fit: BoxFit.cover,
+                    child: LivingPortrait(assetPath: portraitPath, accent: widget.accent, mode: PortraitLifeMode.full),
                   ),
                 )
               else
@@ -4001,7 +4038,20 @@ class TowerScreen extends StatelessWidget {
       if (state.heroClass == HeroClass.none) {
         return Stack(
           children: [
-            Positioned.fill(child: CustomPaint(painter: const _ClassSelectHallPainter())),
+            // Skutečná ilustrace (viz konverzace o Copilot promptu "Síň Povolání") nahradila
+            // dřívější procedurální _ClassSelectHallPainter - ten zůstává v souboru nepoužitý
+            // (neškodí), kdyby bylo někdy potřeba fallback bez obrázku.
+            Positioned.fill(child: Image.asset('assets/images/scenes/class_hall.png', fit: BoxFit.cover)),
+            // Živá vrstva - přepočítané pozice podle skutečného obrázku class_hall.png (dřív
+            // odhad pro procedurální _ClassSelectHallPainter): 4 pochodně na zdi + jemný
+            // prach/kadidlo stoupající od run kruhu na podlaze (viz pentagram v popředí obrázku).
+            Positioned.fill(
+              child: _SceneLifeOverlay(
+                danger: false,
+                smokePoints: const [Offset(0.5, 0.76)],
+                glowPoints: const [Offset(0.15, 0.44), Offset(0.85, 0.44), Offset(0.30, 0.53), Offset(0.70, 0.53)],
+              ),
+            ),
             Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
@@ -4206,7 +4256,10 @@ class TowerScreen extends StatelessWidget {
                               // Velký obdélníkový portrét přes celou šířku karty místo dřívějšího
                               // malého 64px kulatého avataru (min. 2x větší) - skutečná ilustrace
                               // třídy jako dominantní vizuál karty, jméno přes gradientní scrim
-                              // dole na obrázku místo pod ním.
+                              // dole na obrázku místo pod ním. Jen `subtle` dýchání - v boji
+                              // portrét soutěží o pozornost s HP/dmg čísly, takže nic víc (žádný
+                              // zoom navíc, žádné částice - na to je class picker/Profil, viz
+                              // PortraitLifeMode.full tam).
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
                                 child: SizedBox(
@@ -4215,7 +4268,7 @@ class TowerScreen extends StatelessWidget {
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [
-                                      Image.asset(kClassPortraitAssets[state.heroClass]!, fit: BoxFit.cover),
+                                      LivingPortrait(assetPath: kClassPortraitAssets[state.heroClass]!, accent: heroAccent, mode: PortraitLifeMode.subtle),
                                       DecoratedBox(
                                         decoration: BoxDecoration(border: Border.all(color: heroAccent.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(12)),
                                       ),
@@ -4337,12 +4390,15 @@ class TowerScreen extends StatelessWidget {
                           if (state.portraitCombatMode) ...[
                             Builder(builder: (context) {
                               final (bossIcon, bossColor) = state.bossThemeIconFor({'name': state.currentEnemyName, 'ability': state.currentEnemyAbility});
+                              final bossPortrait = kBossPortraitAssets[state.currentEnemyName] ?? (state.isBoss ? null : kRegularEnemyPortraitAssets[state.currentEnemyName]);
                               return Center(
                                 child: Column(children: [
                                   Container(
-                                    width: 64, height: 64, padding: const EdgeInsets.all(12),
+                                    width: 64, height: 64, padding: bossPortrait != null ? EdgeInsets.zero : const EdgeInsets.all(12),
                                     decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [bossColor.withOpacity(.5), const Color(0xFF1E1613)]), border: Border.all(color: bossColor.withOpacity(.7), width: 2), boxShadow: [BoxShadow(color: bossColor.withOpacity(.6), blurRadius: 14)]),
-                                    child: Icon(bossIcon, size: 32, color: bossColor),
+                                    child: bossPortrait != null
+                                        ? ClipOval(child: LivingPortrait(assetPath: bossPortrait, accent: bossColor, mode: PortraitLifeMode.subtle))
+                                        : Icon(bossIcon, size: 32, color: bossColor),
                                   ),
                                   const SizedBox(height: 6),
                                   Row(mainAxisSize: MainAxisSize.min, children: [
@@ -4361,7 +4417,9 @@ class TowerScreen extends StatelessWidget {
                               width: 26, height: 26,
                               decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [enemyAccent.withOpacity(.45), const Color(0xFF1E1613)]), boxShadow: [BoxShadow(color: enemyAccent.withOpacity(.6), blurRadius: 8)]),
                               alignment: Alignment.center,
-                              child: Icon(state.isBoss ? Icons.local_fire_department : Icons.pest_control, size: 13, color: enemyAccent),
+                              child: (kBossPortraitAssets[state.currentEnemyName] ?? (state.isBoss ? null : kRegularEnemyPortraitAssets[state.currentEnemyName])) != null
+                                  ? ClipOval(child: Image.asset(kBossPortraitAssets[state.currentEnemyName] ?? kRegularEnemyPortraitAssets[state.currentEnemyName]!, width: 26, height: 26, fit: BoxFit.cover))
+                                  : Icon(state.isBoss ? Icons.local_fire_department : Icons.pest_control, size: 13, color: enemyAccent),
                             ),
                             const SizedBox(width: 7),
                             Expanded(child: Text(state.currentEnemyName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: enemyAccent))),

@@ -70,14 +70,31 @@ enum HeroClass { none, warrior, hunter, healer, deathknight, mage, duelist, monk
 // třída chybí v mapě a UI (viz _ClassBadge ve screens.dart) spadne zpět na starý procedurální
 // ikonový systém (FantasyIconRegistry). Postupně doplňovat, jak budou další portréty hotové -
 // nic dalšího v kódu se měnit nemusí, stačí sem přidat řádek + soubor do assets/images/portraits/.
-const Map<HeroClass, String> kClassPortraitAssets = {
-  HeroClass.warrior: 'assets/images/portraits/class_warrior.png',
-  HeroClass.hunter: 'assets/images/portraits/class_hunter.png',
-  HeroClass.deathknight: 'assets/images/portraits/class_deathknight.png',
-  HeroClass.demonhunter: 'assets/images/portraits/class_demonhunter.png',
-  HeroClass.mage: 'assets/images/portraits/class_mage.png',
-  HeroClass.druid: 'assets/images/portraits/class_druid.png',
-  HeroClass.healer: 'assets/images/portraits/class_healer.png',
+// Vyprázdněno - původní portréty smazány (čeká se na novou sadu ve stylu bossů/nepřátel/scén).
+// Až budou hotové nové, sem se zase přidají řádky - stejný fallback princip jako u bossů výš, UI
+// (viz _ClassBadge/LivingPortrait ve screens.dart) mezitím spadne zpět na procedurální ikony.
+const Map<HeroClass, String> kClassPortraitAssets = {};
+
+// ===== PORTRÉTY BOSSŮ (AI-generovaná ilustrace, stejný princip jako kClassPortraitAssets výš) =====
+// Klíč je jméno bosse (currentEnemyName ve Věži / currentLairBossName v Doupěti) - Doupě i Věž
+// losují ze stejného 100-položkového poolu (getBossDetails v game_state.dart), takže jedna mapa
+// pokrývá oba combat kontexty najednou. Chybějící boss v mapě = fallback na starý procedurální
+// bossThemeIconFor ikonový systém (viz screens.dart) - nic dalšího se měnit nemusí, jen sem
+// postupně přidávat řádky + soubory do assets/images/bosses/, jak budou hotové.
+const Map<String, String> kBossPortraitAssets = {
+  'Ignis, Hrdelní Dravec': 'assets/images/bosses/boss_01_ignis.png',
+  'Vrak, Zpustošitel Hlubin': 'assets/images/bosses/boss_02_vrak.png',
+  'Morana, Královna Stínů': 'assets/images/bosses/boss_03_morana.png',
+  'Gorath, Železný Pěstoun': 'assets/images/bosses/boss_04_gorath.png',
+  'Malakor, Vládce Popela': 'assets/images/bosses/boss_05_malakor.png',
+};
+
+// ===== PORTRÉTY BĚŽNÝCH NEPŘÁTEL (jiný pool než bossové - viz _regularEnemyPool v
+// game_state.dart, cyklí se na patrech Věže bez bosse) - stejný fallback princip. =====
+const Map<String, String> kRegularEnemyPortraitAssets = {
+  'Goblin Nájezdník': 'assets/images/monsters/enemy_goblin_raider.png',
+  'Kostěný Bijec': 'assets/images/monsters/enemy_bone_basher.png',
+  'Bažinný Slizoun': 'assets/images/monsters/enemy_swamp_ooze.png',
 };
 
 // ===== RUNY OSUDOVÉ VOLBY (Ma-Túš, Runový Čaroděj - 2. záložka) =====

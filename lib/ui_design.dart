@@ -1991,6 +1991,99 @@ class _ChestPainter extends CustomPainter {
 
 /// Šestihranný odznak (jako vyřezávaná pečeť) používaný v dlaždicích na
 /// domovské obrazovce (HubScreen) místo kulatých emoji ikon.
+/// "Živý" portrét třídy - animovaný obal kolem statického Image.asset, ať artwork nepůsobí jako
+/// plochá fotka. Dva režimy podle toho, KDE se portrét zobrazuje (viz rozhodnutí v konverzaci):
+/// - `subtle` (v boji) - jen skoro podprahové "dýchání" (scale ±0.0075), NIC jiného. Combat
+///   portrét soutěží o pozornost s HP/dmg čísly/ikonami spellů, takže musí zůstat v pozadí.
+/// - `full` (výběr povolání, Profil - tam, kde je portrét TA hlavní věc na obrazovce a nic jiného
+///   o pozornost nesoutěží) - znatelnější dýchání + pomalý Ken Burns posun/zoom + jemné
+///   vzhůru stoupající ambientní tečky v barvě třídy (accent).
+enum PortraitLifeMode { subtle, full }
+
+class LivingPortrait extends StatefulWidget {
+  final String assetPath;
+  final Color accent;
+  final PortraitLifeMode mode;
+  final BorderRadius borderRadius;
+  const LivingPortrait({super.key, required this.assetPath, required this.accent, required this.mode, this.borderRadius = BorderRadius.zero});
+
+  @override
+  State<LivingPortrait> createState() => _LivingPortraitState();
+}
+
+class _AmbientMote {
+  final double dx; // -1..1, vodorovná pozice (Alignment)
+  final double delay; // 0..1, fázový posun ať tečky nestoupají všechny najednou
+  const _AmbientMote(this.dx, this.delay);
+}
+
+class _LivingPortraitState extends State<LivingPortrait> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+  late final List<_AmbientMote> _motes;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: Duration(seconds: widget.mode == PortraitLifeMode.full ? 10 : 5))..repeat();
+    final rnd = Random(widget.assetPath.hashCode);
+    _motes = widget.mode == PortraitLifeMode.full ? List.generate(5, (i) => _AmbientMote(rnd.nextDouble() * 1.6 - 0.8, rnd.nextDouble())) : const [];
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        final t = _c.value;
+        double scale;
+        Offset pan = Offset.zero;
+        if (widget.mode == PortraitLifeMode.subtle) {
+          scale = 1.0 + sin(t * 2 * pi) * 0.0075;
+        } else {
+          scale = 1.06 + sin(t * 2 * pi) * 0.02;
+          pan = Offset(sin(t * 2 * pi * 0.5) * 6, cos(t * 2 * pi * 0.4) * 4);
+        }
+        return ClipRRect(
+          borderRadius: widget.borderRadius,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Transform.translate(
+                offset: pan,
+                child: Transform.scale(scale: scale, child: Image.asset(widget.assetPath, fit: BoxFit.cover)),
+              ),
+              for (final m in _motes) _mote(m, t),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _mote(_AmbientMote m, double t) {
+    final localT = (t + m.delay) % 1.0;
+    final y = 1.0 - localT * 2; // 1 (dole) -> -1 (nahoře) - stoupá směrem vzhůru portrétem
+    final opacity = sin(localT * pi).clamp(0.0, 1.0); // fade in na startu, fade out na konci dráhy
+    return Align(
+      alignment: Alignment(m.dx, y),
+      child: Opacity(
+        opacity: opacity * 0.65,
+        child: Container(
+          width: 4, height: 4,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: widget.accent, boxShadow: [BoxShadow(color: widget.accent.withOpacity(.85), blurRadius: 5)]),
+        ),
+      ),
+    );
+  }
+}
+
+
 class HexBadgePainter extends CustomPainter {
   final Color fill;
   final Color stroke;
@@ -2870,7 +2963,16 @@ class SceneMapView extends StatelessWidget {
   final Color titleAccent;
   final bool danger;
   final List<SceneBuildingSpot> buildings;
-  const SceneMapView({super.key, required this.title, required this.titleIcon, required this.titleAccent, required this.danger, required this.buildings});
+  // Ambientní "živá" vrstva navrch pozadí - funguje stejně nad procedurálním painterem i nad
+  // reálným obrázkem. `smokePoints`/`glowPoints` jsou frakční pozice (0..1) komínů a
+  // rozsvícených oken/luceren - jednotlivé scény si je dají podle toho, co mají na obrázku.
+  final List<Offset> smokePoints;
+  final List<Offset> glowPoints;
+  // Cesta ke skutečné vygenerované ilustraci scény (viz konverzace o Copilot promptech) - pokud
+  // je zadaná, nahradí procedurální _SceneBackdropPainter. Zůstává null, dokud daná scéna nemá
+  // hotový obrázek - pak se použije starý procedurální fallback, nic dalšího se měnit nemusí.
+  final String? backgroundImage;
+  const SceneMapView({super.key, required this.title, required this.titleIcon, required this.titleAccent, required this.danger, required this.buildings, this.smokePoints = const [], this.glowPoints = const [], this.backgroundImage});
 
   @override
   Widget build(BuildContext context) {
@@ -2902,13 +3004,33 @@ class SceneMapView extends StatelessWidget {
                   final size = Size(constraints.maxWidth, constraints.maxHeight);
                   return Stack(
                     children: [
-                      Positioned.fill(child: CustomPaint(painter: _SceneBackdropPainter(danger: danger, nodePositions: buildings.map((b) => Offset(b.dx, b.dy)).toList()))),
+                      Positioned.fill(
+                        child: backgroundImage != null
+                            ? Image.asset(backgroundImage!, fit: BoxFit.cover)
+                            : CustomPaint(painter: _SceneBackdropPainter(danger: danger, nodePositions: buildings.map((b) => Offset(b.dx, b.dy)).toList())),
+                      ),
+                      Positioned.fill(child: _SceneLifeOverlay(danger: danger, smokePoints: smokePoints, glowPoints: glowPoints)),
                       for (final b in buildings)
                         Positioned(
                           left: (b.dx * size.width - (35 * b.prominence)).clamp(0.0, size.width - 70 * b.prominence),
                           top: (b.dy * size.height - (37 * b.prominence)).clamp(0.0, size.height - 74 * b.prominence),
                           child: _SceneBuildingMarker(spot: b),
                         ),
+                      // Mlha nad ještě neodemčenými lokacemi - hustota vychází přímo z
+                      // unlockProgress dané budovy, takže řídne sama, jak se hráč blíží
+                      // odemykacímu levelu, a úplně zmizí v okamžiku odemčení (spot.locked
+                      // přestane platit → vypadne z filtru níž). Nad markerem, ne pod ním -
+                      // aby lokaci vizuálně "zahalovala", ale IgnorePointer uvnitř nechá tap
+                      // proklouznout na budovu pod ní.
+                      Positioned.fill(
+                        child: _SceneFogOverlay(
+                          patches: [
+                            for (final b in buildings)
+                              if (b.locked)
+                                _FogPatch(pos: Offset(b.dx, b.dy), density: (1 - (b.unlockProgress ?? 0).clamp(0.0, 1.0) * 0.7).clamp(0.0, 1.0), prominence: b.prominence),
+                          ],
+                        ),
+                      ),
                     ],
                   );
                 }),
@@ -2919,6 +3041,172 @@ class SceneMapView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Ambientní "živá" vrstva scény - kouř z komínů, blikající světla (okna/lucerny) a poletující
+/// světlušky/prach napříč celou mapou. Vlastní nekonečně opakující se AnimationController, žádná
+/// závislost na herním stavu - jede sama na pozadí, dokud je scéna zobrazená.
+class _SceneLifeOverlay extends StatefulWidget {
+  final bool danger;
+  final List<Offset> smokePoints;
+  final List<Offset> glowPoints;
+  const _SceneLifeOverlay({required this.danger, required this.smokePoints, required this.glowPoints});
+
+  @override
+  State<_SceneLifeOverlay> createState() => _SceneLifeOverlayState();
+}
+
+class _SceneLifeOverlayState extends State<_SceneLifeOverlay> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.smokePoints.isEmpty && widget.glowPoints.isEmpty) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) => CustomPaint(
+          painter: _SceneLifePainter(t: _c.value, danger: widget.danger, smokePoints: widget.smokePoints, glowPoints: widget.glowPoints),
+          size: Size.infinite,
+        ),
+      ),
+    );
+  }
+}
+
+class _SceneLifePainter extends CustomPainter {
+  final double t;
+  final bool danger;
+  final List<Offset> smokePoints;
+  final List<Offset> glowPoints;
+  _SceneLifePainter({required this.t, required this.danger, required this.smokePoints, required this.glowPoints});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Kouř z komínů - 3 částice na komín, každá s jinou fází, stoupá a rozplývá se.
+    for (int p = 0; p < smokePoints.length; p++) {
+      final base = Offset(smokePoints[p].dx * size.width, smokePoints[p].dy * size.height);
+      for (int i = 0; i < 3; i++) {
+        final phase = (t + i / 3 + p * 0.37) % 1.0;
+        final dy = -phase * 46;
+        final dx = sin(phase * pi * 2 + p) * 6;
+        final r = 3 + phase * 6;
+        final opacity = (1 - phase) * 0.30;
+        canvas.drawCircle(base + Offset(dx, dy), r, Paint()..color = Colors.white.withOpacity(opacity)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
+      }
+    }
+    // Blikající světla (okna/lucerny) - teplá záře, jas jemně kolísá v různé fázi u každého.
+    for (int i = 0; i < glowPoints.length; i++) {
+      final base = Offset(glowPoints[i].dx * size.width, glowPoints[i].dy * size.height);
+      final flicker = 0.5 + 0.5 * sin(t * 2 * pi * (1.3 + i * 0.21) + i);
+      canvas.drawCircle(base, 5 + flicker * 2, Paint()..color = const Color(0xFFFFD37A).withOpacity(0.22 + flicker * 0.33)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    }
+    // Poletující světlušky/jiskry napříč celou scénou - teplá barva u Města, ohnivější u Dobrodružství.
+    final rnd = Random(danger ? 99 : 42);
+    final motColor = danger ? const Color(0xFFFF8A65) : const Color(0xFFFFF3B0);
+    for (int i = 0; i < 14; i++) {
+      final seed = rnd.nextDouble();
+      final speedSeed = rnd.nextDouble();
+      final phase = (t * (0.3 + speedSeed * 0.4) + seed) % 1.0;
+      final x = (seed * 1.3 - 0.15 + sin(phase * pi * 2) * 0.03) * size.width;
+      final y = (1 - phase) * size.height;
+      final opacity = sin(phase * pi).clamp(0.0, 1.0) * 0.5;
+      canvas.drawCircle(Offset(x, y), 1.6, Paint()..color = motColor.withOpacity(opacity)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SceneLifePainter old) => old.t != t;
+}
+
+/// Mlha nad ještě neodemčenou lokací na mapě. `density` (0..1) řídne přímo podle
+/// unlockProgress dané budovy (viz volání v SceneMapView výš) - hustá daleko od odemčení,
+/// skoro průhledná těsně před ním, a úplně zmizí v okamžiku odemčení (locked přestane platit).
+class _FogPatch {
+  final Offset pos; // frakční pozice 0..1
+  final double density; // 0..1
+  final double prominence;
+  const _FogPatch({required this.pos, required this.density, required this.prominence});
+}
+
+class _SceneFogOverlay extends StatefulWidget {
+  final List<_FogPatch> patches;
+  const _SceneFogOverlay({required this.patches});
+
+  @override
+  State<_SceneFogOverlay> createState() => _SceneFogOverlayState();
+}
+
+class _SceneFogOverlayState extends State<_SceneFogOverlay> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pomalý cyklus (20s) - mlha se má nenápadně vlnit, ne "bublat".
+    _c = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.patches.isEmpty) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) => CustomPaint(painter: _SceneFogPainter(t: _c.value, patches: widget.patches), size: Size.infinite),
+      ),
+    );
+  }
+}
+
+class _SceneFogPainter extends CustomPainter {
+  final double t;
+  final List<_FogPatch> patches;
+  _SceneFogPainter({required this.t, required this.patches});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final p in patches) {
+      final base = Offset(p.pos.dx * size.width, p.pos.dy * size.height);
+      final baseR = 46 * p.prominence;
+      // 4 překrývající se měkké mlžné shluky, pomalu driftující kolem pozice budovy - "živá"
+      // mlha místo statické šedé skvrny, ladí to s ostatní ambientní vrstvou (kouř/světla).
+      for (int i = 0; i < 4; i++) {
+        final phase = t * 2 * pi + i * (pi / 2);
+        final dx = sin(phase) * 10 * p.prominence;
+        final dy = cos(phase * 0.7) * 6 * p.prominence;
+        final r = baseR * (0.75 + 0.25 * sin(phase * 1.3));
+        canvas.drawCircle(
+          base + Offset(dx, dy),
+          r,
+          Paint()
+            ..color = const Color(0xFFC7CDD6).withOpacity(0.22 * p.density)
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 14 * p.prominence),
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SceneFogPainter old) => old.t != t || old.patches.length != patches.length;
 }
 
 /// Záložka "Dobrodružství" ve spodní navigaci - dřív horní sekce v HubScreen. Stejná byznys
@@ -2933,17 +3221,19 @@ class AdventureScreen extends StatelessWidget {
       final buildings = <SceneBuildingSpot>[
         SceneBuildingSpot(
           // Věž Osudu - hlavní herní smyčka, dřív permanentní bottom-nav tab, teď nejvýraznější
-          // (a vždy odemčená) budova hned vpředu uprostřed mapy Dobrodružství - odsud "vede"
-          // vizuálně celá scéna (viz hub bod v _SceneBackdropPainter, cestičky se sbíhají sem).
+          // (a vždy odemčená) budova hned vpředu uprostřed mapy Dobrodružství. Pozice
+          // přepočítaná podle skutečného obrázku dobrodruzstvi.png - vstup do věže je cca v
+          // polovině výšky scény, ne úplně vepředu (věž samotná sahá až k obloze).
           iconType: FantasyIconType.systemTower, accent: const Color(0xFF1E88E5), fill: const Color(0xFF0D2A42),
           label: tr('Věž Osudu', 'Tower of Fate'),
           description: tr('Hlavní věž - postupuj patro po patře, bojuj s nepřáteli a bossy, sbírej vybavení a levuj postavu. Tvůj hlavní zdroj postupu ve hře, dostupný od začátku.',
               'The main tower - climb floor by floor, fight enemies and bosses, collect gear and level up your character. Your main source of progress in the game, available from the start.'),
-          dx: 0.50, dy: 0.88, prominence: 1.4,
+          dx: 0.50, dy: 0.50, prominence: 1.4,
           onTap: () => openWorldScreen(context, tr('Věž Osudu', 'Tower of Fate'), const TowerScreen(), theme: const Color(0xFF1E88E5)),
         ),
         if (state.isHubTileRevealed(GameState.lairUnlockLevel))
           SceneBuildingSpot(
+            // Lebkovitá jeskyně vlevo nahoře na obrázku.
             iconType: FantasyIconType.systemBossLair, accent: FantasyColors2.hp, fill: const Color(0xFF331414),
             label: tr('Doupě bosse', 'Boss Lair'),
             locked: !state.lairUnlocked,
@@ -2952,7 +3242,7 @@ class AdventureScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.lairUnlockLevel}', 'Unlocks at level ${GameState.lairUnlockLevel}'),
             description: tr('Řada čím dál těžších bossů se stoupající obtížností (Normal → Hardcore → Předpeklí → Peklo). Poražení bosse dává Zlato, Krystaly a Suroviny - od patra 30 i Esenci Moci na vylepšení legendárního vybavení.',
                 'A series of increasingly tough bosses across rising difficulties (Normal → Hardcore → Předpeklí → Peklo). Defeating a boss gives Gold, Crystals and Materials - from floor 30 also Power Essence for upgrading legendary gear.'),
-            dx: 0.20, dy: 0.35, prominence: 1.05,
+            dx: 0.16, dy: 0.30, prominence: 1.05,
             onTap: () {
               if (!state.lairUnlocked) return;
               state.markHubTileSeen('lair');
@@ -2961,6 +3251,7 @@ class AdventureScreen extends StatelessWidget {
           ),
         if (state.isHubTileRevealed(GameState.arenaUnlockLevel))
           SceneBuildingSpot(
+            // Kamenná aréna s kruhovými tribunami vpravo nahoře.
             iconType: FantasyIconType.systemBossLair, accent: const Color(0xFFFFD700), fill: const Color(0xFF2A2308),
             label: tr('Aréna', 'Arena'),
             locked: !state.arenaUnlocked,
@@ -2969,7 +3260,7 @@ class AdventureScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.arenaUnlockLevel}', 'Unlocks at level ${GameState.arenaUnlockLevel}'),
             description: tr('Souboj proti AI generovanému soupeři tvé třídy za Zlato, Magický prach a truhly. Dobrý zdroj postupu, i když jsi zrovna zaseklý na patře ve Věži.',
                 'Fight an AI-generated opponent of your class for Gold, Magic Dust and chests. A solid source of progress even when you are stuck on a Tower floor.'),
-            dx: 0.72, dy: 0.24, prominence: 1.0,
+            dx: 0.82, dy: 0.38, prominence: 1.0,
             onTap: () {
               if (!state.arenaUnlocked) return;
               state.markHubTileSeen('arena');
@@ -2978,6 +3269,7 @@ class AdventureScreen extends StatelessWidget {
           ),
         if (state.isHubTileRevealed(GameState.worldBossUnlockLevel))
           SceneBuildingSpot(
+            // Žhavá rohatá příšera napůl vynořená ze země, přímo uprostřed cest.
             iconType: FantasyIconType.systemBossLair, accent: const Color(0xFFFF5A36), fill: const Color(0xFF301008),
             label: 'World Boss',
             badgeCount: state.worldBossUnlocked && state.worldBossAvailable ? 1 : null,
@@ -2987,7 +3279,7 @@ class AdventureScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.worldBossUnlockLevel}', 'Unlocks at level ${GameState.worldBossUnlockLevel}'),
             description: tr('Jednou denně dostupný extrémně silný boss. Poražení dává velkou odměnu (Zlato, Esenci Moci, Runové kameny) - pokusy navíc jdou získat za rewarded reklamu.',
                 'An extremely tough boss available once per day. Defeating it gives a big reward (Gold, Power Essence, Rune Stones) - extra attempts can be earned via a rewarded ad.'),
-            dx: 0.50, dy: 0.62, prominence: 1.25,
+            dx: 0.50, dy: 0.62, prominence: 1.15,
             onTap: () {
               if (!state.worldBossUnlocked) return;
               state.markHubTileSeen('worldboss');
@@ -2996,6 +3288,7 @@ class AdventureScreen extends StatelessWidget {
           ),
         if (state.isHubTileRevealed(GameState.riftUnlockLevel))
           SceneBuildingSpot(
+            // Fialový krystalický útvar s blesky vlevo dole.
             iconType: FantasyIconType.systemRift, accent: const Color(0xFF8B5CF6), fill: const Color(0xFF1A1030),
             label: tr('Trhlina Osudu', 'Rift of Fate'),
             badgeCount: state.riftUnlocked && state.riftAttemptsToday < state.riftEffectiveDailyLimit ? (state.riftEffectiveDailyLimit - state.riftAttemptsToday) : null,
@@ -3005,7 +3298,7 @@ class AdventureScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.riftUnlockLevel}', 'Unlocks at level ${GameState.riftUnlockLevel}'),
             description: tr('Náhodně generované výzvy s modifikátory a omezeným počtem pokusů denně. Odměnou jsou truhly s Magickým prachem/Krystaly a šance na vzácné vybavení.',
                 'Randomly generated challenges with modifiers and a limited number of daily attempts. Rewards are chests with Magic Dust/Crystals and a chance at rare gear.'),
-            dx: 0.18, dy: 0.72, prominence: 0.95,
+            dx: 0.15, dy: 0.78, prominence: 0.95,
             onTap: () {
               if (!state.riftUnlocked) return;
               state.markHubTileSeen('rift');
@@ -3014,12 +3307,13 @@ class AdventureScreen extends StatelessWidget {
           ),
         if (state.endlessScaleUnlocked)
           SceneBuildingSpot(
+            // Fialové plovoucí kamenné schodiště mizející do propasti vpravo dole.
             iconType: FantasyIconType.systemBossLair, accent: Colors.deepPurpleAccent, fill: const Color(0xFF1A0A2A),
             label: 'Endless Scale',
             isNew: !state.seenHubTiles.contains('endlessscale'),
             description: tr('Nekonečně škálující souboj bez stropu obtížnosti - test toho, jak daleko tvůj build dokáže zajít.',
                 'An endlessly scaling fight with no difficulty cap - a test of how far your build can go.'),
-            dx: 0.82, dy: 0.75, prominence: 0.9,
+            dx: 0.78, dy: 0.83, prominence: 0.9,
             onTap: () {
               state.markHubTileSeen('endlessscale');
               openWorldScreen(context, 'Endless Scale', const EndlessScaleScreen(), theme: Colors.deepPurpleAccent);
@@ -3032,6 +3326,10 @@ class AdventureScreen extends StatelessWidget {
         titleAccent: const Color(0xFFFF8000),
         danger: true,
         buildings: buildings,
+        backgroundImage: 'assets/images/scenes/adventure_bg.png',
+        // Přepočítáno podle skutečného obrázku: zářivý paprsek na vrcholu Věže, žhavá záře
+        // World Bosse, doutnající vchod do Doupěte.
+        glowPoints: const [Offset(0.50, 0.06), Offset(0.50, 0.64), Offset(0.15, 0.40)],
       );
     });
   }
@@ -3047,6 +3345,7 @@ class CityScreen extends StatelessWidget {
     return Consumer<GameState>(builder: (context, state, _) {
       final buildings = <SceneBuildingSpot>[
         SceneBuildingSpot(
+          // Dřevěná chalupa s praporcem vlevo nahoře.
           iconType: FantasyIconType.systemGuild, accent: FantasyColors2.arcaneViolet, fill: const Color(0xFF241A38),
           label: tr('Družina', 'Companions'),
           locked: state.companionsTileLocked,
@@ -3054,7 +3353,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se po první smrti', 'Unlocks after your first death'),
           description: tr('Najímej a levelu společníky, kteří ti dávají trvalý bonus síly i mimo boj. Odemkne se po tvé první smrti jako útěcha do dalšího pokusu.',
               'Recruit and level up companions that give you a permanent power bonus outside combat too. Unlocks after your first death as a consolation for the next run.'),
-          dx: 0.20, dy: 0.30, prominence: 0.9,
+          dx: 0.20, dy: 0.22, prominence: 0.9,
           onTap: () {
             if (state.companionsTileLocked) return;
             state.markHubTileSeen('companions');
@@ -3062,14 +3361,16 @@ class CityScreen extends StatelessWidget {
           },
         ),
         SceneBuildingSpot(
+          // Dřevěná nástěnka s pergameny uprostřed vpravo.
           iconType: FantasyIconType.systemQuests, accent: FantasyColors2.emberGold, fill: const Color(0xFF3A2B12),
           label: tr('Questy', 'Quests'),
           description: tr('Denní a týdenní úkoly za Zlato, Magický prach a další odměny. Pravidelný zdroj postupu, aniž bys musel celý den aktivně bojovat.',
               'Daily and weekly tasks for Gold, Magic Dust and other rewards. A steady source of progress without needing to actively fight all day.'),
-          dx: 0.72, dy: 0.20, prominence: 0.85,
+          dx: 0.68, dy: 0.31, prominence: 0.85,
           onTap: () => openWorldScreen(context, tr('Questy', 'Quests'), const QuestScreen()),
         ),
         SceneBuildingSpot(
+          // Kovárna s velkým komínem a kovadlinou uprostřed - dominanta scény.
           iconType: FantasyIconType.systemForge, accent: FantasyColors2.teal, fill: const Color(0xFF122824),
           label: tr('Kovárna', 'Forge'),
           locked: !state.blacksmithUnlocked,
@@ -3078,7 +3379,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se na levelu ${GameState.blacksmithUnlockLevel}', 'Unlocks at level ${GameState.blacksmithUnlockLevel}'),
           description: tr('Kup si vygenerované vybavení podle ranku Kováře, nebo si ho nech vykovat. Rank kováře roste s používáním a zlepšuje jak staty, tak ceny na Tržišti.',
               'Buy gear generated according to the Blacksmith rank, or have a piece forged. The rank grows with use and improves both stats and Market prices.'),
-          dx: 0.50, dy: 0.53, prominence: 1.15,
+          dx: 0.48, dy: 0.62, prominence: 1.15,
           onTap: () {
             if (!state.blacksmithUnlocked) return;
             state.markHubTileSeen('blacksmith');
@@ -3086,14 +3387,16 @@ class CityScreen extends StatelessWidget {
           },
         ),
         SceneBuildingSpot(
+          // Chalupa se zeleným kouřem z komína a svítícími lahvičkami v okně vlevo.
           iconType: FantasyIconType.systemAlchemy, accent: FantasyColors2.arcaneViolet, fill: const Color(0xFF241A38),
           label: tr('Alchymie', 'Alchemy'),
           description: tr('Vař lektvary a elixíry z nasbíraných surovin - léčení, dočasné buffy a další efekty do boje.',
               'Brew potions and elixirs from gathered materials - healing, temporary buffs and other combat effects.'),
-          dx: 0.16, dy: 0.60, prominence: 0.95,
+          dx: 0.13, dy: 0.50, prominence: 0.95,
           onTap: () => openWorldScreen(context, tr('Alchymie', 'Alchemy'), const AlchemistScreen()),
         ),
         SceneBuildingSpot(
+          // Pruhované tržní stánky s lucerničkami vpravo.
           iconType: FantasyIconType.systemMarket, accent: FantasyColors2.emberGold, fill: const Color(0xFF3A2B12),
           label: tr('Tržiště', 'Market'),
           locked: !state.marketUnlocked,
@@ -3102,7 +3405,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se na levelu ${GameState.marketUnlockLevel}', 'Unlocks at level ${GameState.marketUnlockLevel}'),
           description: tr('Nakupuj základní vybavení a lektvary za Zlato, plus dvě Speciální nabídky (Rare/Epic/Legendary/SET), které se obnovují každou hodinu.',
               'Buy basic gear and potions with Gold, plus two Featured Offers (Rare/Epic/Legendary/SET) that refresh every hour.'),
-          dx: 0.82, dy: 0.58, prominence: 1.05,
+          dx: 0.80, dy: 0.46, prominence: 1.0,
           onTap: () {
             if (!state.marketUnlocked) return;
             state.markHubTileSeen('market');
@@ -3111,6 +3414,7 @@ class CityScreen extends StatelessWidget {
         ),
         if (state.isHubTileRevealed(GameState.runeWizardTileUnlockLevel))
           SceneBuildingSpot(
+            // Modře zářící runová věž vlevo dole.
             iconType: FantasyIconType.systemRuneWizard, accent: FantasyColors2.runeIce, fill: const Color(0xFF0F1E28),
             label: tr('Runový Čaroděj', 'Rune Wizard'),
             badgeCount: state.runeWizardTileUnlocked && state.runeWizardUnlocked && state.runeTalentPoints > 0 ? state.runeTalentPoints : null,
@@ -3120,7 +3424,7 @@ class CityScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.runeWizardTileUnlockLevel}', 'Unlocks at level ${GameState.runeWizardTileUnlockLevel}'),
             description: tr('Endgame talentový strom za Runové kameny získané z bossů - trvalé pasivní bonusy nezávislé na aktuálním vybavení.',
                 'An endgame talent tree paid for with Rune Stones earned from bosses - permanent passive bonuses independent of your current gear.'),
-            dx: 0.30, dy: 0.85, prominence: 1.0,
+            dx: 0.14, dy: 0.86, prominence: 1.0,
             onTap: () {
               if (!state.runeWizardTileUnlocked) return;
               state.markHubTileSeen('runewizard');
@@ -3129,6 +3433,7 @@ class CityScreen extends StatelessWidget {
           ),
         if (state.isHubTileRevealed(GameState.runeBlacksmithUnlockLevel))
           SceneBuildingSpot(
+            // Rudě zářící runová kovárna vpravo dole.
             iconType: FantasyIconType.systemForge, accent: const Color(0xFFFF1744), fill: const Color(0xFF1F0F14),
             label: tr('Runový Kovář', 'Rune Blacksmith'),
             badgeCount: state.runeBlacksmithTileUnlocked && state.specialization != 0 && !state.hasCraftedActiveArtifactWeapon ? 1 : null,
@@ -3138,7 +3443,7 @@ class CityScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.runeBlacksmithUnlockLevel}', 'Unlocks at level ${GameState.runeBlacksmithUnlockLevel}'),
             description: tr('Vykovej si osobní Artefaktovou zbraň a postupně ji vylepšuj Esencí Moci a silnějšími zbraněmi z batohu. Zbraň roste s tebou po celou hru, bez stropu.',
                 'Forge your own Artifact Weapon and gradually upgrade it with Power Essence and stronger weapons from your bag. It grows with you for the whole game, with no cap.'),
-            dx: 0.66, dy: 0.85, prominence: 1.0,
+            dx: 0.85, dy: 0.88, prominence: 1.0,
             onTap: () {
               if (!state.runeBlacksmithTileUnlocked) return;
               state.markHubTileSeen('runeblacksmith');
@@ -3146,6 +3451,7 @@ class CityScreen extends StatelessWidget {
             },
           ),
         SceneBuildingSpot(
+          // Vzdálený kamenný chrám s modře zářícími dveřmi, úplně vzadu uprostřed.
           iconType: FantasyIconType.systemMarket, accent: const Color(0xFF64B5F6), fill: const Color(0xFF0F1F2E),
           label: tr('Banka', 'Bank'),
           badgeCount: state.bankUnlocked && state.bankItems.isNotEmpty ? state.bankItems.length : null,
@@ -3155,7 +3461,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se na levelu ${GameState.bankUnlockLevel}', 'Unlocks at level ${GameState.bankUnlockLevel}'),
           description: tr('Trvalé úložiště mimo inventář - ulož si vybavení jiné třídy nebo buildu, místo abys ho prodal nebo roztavil, když zrovna nesedí k aktuální specializaci.',
               'Permanent storage outside your inventory - stash gear from another class or build instead of selling or salvaging it when it does not fit your current spec.'),
-          dx: 0.50, dy: 0.14, prominence: 0.8,
+          dx: 0.50, dy: 0.15, prominence: 0.7,
           onTap: () {
             if (!state.bankUnlocked) return;
             state.markHubTileSeen('bank');
@@ -3164,6 +3470,7 @@ class CityScreen extends StatelessWidget {
         ),
         if (state.isHubTileRevealed(GameState.kronikaUnlockLevel))
           SceneBuildingSpot(
+            // Kulatá věž s velkým prosvětleným ciferníkem/oknem vpravo nahoře.
             iconType: FantasyIconType.systemQuests, accent: const Color(0xFF8B5CF6), fill: const Color(0xFF241A38),
             label: tr('Kronika', 'Chronicle'),
             locked: !state.kronikaUnlocked,
@@ -3172,7 +3479,7 @@ class CityScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.kronikaUnlockLevel}', 'Unlocks at level ${GameState.kronikaUnlockLevel}'),
             description: tr('Denní/týdenní/měsíční přehled cílů a odměn (Chronicle coin) a trvalé úložiště vybavení napříč třídami.',
                 'A daily/weekly/monthly overview of goals and rewards (Chronicle coin), plus permanent cross-class gear storage.'),
-            dx: 0.88, dy: 0.85, prominence: 0.85,
+            dx: 0.90, dy: 0.20, prominence: 0.9,
             onTap: () {
               if (!state.kronikaUnlocked) return;
               state.markHubTileSeen('kronika');
@@ -3186,6 +3493,14 @@ class CityScreen extends StatelessWidget {
         titleAccent: const Color(0xFFC9A96E),
         danger: false,
         buildings: buildings,
+        backgroundImage: 'assets/images/scenes/town_bg.png',
+        // Kouř z komína Kovárny (černý/žhavý) + zelenkavý dým Alchymie - přesně jak jsou
+        // namalované na skutečném obrázku.
+        smokePoints: const [Offset(0.48, 0.58), Offset(0.13, 0.42)],
+        // Blikající okénka podle skutečných světel na obrázku - Runový Čaroděj (modrá záře),
+        // Runový Kovář (rudá záře), Banka (modré dveře vzadu), Kronika (prosvětlené okno věže),
+        // tržní lucerničky.
+        glowPoints: const [Offset(0.14, 0.80), Offset(0.85, 0.80), Offset(0.50, 0.13), Offset(0.90, 0.18), Offset(0.80, 0.42)],
       );
     });
   }
