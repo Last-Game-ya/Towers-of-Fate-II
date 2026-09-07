@@ -2593,272 +2593,599 @@ void openWorldScreen(BuildContext context, String title, Widget screen, {Color? 
   ));
 }
 
-/// Domovská obrazovka "Svět" — nahrazuje horní scrollovací TabBar s deseti
-/// položkami. Zbylé herní systémy jsou dostupné jako dlaždice s vlastní
-/// stylizovanou ikonografií (viz FantasyGlyphs) místo emoji.
-class HubScreen extends StatelessWidget {
-  const HubScreen({super.key});
+/// ===== SCÉNICKÁ MAPA (Město/Dobrodružství) =====
+/// Nahrazuje dřívější HubScreen (jedna scrollovací obrazovka se dvěma GridView sekcemi) dvěma
+/// samostatnými záložkami ve spodní navigaci - "Dobrodružství" a "Město" - z nichž každá teď
+/// vypadá jako skutečná malovaná mapa/scéna s budovami rozmístěnými na svých pozicích místo
+/// řady hexagonových dlaždic v mřížce. Klik na budovu NEnaviguje rovnou (jako dřív HubTile) -
+/// otevře menu (bottom sheet) se jménem/popisem/stavem odemčení a tlačítkem "Vstoupit", které
+/// teprve provede skutečnou navigaci. Datový model (SceneBuildingSpot) i byznys logika
+/// (unlock/isNew/badge/onTap) jsou 1:1 převzaté z bývalého HubTile/HubScreen - mění se jen to,
+/// jak jsou budovy rozmístěné a jak se na ně kliká.
+class SceneBuildingSpot {
+  final FantasyIconType iconType;
+  final Color accent;
+  final Color fill;
+  final String label;
+  final int? badgeCount;
+  final VoidCallback onTap;
+  final bool locked;
+  final String? lockedHint;
+  final String description;
+  final double? unlockProgress;
+  final bool isNew;
+  final double dx; // 0..1 - horizontální pozice na scéně
+  final double dy; // 0..1 - vertikální pozice (0 = v dálce/nahoře, 1 = vpředu/dole - blíž hráči)
+  final double prominence; // relativní velikost budovy na mapě (1.0 = základ)
+  const SceneBuildingSpot({
+    required this.iconType,
+    required this.accent,
+    required this.fill,
+    required this.label,
+    this.badgeCount,
+    required this.onTap,
+    this.locked = false,
+    this.lockedHint,
+    this.description = '',
+    this.unlockProgress,
+    this.isNew = false,
+    required this.dx,
+    required this.dy,
+    this.prominence = 1.0,
+  });
+}
 
-  // Sdílený styl nadpisu sekce (Cinzel font, stejný jazyk jako FantasyPanel) - odděluje
-  // "Dobrodružství" (souboje/průzkum) od "Město" (služby/crafting/nákupy), aby hráč na první
-  // pohled poznal, do čeho jde - riskovat život, nebo si jen nakoupit a vylepšit vybavení.
-  Widget _sectionHeader(String title, IconData icon, Color accent) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
-        child: Row(children: [
-          Icon(icon, color: accent, size: 20),
-          const SizedBox(width: 8),
-          Text(title, style: GoogleFonts.cinzel(color: accent, fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 1.2)),
-          const SizedBox(width: 12),
-          Expanded(child: Container(height: 1, color: accent.withOpacity(.35))),
-        ]),
-      );
+/// Malovaná podkladová scéna - obloha + vzdálené siluety + zem + spojovací cestičky ke každé
+/// budově z jednoho centrálního bodu vpředu. `danger` přepíná mezi teplou/klidnou paletou
+/// (Město) a temnější/nebezpečnou paletou (Dobrodružství).
+class _SceneBackdropPainter extends CustomPainter {
+  final bool danger;
+  final List<Offset> nodePositions;
+  _SceneBackdropPainter({required this.danger, required this.nodePositions});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final skyColors = danger
+        ? [const Color(0xFF2A0E0E), const Color(0xFF120608)]
+        : [const Color(0xFF2E2416), const Color(0xFF16110A)];
+    canvas.drawRect(Offset.zero & size, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: skyColors).createShader(Offset.zero & size));
+
+    // Vzdálené siluety - zubaté hory (Dobrodružství) nebo měkčí střechy/hradby (Město).
+    final silPaint = Paint()..color = (danger ? const Color(0xFF421414) : const Color(0xFF3A2E1C)).withOpacity(.55);
+    final sil = Path()..moveTo(0, size.height * 0.34);
+    final rnd = Random(danger ? 7 : 3);
+    double x = 0;
+    while (x < size.width) {
+      final peakH = danger ? (0.10 + rnd.nextDouble() * 0.16) : (0.04 + rnd.nextDouble() * 0.08);
+      x += size.width * (danger ? 0.10 : 0.07);
+      sil.lineTo(x, size.height * (0.34 - peakH));
+      x += size.width * (danger ? 0.05 : 0.04);
+      sil.lineTo(x, size.height * 0.34);
+    }
+    sil.lineTo(size.width, size.height * 0.34);
+    sil.lineTo(size.width, 0);
+    sil.lineTo(0, 0);
+    sil.close();
+    canvas.drawPath(sil, silPaint);
+
+    // Zem/plocha.
+    final groundColors = danger
+        ? [const Color(0xFF2B1210), const Color(0xFF1A0A08)]
+        : [const Color(0xFF3E3320), const Color(0xFF241D12)];
+    final groundRect = Rect.fromLTWH(0, size.height * 0.30, size.width, size.height * 0.70);
+    canvas.drawRect(groundRect, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: groundColors).createShader(groundRect));
+
+    // Spojovací cestičky - ze společného bodu vpředu uprostřed ke každé budově. Dává mapě pocit
+    // propojeného místa, ne nahodile poházených ikon.
+    final hub = Offset(size.width * 0.5, size.height * 0.97);
+    final pathPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..color = (danger ? const Color(0xFF6B2E2E) : const Color(0xFFC9A96E)).withOpacity(.35)
+      ..strokeCap = StrokeCap.round;
+    for (final n in nodePositions) {
+      final p = Offset(n.dx * size.width, n.dy * size.height);
+      final mid = Offset((p.dx + hub.dx) / 2, (p.dy + hub.dy) / 2 + 14);
+      canvas.drawPath(Path()..moveTo(hub.dx, hub.dy)..quadraticBezierTo(mid.dx, mid.dy, p.dx, p.dy), pathPaint);
+    }
+
+    // Jemné hvězdy/jiskry na obloze.
+    final starRnd = Random(danger ? 11 : 5);
+    for (int i = 0; i < 40; i++) {
+      final p = Offset(starRnd.nextDouble() * size.width, starRnd.nextDouble() * size.height * 0.32);
+      canvas.drawCircle(p, 0.8 + starRnd.nextDouble() * 1.0, Paint()..color = Colors.white.withOpacity(0.15 + starRnd.nextDouble() * 0.25));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SceneBackdropPainter old) => false;
+}
+
+/// Menu po kliknutí na budovu - jméno/ikona/popis/stav odemčení + tlačítko "Vstoupit", které
+/// teprve zavolá skutečné onTap (navigaci). Vizuálně navazuje na dřívější HubTile._showInfo,
+/// jen navíc přidává akční tlačítko pro odemčené budovy.
+void _showSceneBuildingMenu(BuildContext context, SceneBuildingSpot spot) {
+  HapticFeedback.mediumImpact();
+  final color = spot.locked ? Colors.grey.shade400 : spot.accent;
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => Padding(
+      padding: const EdgeInsets.all(16),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [FantasyColors2.panelLight, FantasyColors2.panel]),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: color.withOpacity(.6)),
+          boxShadow: [BoxShadow(color: color.withOpacity(.25), blurRadius: 24, spreadRadius: 2)],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Container(
+                width: 46, height: 46, padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [color.withOpacity(.35), FantasyColors2.obsidian]), border: Border.all(color: color)),
+                child: CustomPaint(painter: FantasyIconRegistry.of(spot.iconType).proceduralPainter(color)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text(spot.label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 18))),
+            ]),
+            const SizedBox(height: 14),
+            if (spot.description.isNotEmpty) Text(spot.description, style: const TextStyle(color: Color(0xFFF1E6D0), height: 1.35)),
+            if (spot.locked && spot.lockedHint != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(color: const Color(0xFFC69214).withOpacity(.12), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFC69214).withOpacity(.5))),
+                child: Row(children: [
+                  const Icon(Icons.lock, color: Color(0xFFC69214), size: 15),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(spot.lockedHint!, style: const TextStyle(color: Color(0xFFC69214), fontWeight: FontWeight.bold, fontSize: 12.5))),
+                ]),
+              ),
+              if (spot.unlockProgress != null) ...[
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(value: spot.unlockProgress!.clamp(0, 1), minHeight: 6, backgroundColor: Colors.white10, valueColor: const AlwaysStoppedAnimation(Color(0xFFC69214))),
+                ),
+                const SizedBox(height: 3),
+                Text('${(spot.unlockProgress!.clamp(0, 1) * 100).round()} %', style: const TextStyle(color: Color(0xFFC69214), fontSize: 10.5)),
+              ],
+            ] else ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(vertical: 12)),
+                  icon: const Icon(Icons.arrow_forward),
+                  label: Text(tr('Vstoupit', 'Enter'), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    spot.onTap();
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Vizuální marker jedné budovy na scéně - stejný hex-badge jazyk jako dřívější HubTile (glow za
+/// odemčení blízko, prstenec progresu, "NOVÉ" štítek, zámek/badge v rohu), jen umístěný přes
+/// Positioned na scéně místo v GridView buňce, a tap otevírá menu místo přímé navigace.
+class _SceneBuildingMarker extends StatelessWidget {
+  final SceneBuildingSpot spot;
+  const _SceneBuildingMarker({required this.spot});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color effectiveAccent = spot.locked ? Colors.grey.shade600 : spot.accent;
+    final Color effectiveFill = spot.locked ? const Color(0xFF1C1C22) : spot.fill;
+    final bool nearUnlock = spot.locked && spot.unlockProgress != null && spot.unlockProgress! >= 0.7;
+    final bool showNewGlow = spot.isNew && !spot.locked;
+    final double w = 62 * spot.prominence;
+    final double h = 68 * spot.prominence;
+    return GestureDetector(
+      onTap: () => _showSceneBuildingMenu(context, spot),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: w + 8,
+            height: h,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                if (nearUnlock)
+                  Container(width: w + 4, height: w + 4, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFC69214).withOpacity(.45), blurRadius: 14, spreadRadius: 1)])),
+                if (showNewGlow)
+                  Container(width: w + 6, height: w + 6, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: FantasyColors.gold.withOpacity(.6), blurRadius: 18, spreadRadius: 2)])),
+                if (spot.locked && spot.unlockProgress != null)
+                  SizedBox(width: w + 4, height: w + 4, child: CircularProgressIndicator(value: spot.unlockProgress!.clamp(0, 1), strokeWidth: 2.4, backgroundColor: Colors.white10, valueColor: AlwaysStoppedAnimation(nearUnlock ? const Color(0xFFC69214) : Colors.grey.shade700))),
+                CustomPaint(size: Size(w, h), painter: HexBadgePainter(fill: effectiveFill, stroke: effectiveAccent)),
+                SizedBox(width: 30 * spot.prominence, height: 30 * spot.prominence, child: CustomPaint(painter: FantasyIconRegistry.of(spot.iconType).proceduralPainter(effectiveAccent))),
+                if (showNewGlow)
+                  Positioned(
+                    top: -4, left: -6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(color: FantasyColors.gold, borderRadius: BorderRadius.circular(6), border: Border.all(color: FantasyColors2.obsidian, width: 1.2), boxShadow: [BoxShadow(color: FantasyColors.gold.withOpacity(.7), blurRadius: 6)]),
+                      child: Text(tr('NOVÉ', 'NEW'), style: const TextStyle(color: Colors.black, fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: .3)),
+                    ),
+                  ),
+                if (spot.locked)
+                  Positioned(
+                    top: -4, right: 2,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(color: const Color(0xFF1C1C22), shape: BoxShape.circle, border: Border.all(color: Colors.grey.shade600, width: 1.5)),
+                      child: Icon(Icons.lock, size: 11, color: Colors.grey.shade400),
+                    ),
+                  )
+                else if (spot.badgeCount != null && spot.badgeCount! > 0)
+                  Positioned(
+                    top: -4, right: 2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(color: FantasyColors2.hp, borderRadius: BorderRadius.circular(8), border: Border.all(color: FantasyColors2.obsidian, width: 1.5)),
+                      child: Text('${spot.badgeCount}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            constraints: const BoxConstraints(maxWidth: 84),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(color: Colors.black.withOpacity(.55), borderRadius: BorderRadius.circular(6)),
+            child: Text(
+              spot.locked && spot.lockedHint != null ? spot.lockedHint! : spot.label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: spot.locked ? Colors.grey.shade500 : const Color(0xFFF1E6D0), height: 1.1),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sdílený "rám" scény - nadpis sekce + malovaná mapa s budovami umístěnými na svých dx/dy
+/// pozicích (zlomek 0..1 šířky/výšky). Použito jak CityScreen (Město), tak AdventureScreen
+/// (Dobrodružství) níž.
+class SceneMapView extends StatelessWidget {
+  final String title;
+  final IconData titleIcon;
+  final Color titleAccent;
+  final bool danger;
+  final List<SceneBuildingSpot> buildings;
+  const SceneMapView({super.key, required this.title, required this.titleIcon, required this.titleAccent, required this.danger, required this.buildings});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: RadialGradient(center: Alignment.topCenter, radius: 1.3, colors: [Color(0xFF241C30), FantasyColors2.obsidian]),
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+              child: Row(children: [
+                Icon(titleIcon, color: titleAccent, size: 20),
+                const SizedBox(width: 8),
+                Text(title, style: GoogleFonts.cinzel(color: titleAccent, fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 1.2)),
+                const SizedBox(width: 12),
+                Expanded(child: Container(height: 1, color: titleAccent.withOpacity(.35))),
+              ]),
+            ),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                height: 560,
+                decoration: BoxDecoration(border: Border.all(color: titleAccent.withOpacity(.35))),
+                child: LayoutBuilder(builder: (context, constraints) {
+                  final size = Size(constraints.maxWidth, constraints.maxHeight);
+                  return Stack(
+                    children: [
+                      Positioned.fill(child: CustomPaint(painter: _SceneBackdropPainter(danger: danger, nodePositions: buildings.map((b) => Offset(b.dx, b.dy)).toList()))),
+                      for (final b in buildings)
+                        Positioned(
+                          left: (b.dx * size.width - (35 * b.prominence)).clamp(0.0, size.width - 70 * b.prominence),
+                          top: (b.dy * size.height - (37 * b.prominence)).clamp(0.0, size.height - 74 * b.prominence),
+                          child: _SceneBuildingMarker(spot: b),
+                        ),
+                    ],
+                  );
+                }),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Záložka "Dobrodružství" ve spodní navigaci - dřív horní sekce v HubScreen. Stejná byznys
+/// logika (isHubTileRevealed/unlocked/badge/onTap) jako dřív, jen budovy mají pevnou pozici na
+/// malované mapě místo místa v mřížce.
+class AdventureScreen extends StatelessWidget {
+  const AdventureScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Consumer<GameState>(builder: (context, state, _) {
-      return Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(center: Alignment.topCenter, radius: 1.3, colors: [Color(0xFF241C30), FantasyColors2.obsidian]),
+      final buildings = <SceneBuildingSpot>[
+        SceneBuildingSpot(
+          // Věž Osudu - hlavní herní smyčka, dřív permanentní bottom-nav tab, teď nejvýraznější
+          // (a vždy odemčená) budova hned vpředu uprostřed mapy Dobrodružství - odsud "vede"
+          // vizuálně celá scéna (viz hub bod v _SceneBackdropPainter, cestičky se sbíhají sem).
+          iconType: FantasyIconType.systemTower, accent: const Color(0xFF1E88E5), fill: const Color(0xFF0D2A42),
+          label: tr('Věž Osudu', 'Tower of Fate'),
+          description: tr('Hlavní věž - postupuj patro po patře, bojuj s nepřáteli a bossy, sbírej vybavení a levuj postavu. Tvůj hlavní zdroj postupu ve hře, dostupný od začátku.',
+              'The main tower - climb floor by floor, fight enemies and bosses, collect gear and level up your character. Your main source of progress in the game, available from the start.'),
+          dx: 0.50, dy: 0.88, prominence: 1.4,
+          onTap: () => openWorldScreen(context, tr('Věž Osudu', 'Tower of Fate'), const TowerScreen(), theme: const Color(0xFF1E88E5)),
         ),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _sectionHeader(tr('DOBRODRUŽSTVÍ', 'ADVENTURE'), Icons.terrain, const Color(0xFFFF8000)),
-              GridView(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 120,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 0.72,
-                ),
-                children: [
-                  if (state.isHubTileRevealed(GameState.lairUnlockLevel))
-                    HubTile(
-                      // TODO: napoj badgeCount na reálný stav (např. state.bossAvailable ? 1 : null)
-                      iconType: FantasyIconType.systemBossLair, accent: FantasyColors2.hp, fill: const Color(0xFF331414),
-                      label: tr('Doupě bosse', 'Boss Lair'),
-                      locked: !state.lairUnlocked,
-                      isNew: state.lairUnlocked && !state.seenHubTiles.contains('lair'),
-                      unlockProgress: state.level / GameState.lairUnlockLevel,
-                      lockedHint: tr('Odemyká se na levelu ${GameState.lairUnlockLevel}', 'Unlocks at level ${GameState.lairUnlockLevel}'),
-                      description: tr('Řada čím dál těžších bossů se stoupající obtížností (Normal → Hardcore → Předpeklí → Peklo). Poražení bosse dává Zlato, Krystaly a Suroviny - od patra 30 i Esenci Moci na vylepšení legendárního vybavení.',
-                          'A series of increasingly tough bosses across rising difficulties (Normal → Hardcore → Předpeklí → Peklo). Defeating a boss gives Gold, Crystals and Materials - from floor 30 also Power Essence for upgrading legendary gear.'),
-                      onTap: () {
-                        if (!state.lairUnlocked) return;
-                        state.markHubTileSeen('lair');
-                        openWorldScreen(context, tr('Doupě bosse', 'Boss Lair'), const LairScreen(), theme: const Color(0xFF8B0E0E));
-                      },
-                    ),
-                  if (state.isHubTileRevealed(GameState.arenaUnlockLevel))
-                    HubTile(
-                      iconType: FantasyIconType.systemBossLair, accent: const Color(0xFFFFD700), fill: const Color(0xFF2A2308),
-                      label: tr('Aréna', 'Arena'),
-                      locked: !state.arenaUnlocked,
-                      isNew: state.arenaUnlocked && !state.seenHubTiles.contains('arena'),
-                      unlockProgress: state.level / GameState.arenaUnlockLevel,
-                      lockedHint: tr('Odemyká se na levelu ${GameState.arenaUnlockLevel}', 'Unlocks at level ${GameState.arenaUnlockLevel}'),
-                      description: tr('Souboj proti AI generovanému soupeři tvé třídy za Zlato, Magický prach a truhly. Dobrý zdroj postupu, i když jsi zrovna zaseklý na patře ve Věži.',
-                          'Fight an AI-generated opponent of your class for Gold, Magic Dust and chests. A solid source of progress even when you are stuck on a Tower floor.'),
-                      onTap: () {
-                        if (!state.arenaUnlocked) return;
-                        state.markHubTileSeen('arena');
-                        openWorldScreen(context, tr('Aréna', 'Arena'), const ArenaScreen(), theme: const Color(0xFFFF8000));
-                      },
-                    ),
-                  if (state.isHubTileRevealed(GameState.worldBossUnlockLevel))
-                    HubTile(
-                      iconType: FantasyIconType.systemBossLair, accent: const Color(0xFFFF5A36), fill: const Color(0xFF301008),
-                      label: 'World Boss',
-                      badgeCount: state.worldBossUnlocked && state.worldBossAvailable ? 1 : null,
-                      locked: !state.worldBossUnlocked,
-                      isNew: state.worldBossUnlocked && !state.seenHubTiles.contains('worldboss'),
-                      unlockProgress: state.level / GameState.worldBossUnlockLevel,
-                      lockedHint: tr('Odemyká se na levelu ${GameState.worldBossUnlockLevel}', 'Unlocks at level ${GameState.worldBossUnlockLevel}'),
-                      description: tr('Jednou denně dostupný extrémně silný boss. Poražení dává velkou odměnu (Zlato, Esenci Moci, Runové kameny) - pokusy navíc jdou získat za rewarded reklamu.',
-                          'An extremely tough boss available once per day. Defeating it gives a big reward (Gold, Power Essence, Rune Stones) - extra attempts can be earned via a rewarded ad.'),
-                      onTap: () {
-                        if (!state.worldBossUnlocked) return;
-                        state.markHubTileSeen('worldboss');
-                        openWorldScreen(context, 'World Boss', const WorldBossScreen(), theme: const Color(0xFFB71C1C));
-                      },
-                    ),
-                  if (state.isHubTileRevealed(GameState.riftUnlockLevel))
-                    HubTile(
-                      iconType: FantasyIconType.systemRift, accent: const Color(0xFF8B5CF6), fill: const Color(0xFF1A1030),
-                      label: tr('Trhlina Osudu', 'Rift of Fate'),
-                      badgeCount: state.riftUnlocked && state.riftAttemptsToday < state.riftEffectiveDailyLimit ? (state.riftEffectiveDailyLimit - state.riftAttemptsToday) : null,
-                      locked: !state.riftUnlocked,
-                      isNew: state.riftUnlocked && !state.seenHubTiles.contains('rift'),
-                      unlockProgress: state.level / GameState.riftUnlockLevel,
-                      lockedHint: tr('Odemyká se na levelu ${GameState.riftUnlockLevel}', 'Unlocks at level ${GameState.riftUnlockLevel}'),
-                      description: tr('Náhodně generované výzvy s modifikátory a omezeným počtem pokusů denně. Odměnou jsou truhly s Magickým prachem/Krystaly a šance na vzácné vybavení.',
-                          'Randomly generated challenges with modifiers and a limited number of daily attempts. Rewards are chests with Magic Dust/Crystals and a chance at rare gear.'),
-                      onTap: () {
-                        if (!state.riftUnlocked) return;
-                        state.markHubTileSeen('rift');
-                        openWorldScreen(context, tr('Trhlina Osudu', 'Rift of Fate'), const RiftScreen(), theme: const Color(0xFF8B5CF6));
-                      },
-                    ),
-                  if (state.endlessScaleUnlocked)
-                    HubTile(
-                      iconType: FantasyIconType.systemBossLair, accent: Colors.deepPurpleAccent, fill: const Color(0xFF1A0A2A),
-                      label: 'Endless Scale',
-                      isNew: !state.seenHubTiles.contains('endlessscale'),
-                      description: tr('Nekonečně škálující souboj bez stropu obtížnosti - test toho, jak daleko tvůj build dokáže zajít.',
-                          'An endlessly scaling fight with no difficulty cap - a test of how far your build can go.'),
-                      onTap: () {
-                        state.markHubTileSeen('endlessscale');
-                        openWorldScreen(context, 'Endless Scale', const EndlessScaleScreen(), theme: Colors.deepPurpleAccent);
-                      },
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              _sectionHeader(tr('MĚSTO', 'TOWN'), Icons.location_city, const Color(0xFFC9A96E)),
-              GridView(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 120,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 0.72,
-                ),
-                children: [
-                  HubTile(
-                    iconType: FantasyIconType.systemGuild, accent: FantasyColors2.arcaneViolet, fill: const Color(0xFF241A38),
-                    label: tr('Družina', 'Companions'),
-                    locked: state.companionsTileLocked,
-                    isNew: !state.companionsTileLocked && !state.seenHubTiles.contains('companions'),
-                    lockedHint: tr('Odemyká se po první smrti', 'Unlocks after your first death'),
-                    description: tr('Najímej a levelu společníky, kteří ti dávají trvalý bonus síly i mimo boj. Odemkne se po tvé první smrti jako útěcha do dalšího pokusu.',
-                        'Recruit and level up companions that give you a permanent power bonus outside combat too. Unlocks after your first death as a consolation for the next run.'),
-                    onTap: () {
-                      if (state.companionsTileLocked) return;
-                      state.markHubTileSeen('companions');
-                      openWorldScreen(context, tr('Družina', 'Companions'), const CompanionsScreen());
-                    },
-                  ),
-                  HubTile(
-                    // TODO: napoj badgeCount na reálný stav (např. state.availableQuestCount)
-                    iconType: FantasyIconType.systemQuests, accent: FantasyColors2.emberGold, fill: const Color(0xFF3A2B12),
-                    label: tr('Questy', 'Quests'),
-                    description: tr('Denní a týdenní úkoly za Zlato, Magický prach a další odměny. Pravidelný zdroj postupu, aniž bys musel celý den aktivně bojovat.',
-                        'Daily and weekly tasks for Gold, Magic Dust and other rewards. A steady source of progress without needing to actively fight all day.'),
-                    onTap: () => openWorldScreen(context, tr('Questy', 'Quests'), const QuestScreen()),
-                  ),
-                  HubTile(
-                    iconType: FantasyIconType.systemForge, accent: FantasyColors2.teal, fill: const Color(0xFF122824),
-                    label: tr('Kovárna', 'Forge'),
-                    locked: !state.blacksmithUnlocked,
-                    isNew: state.blacksmithUnlocked && !state.seenHubTiles.contains('blacksmith'),
-                    unlockProgress: state.level / GameState.blacksmithUnlockLevel,
-                    lockedHint: tr('Odemyká se na levelu ${GameState.blacksmithUnlockLevel}', 'Unlocks at level ${GameState.blacksmithUnlockLevel}'),
-                    description: tr('Kup si vygenerované vybavení podle ranku Kováře, nebo si ho nech vykovat. Rank kováře roste s používáním a zlepšuje jak staty, tak ceny na Tržišti.',
-                        'Buy gear generated according to the Blacksmith rank, or have a piece forged. The rank grows with use and improves both stats and Market prices.'),
-                    onTap: () {
-                      if (!state.blacksmithUnlocked) return;
-                      state.markHubTileSeen('blacksmith');
-                      openWorldScreen(context, tr('Kovárna', 'Forge'), const BlacksmithScreen());
-                    },
-                  ),
-                  HubTile(
-                    iconType: FantasyIconType.systemAlchemy, accent: FantasyColors2.arcaneViolet, fill: const Color(0xFF241A38),
-                    label: tr('Alchymie', 'Alchemy'),
-                    description: tr('Vař lektvary a elixíry z nasbíraných surovin - léčení, dočasné buffy a další efekty do boje.',
-                        'Brew potions and elixirs from gathered materials - healing, temporary buffs and other combat effects.'),
-                    onTap: () => openWorldScreen(context, tr('Alchymie', 'Alchemy'), const AlchemistScreen()),
-                  ),
-                  HubTile(
-                    iconType: FantasyIconType.systemMarket, accent: FantasyColors2.emberGold, fill: const Color(0xFF3A2B12),
-                    label: tr('Tržiště', 'Market'),
-                    locked: !state.marketUnlocked,
-                    isNew: state.marketUnlocked && !state.seenHubTiles.contains('market'),
-                    unlockProgress: state.level / GameState.marketUnlockLevel,
-                    lockedHint: tr('Odemyká se na levelu ${GameState.marketUnlockLevel}', 'Unlocks at level ${GameState.marketUnlockLevel}'),
-                    description: tr('Nakupuj základní vybavení a lektvary za Zlato, plus dvě Speciální nabídky (Rare/Epic/Legendary/SET), které se obnovují každou hodinu.',
-                        'Buy basic gear and potions with Gold, plus two Featured Offers (Rare/Epic/Legendary/SET) that refresh every hour.'),
-                    onTap: () {
-                      if (!state.marketUnlocked) return;
-                      state.markHubTileSeen('market');
-                      openWorldScreen(context, tr('Tržiště', 'Market'), const MarketScreen());
-                    },
-                  ),
-                  if (state.isHubTileRevealed(GameState.runeWizardTileUnlockLevel))
-                    HubTile(
-                      iconType: FantasyIconType.systemRuneWizard, accent: FantasyColors2.runeIce, fill: const Color(0xFF0F1E28),
-                      label: tr('Runový Čaroděj', 'Rune Wizard'),
-                      badgeCount: state.runeWizardTileUnlocked && state.runeWizardUnlocked && state.runeTalentPoints > 0 ? state.runeTalentPoints : null,
-                      locked: !state.runeWizardTileUnlocked,
-                      isNew: state.runeWizardTileUnlocked && !state.seenHubTiles.contains('runewizard'),
-                      unlockProgress: state.level / GameState.runeWizardTileUnlockLevel,
-                      lockedHint: tr('Odemyká se na levelu ${GameState.runeWizardTileUnlockLevel}', 'Unlocks at level ${GameState.runeWizardTileUnlockLevel}'),
-                      description: tr('Endgame talentový strom za Runové kameny získané z bossů - trvalé pasivní bonusy nezávislé na aktuálním vybavení.',
-                          'An endgame talent tree paid for with Rune Stones earned from bosses - permanent passive bonuses independent of your current gear.'),
-                      onTap: () {
-                        if (!state.runeWizardTileUnlocked) return;
-                        state.markHubTileSeen('runewizard');
-                        openWorldScreen(context, tr('Runový Čaroděj', 'Rune Wizard'), const RuneWizardScreen());
-                      },
-                    ),
-                  if (state.isHubTileRevealed(GameState.runeBlacksmithUnlockLevel))
-                    HubTile(
-                      iconType: FantasyIconType.systemForge, accent: const Color(0xFFFF1744), fill: const Color(0xFF1F0F14),
-                      label: tr('Runový Kovář', 'Rune Blacksmith'),
-                      badgeCount: state.runeBlacksmithTileUnlocked && state.specialization != 0 && !state.hasCraftedActiveArtifactWeapon ? 1 : null,
-                      locked: !state.runeBlacksmithTileUnlocked,
-                      isNew: state.runeBlacksmithTileUnlocked && !state.seenHubTiles.contains('runeblacksmith'),
-                      unlockProgress: state.level / GameState.runeBlacksmithUnlockLevel,
-                      lockedHint: tr('Odemyká se na levelu ${GameState.runeBlacksmithUnlockLevel}', 'Unlocks at level ${GameState.runeBlacksmithUnlockLevel}'),
-                      description: tr('Vykovej si osobní Artefaktovou zbraň a postupně ji vylepšuj Esencí Moci a silnějšími zbraněmi z batohu. Zbraň roste s tebou po celou hru, bez stropu.',
-                          'Forge your own Artifact Weapon and gradually upgrade it with Power Essence and stronger weapons from your bag. It grows with you for the whole game, with no cap.'),
-                      onTap: () {
-                        if (!state.runeBlacksmithTileUnlocked) return;
-                        state.markHubTileSeen('runeblacksmith');
-                        openWorldScreen(context, tr('Runový Kovář', 'Rune Blacksmith'), const RuneBlacksmithScreen());
-                      },
-                    ),
-                  HubTile(
-                    iconType: FantasyIconType.systemMarket, accent: const Color(0xFF64B5F6), fill: const Color(0xFF0F1F2E),
-                    label: tr('Banka', 'Bank'),
-                    badgeCount: state.bankUnlocked && state.bankItems.isNotEmpty ? state.bankItems.length : null,
-                    locked: !state.bankUnlocked,
-                    isNew: state.bankUnlocked && !state.seenHubTiles.contains('bank'),
-                    unlockProgress: state.level / GameState.bankUnlockLevel,
-                    lockedHint: tr('Odemyká se na levelu ${GameState.bankUnlockLevel}', 'Unlocks at level ${GameState.bankUnlockLevel}'),
-                    description: tr('Trvalé úložiště mimo inventář - ulož si vybavení jiné třídy nebo buildu, místo abys ho prodal nebo roztavil, když zrovna nesedí k aktuální specializaci.',
-                        'Permanent storage outside your inventory - stash gear from another class or build instead of selling or salvaging it when it does not fit your current spec.'),
-                    onTap: () {
-                      if (!state.bankUnlocked) return;
-                      state.markHubTileSeen('bank');
-                      openWorldScreen(context, tr('Banka', 'Bank'), const BankScreen());
-                    },
-                  ),
-                  if (state.isHubTileRevealed(GameState.kronikaUnlockLevel))
-                    HubTile(
-                      iconType: FantasyIconType.systemQuests, accent: const Color(0xFF8B5CF6), fill: const Color(0xFF241A38),
-                      label: tr('Kronika', 'Chronicle'),
-                      locked: !state.kronikaUnlocked,
-                      isNew: state.kronikaUnlocked && !state.seenHubTiles.contains('kronika'),
-                      unlockProgress: state.level / GameState.kronikaUnlockLevel,
-                      lockedHint: tr('Odemyká se na levelu ${GameState.kronikaUnlockLevel}', 'Unlocks at level ${GameState.kronikaUnlockLevel}'),
-                      description: tr('Denní/týdenní/měsíční přehled cílů a odměn (Chronicle coin) a trvalé úložiště vybavení napříč třídami.',
-                          'A daily/weekly/monthly overview of goals and rewards (Chronicle coin), plus permanent cross-class gear storage.'),
-                      onTap: () {
-                        if (!state.kronikaUnlocked) return;
-                        state.markHubTileSeen('kronika');
-                        openWorldScreen(context, tr('Kronika', 'Chronicle'), const KronikaScreen());
-                      },
-                    ),
-                ],
-              ),
-            ],
+        if (state.isHubTileRevealed(GameState.lairUnlockLevel))
+          SceneBuildingSpot(
+            iconType: FantasyIconType.systemBossLair, accent: FantasyColors2.hp, fill: const Color(0xFF331414),
+            label: tr('Doupě bosse', 'Boss Lair'),
+            locked: !state.lairUnlocked,
+            isNew: state.lairUnlocked && !state.seenHubTiles.contains('lair'),
+            unlockProgress: state.level / GameState.lairUnlockLevel,
+            lockedHint: tr('Odemyká se na levelu ${GameState.lairUnlockLevel}', 'Unlocks at level ${GameState.lairUnlockLevel}'),
+            description: tr('Řada čím dál těžších bossů se stoupající obtížností (Normal → Hardcore → Předpeklí → Peklo). Poražení bosse dává Zlato, Krystaly a Suroviny - od patra 30 i Esenci Moci na vylepšení legendárního vybavení.',
+                'A series of increasingly tough bosses across rising difficulties (Normal → Hardcore → Předpeklí → Peklo). Defeating a boss gives Gold, Crystals and Materials - from floor 30 also Power Essence for upgrading legendary gear.'),
+            dx: 0.20, dy: 0.35, prominence: 1.05,
+            onTap: () {
+              if (!state.lairUnlocked) return;
+              state.markHubTileSeen('lair');
+              openWorldScreen(context, tr('Doupě bosse', 'Boss Lair'), const LairScreen(), theme: const Color(0xFF8B0E0E));
+            },
           ),
+        if (state.isHubTileRevealed(GameState.arenaUnlockLevel))
+          SceneBuildingSpot(
+            iconType: FantasyIconType.systemBossLair, accent: const Color(0xFFFFD700), fill: const Color(0xFF2A2308),
+            label: tr('Aréna', 'Arena'),
+            locked: !state.arenaUnlocked,
+            isNew: state.arenaUnlocked && !state.seenHubTiles.contains('arena'),
+            unlockProgress: state.level / GameState.arenaUnlockLevel,
+            lockedHint: tr('Odemyká se na levelu ${GameState.arenaUnlockLevel}', 'Unlocks at level ${GameState.arenaUnlockLevel}'),
+            description: tr('Souboj proti AI generovanému soupeři tvé třídy za Zlato, Magický prach a truhly. Dobrý zdroj postupu, i když jsi zrovna zaseklý na patře ve Věži.',
+                'Fight an AI-generated opponent of your class for Gold, Magic Dust and chests. A solid source of progress even when you are stuck on a Tower floor.'),
+            dx: 0.72, dy: 0.24, prominence: 1.0,
+            onTap: () {
+              if (!state.arenaUnlocked) return;
+              state.markHubTileSeen('arena');
+              openWorldScreen(context, tr('Aréna', 'Arena'), const ArenaScreen(), theme: const Color(0xFFFF8000));
+            },
+          ),
+        if (state.isHubTileRevealed(GameState.worldBossUnlockLevel))
+          SceneBuildingSpot(
+            iconType: FantasyIconType.systemBossLair, accent: const Color(0xFFFF5A36), fill: const Color(0xFF301008),
+            label: 'World Boss',
+            badgeCount: state.worldBossUnlocked && state.worldBossAvailable ? 1 : null,
+            locked: !state.worldBossUnlocked,
+            isNew: state.worldBossUnlocked && !state.seenHubTiles.contains('worldboss'),
+            unlockProgress: state.level / GameState.worldBossUnlockLevel,
+            lockedHint: tr('Odemyká se na levelu ${GameState.worldBossUnlockLevel}', 'Unlocks at level ${GameState.worldBossUnlockLevel}'),
+            description: tr('Jednou denně dostupný extrémně silný boss. Poražení dává velkou odměnu (Zlato, Esenci Moci, Runové kameny) - pokusy navíc jdou získat za rewarded reklamu.',
+                'An extremely tough boss available once per day. Defeating it gives a big reward (Gold, Power Essence, Rune Stones) - extra attempts can be earned via a rewarded ad.'),
+            dx: 0.50, dy: 0.62, prominence: 1.25,
+            onTap: () {
+              if (!state.worldBossUnlocked) return;
+              state.markHubTileSeen('worldboss');
+              openWorldScreen(context, 'World Boss', const WorldBossScreen(), theme: const Color(0xFFB71C1C));
+            },
+          ),
+        if (state.isHubTileRevealed(GameState.riftUnlockLevel))
+          SceneBuildingSpot(
+            iconType: FantasyIconType.systemRift, accent: const Color(0xFF8B5CF6), fill: const Color(0xFF1A1030),
+            label: tr('Trhlina Osudu', 'Rift of Fate'),
+            badgeCount: state.riftUnlocked && state.riftAttemptsToday < state.riftEffectiveDailyLimit ? (state.riftEffectiveDailyLimit - state.riftAttemptsToday) : null,
+            locked: !state.riftUnlocked,
+            isNew: state.riftUnlocked && !state.seenHubTiles.contains('rift'),
+            unlockProgress: state.level / GameState.riftUnlockLevel,
+            lockedHint: tr('Odemyká se na levelu ${GameState.riftUnlockLevel}', 'Unlocks at level ${GameState.riftUnlockLevel}'),
+            description: tr('Náhodně generované výzvy s modifikátory a omezeným počtem pokusů denně. Odměnou jsou truhly s Magickým prachem/Krystaly a šance na vzácné vybavení.',
+                'Randomly generated challenges with modifiers and a limited number of daily attempts. Rewards are chests with Magic Dust/Crystals and a chance at rare gear.'),
+            dx: 0.18, dy: 0.72, prominence: 0.95,
+            onTap: () {
+              if (!state.riftUnlocked) return;
+              state.markHubTileSeen('rift');
+              openWorldScreen(context, tr('Trhlina Osudu', 'Rift of Fate'), const RiftScreen(), theme: const Color(0xFF8B5CF6));
+            },
+          ),
+        if (state.endlessScaleUnlocked)
+          SceneBuildingSpot(
+            iconType: FantasyIconType.systemBossLair, accent: Colors.deepPurpleAccent, fill: const Color(0xFF1A0A2A),
+            label: 'Endless Scale',
+            isNew: !state.seenHubTiles.contains('endlessscale'),
+            description: tr('Nekonečně škálující souboj bez stropu obtížnosti - test toho, jak daleko tvůj build dokáže zajít.',
+                'An endlessly scaling fight with no difficulty cap - a test of how far your build can go.'),
+            dx: 0.82, dy: 0.75, prominence: 0.9,
+            onTap: () {
+              state.markHubTileSeen('endlessscale');
+              openWorldScreen(context, 'Endless Scale', const EndlessScaleScreen(), theme: Colors.deepPurpleAccent);
+            },
+          ),
+      ];
+      return SceneMapView(
+        title: tr('DOBRODRUŽSTVÍ', 'ADVENTURE'),
+        titleIcon: Icons.terrain,
+        titleAccent: const Color(0xFFFF8000),
+        danger: true,
+        buildings: buildings,
+      );
+    });
+  }
+}
+
+/// Záložka "Město" ve spodní navigaci - dřív spodní sekce v HubScreen. Stejná byznys logika,
+/// jen na malované mapě místo mřížky.
+class CityScreen extends StatelessWidget {
+  const CityScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<GameState>(builder: (context, state, _) {
+      final buildings = <SceneBuildingSpot>[
+        SceneBuildingSpot(
+          iconType: FantasyIconType.systemGuild, accent: FantasyColors2.arcaneViolet, fill: const Color(0xFF241A38),
+          label: tr('Družina', 'Companions'),
+          locked: state.companionsTileLocked,
+          isNew: !state.companionsTileLocked && !state.seenHubTiles.contains('companions'),
+          lockedHint: tr('Odemyká se po první smrti', 'Unlocks after your first death'),
+          description: tr('Najímej a levelu společníky, kteří ti dávají trvalý bonus síly i mimo boj. Odemkne se po tvé první smrti jako útěcha do dalšího pokusu.',
+              'Recruit and level up companions that give you a permanent power bonus outside combat too. Unlocks after your first death as a consolation for the next run.'),
+          dx: 0.20, dy: 0.30, prominence: 0.9,
+          onTap: () {
+            if (state.companionsTileLocked) return;
+            state.markHubTileSeen('companions');
+            openWorldScreen(context, tr('Družina', 'Companions'), const CompanionsScreen());
+          },
         ),
+        SceneBuildingSpot(
+          iconType: FantasyIconType.systemQuests, accent: FantasyColors2.emberGold, fill: const Color(0xFF3A2B12),
+          label: tr('Questy', 'Quests'),
+          description: tr('Denní a týdenní úkoly za Zlato, Magický prach a další odměny. Pravidelný zdroj postupu, aniž bys musel celý den aktivně bojovat.',
+              'Daily and weekly tasks for Gold, Magic Dust and other rewards. A steady source of progress without needing to actively fight all day.'),
+          dx: 0.72, dy: 0.20, prominence: 0.85,
+          onTap: () => openWorldScreen(context, tr('Questy', 'Quests'), const QuestScreen()),
+        ),
+        SceneBuildingSpot(
+          iconType: FantasyIconType.systemForge, accent: FantasyColors2.teal, fill: const Color(0xFF122824),
+          label: tr('Kovárna', 'Forge'),
+          locked: !state.blacksmithUnlocked,
+          isNew: state.blacksmithUnlocked && !state.seenHubTiles.contains('blacksmith'),
+          unlockProgress: state.level / GameState.blacksmithUnlockLevel,
+          lockedHint: tr('Odemyká se na levelu ${GameState.blacksmithUnlockLevel}', 'Unlocks at level ${GameState.blacksmithUnlockLevel}'),
+          description: tr('Kup si vygenerované vybavení podle ranku Kováře, nebo si ho nech vykovat. Rank kováře roste s používáním a zlepšuje jak staty, tak ceny na Tržišti.',
+              'Buy gear generated according to the Blacksmith rank, or have a piece forged. The rank grows with use and improves both stats and Market prices.'),
+          dx: 0.50, dy: 0.53, prominence: 1.15,
+          onTap: () {
+            if (!state.blacksmithUnlocked) return;
+            state.markHubTileSeen('blacksmith');
+            openWorldScreen(context, tr('Kovárna', 'Forge'), const BlacksmithScreen());
+          },
+        ),
+        SceneBuildingSpot(
+          iconType: FantasyIconType.systemAlchemy, accent: FantasyColors2.arcaneViolet, fill: const Color(0xFF241A38),
+          label: tr('Alchymie', 'Alchemy'),
+          description: tr('Vař lektvary a elixíry z nasbíraných surovin - léčení, dočasné buffy a další efekty do boje.',
+              'Brew potions and elixirs from gathered materials - healing, temporary buffs and other combat effects.'),
+          dx: 0.16, dy: 0.60, prominence: 0.95,
+          onTap: () => openWorldScreen(context, tr('Alchymie', 'Alchemy'), const AlchemistScreen()),
+        ),
+        SceneBuildingSpot(
+          iconType: FantasyIconType.systemMarket, accent: FantasyColors2.emberGold, fill: const Color(0xFF3A2B12),
+          label: tr('Tržiště', 'Market'),
+          locked: !state.marketUnlocked,
+          isNew: state.marketUnlocked && !state.seenHubTiles.contains('market'),
+          unlockProgress: state.level / GameState.marketUnlockLevel,
+          lockedHint: tr('Odemyká se na levelu ${GameState.marketUnlockLevel}', 'Unlocks at level ${GameState.marketUnlockLevel}'),
+          description: tr('Nakupuj základní vybavení a lektvary za Zlato, plus dvě Speciální nabídky (Rare/Epic/Legendary/SET), které se obnovují každou hodinu.',
+              'Buy basic gear and potions with Gold, plus two Featured Offers (Rare/Epic/Legendary/SET) that refresh every hour.'),
+          dx: 0.82, dy: 0.58, prominence: 1.05,
+          onTap: () {
+            if (!state.marketUnlocked) return;
+            state.markHubTileSeen('market');
+            openWorldScreen(context, tr('Tržiště', 'Market'), const MarketScreen());
+          },
+        ),
+        if (state.isHubTileRevealed(GameState.runeWizardTileUnlockLevel))
+          SceneBuildingSpot(
+            iconType: FantasyIconType.systemRuneWizard, accent: FantasyColors2.runeIce, fill: const Color(0xFF0F1E28),
+            label: tr('Runový Čaroděj', 'Rune Wizard'),
+            badgeCount: state.runeWizardTileUnlocked && state.runeWizardUnlocked && state.runeTalentPoints > 0 ? state.runeTalentPoints : null,
+            locked: !state.runeWizardTileUnlocked,
+            isNew: state.runeWizardTileUnlocked && !state.seenHubTiles.contains('runewizard'),
+            unlockProgress: state.level / GameState.runeWizardTileUnlockLevel,
+            lockedHint: tr('Odemyká se na levelu ${GameState.runeWizardTileUnlockLevel}', 'Unlocks at level ${GameState.runeWizardTileUnlockLevel}'),
+            description: tr('Endgame talentový strom za Runové kameny získané z bossů - trvalé pasivní bonusy nezávislé na aktuálním vybavení.',
+                'An endgame talent tree paid for with Rune Stones earned from bosses - permanent passive bonuses independent of your current gear.'),
+            dx: 0.30, dy: 0.85, prominence: 1.0,
+            onTap: () {
+              if (!state.runeWizardTileUnlocked) return;
+              state.markHubTileSeen('runewizard');
+              openWorldScreen(context, tr('Runový Čaroděj', 'Rune Wizard'), const RuneWizardScreen());
+            },
+          ),
+        if (state.isHubTileRevealed(GameState.runeBlacksmithUnlockLevel))
+          SceneBuildingSpot(
+            iconType: FantasyIconType.systemForge, accent: const Color(0xFFFF1744), fill: const Color(0xFF1F0F14),
+            label: tr('Runový Kovář', 'Rune Blacksmith'),
+            badgeCount: state.runeBlacksmithTileUnlocked && state.specialization != 0 && !state.hasCraftedActiveArtifactWeapon ? 1 : null,
+            locked: !state.runeBlacksmithTileUnlocked,
+            isNew: state.runeBlacksmithTileUnlocked && !state.seenHubTiles.contains('runeblacksmith'),
+            unlockProgress: state.level / GameState.runeBlacksmithUnlockLevel,
+            lockedHint: tr('Odemyká se na levelu ${GameState.runeBlacksmithUnlockLevel}', 'Unlocks at level ${GameState.runeBlacksmithUnlockLevel}'),
+            description: tr('Vykovej si osobní Artefaktovou zbraň a postupně ji vylepšuj Esencí Moci a silnějšími zbraněmi z batohu. Zbraň roste s tebou po celou hru, bez stropu.',
+                'Forge your own Artifact Weapon and gradually upgrade it with Power Essence and stronger weapons from your bag. It grows with you for the whole game, with no cap.'),
+            dx: 0.66, dy: 0.85, prominence: 1.0,
+            onTap: () {
+              if (!state.runeBlacksmithTileUnlocked) return;
+              state.markHubTileSeen('runeblacksmith');
+              openWorldScreen(context, tr('Runový Kovář', 'Rune Blacksmith'), const RuneBlacksmithScreen());
+            },
+          ),
+        SceneBuildingSpot(
+          iconType: FantasyIconType.systemMarket, accent: const Color(0xFF64B5F6), fill: const Color(0xFF0F1F2E),
+          label: tr('Banka', 'Bank'),
+          badgeCount: state.bankUnlocked && state.bankItems.isNotEmpty ? state.bankItems.length : null,
+          locked: !state.bankUnlocked,
+          isNew: state.bankUnlocked && !state.seenHubTiles.contains('bank'),
+          unlockProgress: state.level / GameState.bankUnlockLevel,
+          lockedHint: tr('Odemyká se na levelu ${GameState.bankUnlockLevel}', 'Unlocks at level ${GameState.bankUnlockLevel}'),
+          description: tr('Trvalé úložiště mimo inventář - ulož si vybavení jiné třídy nebo buildu, místo abys ho prodal nebo roztavil, když zrovna nesedí k aktuální specializaci.',
+              'Permanent storage outside your inventory - stash gear from another class or build instead of selling or salvaging it when it does not fit your current spec.'),
+          dx: 0.50, dy: 0.14, prominence: 0.8,
+          onTap: () {
+            if (!state.bankUnlocked) return;
+            state.markHubTileSeen('bank');
+            openWorldScreen(context, tr('Banka', 'Bank'), const BankScreen());
+          },
+        ),
+        if (state.isHubTileRevealed(GameState.kronikaUnlockLevel))
+          SceneBuildingSpot(
+            iconType: FantasyIconType.systemQuests, accent: const Color(0xFF8B5CF6), fill: const Color(0xFF241A38),
+            label: tr('Kronika', 'Chronicle'),
+            locked: !state.kronikaUnlocked,
+            isNew: state.kronikaUnlocked && !state.seenHubTiles.contains('kronika'),
+            unlockProgress: state.level / GameState.kronikaUnlockLevel,
+            lockedHint: tr('Odemyká se na levelu ${GameState.kronikaUnlockLevel}', 'Unlocks at level ${GameState.kronikaUnlockLevel}'),
+            description: tr('Denní/týdenní/měsíční přehled cílů a odměn (Chronicle coin) a trvalé úložiště vybavení napříč třídami.',
+                'A daily/weekly/monthly overview of goals and rewards (Chronicle coin), plus permanent cross-class gear storage.'),
+            dx: 0.88, dy: 0.85, prominence: 0.85,
+            onTap: () {
+              if (!state.kronikaUnlocked) return;
+              state.markHubTileSeen('kronika');
+              openWorldScreen(context, tr('Kronika', 'Chronicle'), const KronikaScreen());
+            },
+          ),
+      ];
+      return SceneMapView(
+        title: tr('MĚSTO', 'TOWN'),
+        titleIcon: Icons.location_city,
+        titleAccent: const Color(0xFFC9A96E),
+        danger: false,
+        buildings: buildings,
       );
     });
   }
