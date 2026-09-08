@@ -73,7 +73,18 @@ enum HeroClass { none, warrior, hunter, healer, deathknight, mage, duelist, monk
 // Vyprázdněno - původní portréty smazány (čeká se na novou sadu ve stylu bossů/nepřátel/scén).
 // Až budou hotové nové, sem se zase přidají řádky - stejný fallback princip jako u bossů výš, UI
 // (viz _ClassBadge/LivingPortrait ve screens.dart) mezitím spadne zpět na procedurální ikony.
-const Map<HeroClass, String> kClassPortraitAssets = {};
+const Map<HeroClass, String> kClassPortraitAssets = {
+  HeroClass.healer: 'assets/images/portraits/class_healer.png',
+  HeroClass.hunter: 'assets/images/portraits/class_hunter.png',
+  HeroClass.druid: 'assets/images/portraits/class_druid.png',
+  HeroClass.mage: 'assets/images/portraits/class_mage.png',
+  HeroClass.monk: 'assets/images/portraits/class_monk.png',
+  HeroClass.duelist: 'assets/images/portraits/class_duelist.png',
+  HeroClass.deathknight: 'assets/images/portraits/class_deathknight.png',
+  HeroClass.warrior: 'assets/images/portraits/class_warrior.png',
+  HeroClass.paladin: 'assets/images/portraits/class_paladin.png',
+  HeroClass.demonhunter: 'assets/images/portraits/class_demonhunter.png',
+};
 
 // ===== PORTRÉTY BOSSŮ (AI-generovaná ilustrace, stejný princip jako kClassPortraitAssets výš) =====
 // Klíč je jméno bosse (currentEnemyName ve Věži / currentLairBossName v Doupěti) - Doupě i Věž
