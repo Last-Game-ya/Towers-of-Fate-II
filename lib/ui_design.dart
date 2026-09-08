@@ -3244,7 +3244,7 @@ class _SceneBuildingMarker extends StatelessWidget {
           children: [
             if (!spot.locked)
               // Neviditelná - jen definuje tap plochu (ClipOval ořízne hit-test na elipsu).
-              ClipOval(child: SizedBox(width: tapW, height: tapH))
+              ClipOval(child: Container(width: tapW, height: tapH, color: Colors.transparent))
             else if (showLockedSign)
               _WoodenClosedSign(width: signW, height: signH)
             else if (showNearUnlockTease)
@@ -3594,8 +3594,56 @@ class _SceneLifePainter extends CustomPainter {
           canvas.drawCircle(center, r * 0.7, Paint()..color = const Color(0xFFFFF3D8).withOpacity(flicker * 0.45)..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.5));
         }
       }
+    } else {
+      // Sluneční paprsky Města - protějšek bouřkové oblohy Dobrodružství, ale opačná nálada:
+      // klidné, teplé, dýchající "god rays" vycházející ze slunce v obrázku (pozice odpovídá
+      // skutečnému slunci na horizontu v town_bg.png), plus pár ptáků pomalu táhnoucích oblohou.
+      final sunPos = Offset(0.42 * size.width, 0.135 * size.height);
+      // Základní měkká záře slunce, jemně "dýchá" (pulz jasu, ne velikosti - má to působit klidně).
+      final sunBreath = 0.6 + 0.4 * sin(t * 2 * pi * 0.35);
+      canvas.drawCircle(sunPos, size.width * 0.10, Paint()..color = const Color(0xFFFFE9B0).withOpacity(0.16 * sunBreath)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.09));
+      // 6 širokých paprsků vycházejících dolů/do stran ze slunce (ne nahoru, tam by nebyly vidět
+      // přes oblohu) - velmi pomalá rotace jako náznak pohybu mraků/atmosféry, ne skutečné otáčení.
+      canvas.save();
+      canvas.translate(sunPos.dx, sunPos.dy);
+      canvas.rotate(t * 2 * pi * 0.015);
+      const rayCount = 6;
+      for (int i = 0; i < rayCount; i++) {
+        final a0 = pi * 0.15 + i * (pi * 0.7 / rayCount); // vějíř dolů/do stran, ne celý kruh
+        final breathe = 0.5 + 0.5 * sin(t * 2 * pi * 0.4 + i * 0.8);
+        final len = size.height * (0.42 + 0.08 * breathe);
+        final halfWidth = 0.05 + 0.02 * breathe;
+        final path = Path()
+          ..moveTo(0, 0)
+          ..lineTo(len * sin(a0 - halfWidth), len * cos(a0 - halfWidth) * 0.55)
+          ..lineTo(len * sin(a0 + halfWidth), len * cos(a0 + halfWidth) * 0.55)
+          ..close();
+        canvas.drawPath(
+          path,
+          Paint()
+            ..shader = LinearGradient(colors: [const Color(0xFFFFE9B0).withOpacity(0.10 * breathe), const Color(0xFFFFE9B0).withOpacity(0)]).createShader(Rect.fromCircle(center: Offset.zero, radius: len))
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8),
+        );
+      }
+      canvas.restore();
+      // Ptáci - 3 drobné "V" siluety, pomalu táhnou zleva doprava v mírně odlišných výškách a
+      // rychlostech, mizí za pravým okrajem a znovu se objeví vlevo (nekonečná smyčka).
+      final birdRnd = Random(11);
+      for (int i = 0; i < 3; i++) {
+        final speed = 0.05 + birdRnd.nextDouble() * 0.03;
+        final yFrac = 0.08 + birdRnd.nextDouble() * 0.12;
+        final phase = (t * speed + i * 0.33) % 1.0;
+        final x = phase * size.width * 1.3 - size.width * 0.15;
+        final y = yFrac * size.height + sin(phase * pi * 4) * 6;
+        final wingFlap = sin(t * 2 * pi * 3 + i) * 0.5;
+        final bw = 7.0;
+        final path = Path()
+          ..moveTo(x - bw, y - wingFlap * 4)
+          ..quadraticBezierTo(x, y + 3, x, y)
+          ..quadraticBezierTo(x, y + 3, x + bw, y - wingFlap * 4);
+        canvas.drawPath(path, Paint()..color = const Color(0xFF2A1E12).withOpacity(0.35)..style = PaintingStyle.stroke..strokeWidth = 1.4..strokeCap = StrokeCap.round);
+      }
     }
-    // Kouř z komínů - 3 částice na komín, každá s jinou fází, stoupá a rozplývá se.
     for (int p = 0; p < smokePoints.length; p++) {
       final base = Offset(smokePoints[p].dx * size.width, smokePoints[p].dy * size.height);
       for (int i = 0; i < 3; i++) {
@@ -6943,6 +6991,9 @@ class FantasyProgressBar extends StatefulWidget {
 
 class _FantasyProgressBarState extends State<FantasyProgressBar> with SingleTickerProviderStateMixin {
   late final AnimationController _pulseController;
+  // Krátký bílý záblesk, co se spustí u velkého zásahu (viz didUpdateWidget) - hráč nejdřív
+  // "ucítí" ránu, pak teprve vidí HP plynule odkapávat (viz drain TweenAnimationBuilder níž).
+  late final AnimationController _hitFlashController;
 
   // Pulzuje jen u HP baru, a jen když je hráč pod 20 % zdraví (a ještě žije).
   bool get _isLowHp => widget.label == 'HP' && widget.max > 0 && widget.value > 0 && (widget.value / widget.max) < 0.2;
@@ -6951,11 +7002,24 @@ class _FantasyProgressBarState extends State<FantasyProgressBar> with SingleTick
   void initState() {
     super.initState();
     _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 650))..repeat(reverse: true);
+    _hitFlashController = AnimationController(vsync: this, duration: const Duration(milliseconds: 260));
+  }
+
+  @override
+  void didUpdateWidget(covariant FantasyProgressBar old) {
+    super.didUpdateWidget(old);
+    // Velký zásah (HP bar, pokles >= 15 % maxima v jednom kroku) - krátký bílý záblesk navrch,
+    // souběžně s tím, jak hlavní bar začíná odkapávat na novou hodnotu (viz drain níž).
+    if (widget.label.contains('HP') && widget.max > 0 && old.value > widget.value) {
+      final dropFrac = (old.value - widget.value) / widget.max;
+      if (dropFrac >= 0.15) _hitFlashController.forward(from: 0);
+    }
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _hitFlashController.dispose();
     super.dispose();
   }
 
@@ -6989,31 +7053,54 @@ class _FantasyProgressBarState extends State<FantasyProgressBar> with SingleTick
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(3),
                 child: Stack(children: [
-                  // "Duch" HP baru: zpožděně dojíždí za skutečnou hodnotou (klasický JRPG trik) -
-                  // hlavní bar skočí okamžitě, tenhle světlejší pruh za ním "dobíhá" ~500ms, takže
-                  // oko čte přesně tolik, kolik se právě ztratilo. Jen u HP bar (label obsahuje "HP").
+                  // Hlavní bar u HP teď plynule "odkapává" k nové hodnotě přes ~650 ms místo
+                  // okamžitého skoku (viz didUpdateWidget výš pro záblesk u velkého zásahu) -
+                  // ostatní bary (Štít/Mana/XP) beze změny, skáčou okamžitě jako dřív.
+                  widget.label.contains('HP')
+                      ? TweenAnimationBuilder<double>(
+                          tween: Tween<double>(begin: widget.value, end: widget.value),
+                          duration: const Duration(milliseconds: 650),
+                          curve: Curves.easeInOut,
+                          builder: (context, drainValue, child) {
+                            final df = widget.max <= 0 ? 0.0 : (drainValue / widget.max).clamp(0.0, 1.0);
+                            return FractionallySizedBox(
+                              widthFactor: df,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [Color.lerp(widget.color, Colors.white, .22)!, widget.color, Color.lerp(widget.color, Colors.black, .30)!],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : FractionallySizedBox(
+                          widthFactor: f,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color.lerp(widget.color, Colors.white, .22)!, widget.color, Color.lerp(widget.color, Colors.black, .30)!],
+                              ),
+                            ),
+                          ),
+                        ),
+                  // Bílý záblesk při velkém zásahu (>= 15 % maxima, viz didUpdateWidget výš) -
+                  // krátce překryje bar (~260 ms nahoru/dolů), než pod ním doběhne odkapávání.
                   if (widget.label.contains('HP'))
-                    TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: widget.value, end: widget.value),
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.easeOut,
-                      builder: (context, shadowValue, child) {
-                        final sf = widget.max <= 0 ? 0.0 : (shadowValue / widget.max).clamp(0.0, 1.0);
-                        return FractionallySizedBox(widthFactor: sf, child: Container(color: Colors.white.withOpacity(0.30)));
+                    AnimatedBuilder(
+                      animation: _hitFlashController,
+                      builder: (context, _) {
+                        final v = _hitFlashController.value;
+                        if (v <= 0) return const SizedBox.shrink();
+                        final intensity = v < 0.5 ? v / 0.5 : 1 - (v - 0.5) / 0.5;
+                        return IgnorePointer(child: Container(color: Colors.white.withOpacity(intensity * 0.55)));
                       },
                     ),
-                  FractionallySizedBox(
-                    widthFactor: f,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Color.lerp(widget.color, Colors.white, .22)!, widget.color, Color.lerp(widget.color, Colors.black, .30)!],
-                        ),
-                      ),
-                    ),
-                  ),
                   Center(
                     child: Text(
                       '${formatCompactNumber(widget.value)} / ${formatCompactNumber(widget.max)}',

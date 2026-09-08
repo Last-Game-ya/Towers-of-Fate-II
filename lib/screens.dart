@@ -188,7 +188,7 @@ class _RelicBurstPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
 
     // 1) Screen flash - rychle odezní hned na startu (první ~30 % animace).
@@ -420,7 +420,7 @@ class _SpellFxPainter extends CustomPainter {
     final strength = bell * (epic ? 0.4 : 0.24);
     if (strength <= 0.01) return;
     final rect = Offset.zero & size;
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final maxR = size.longestSide * 0.75;
     canvas.drawRect(rect, Paint()..shader = RadialGradient(
       colors: [Colors.black.withOpacity(0), Colors.black.withOpacity(strength)],
@@ -461,7 +461,7 @@ class _SpellFxPainter extends CustomPainter {
   // 5 zářícími klikatými trhlinami-blesky s vedlejšími výhonky ven ze středu a stoupajícími
   // zářivými kouřovými smítky prokletí. Vše doznívá do ~500 ms - má to být rychlý, časný impact.
   void _paintCursedStrike(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
     final stampT = (t / 0.35).clamp(0.0, 1.0);
     final scale = Curves.easeOutBack.transform(stampT);
@@ -547,7 +547,7 @@ class _SpellFxPainter extends CustomPainter {
   // vlna, radiální blesky, sytý radiální glow a kostěné/zubaté úlomky s dohasínajícím "duchem"
   // za sebou. Delší (~900 ms) a razantnější než Prokletý úder - epický finisher spell.
   void _paintCurseExplosion(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     if (t < 0.32) {
       final p = (t / 0.32).clamp(0.0, 1.0);
       final eased = Curves.easeIn.transform(p);
@@ -633,7 +633,7 @@ class _SpellFxPainter extends CustomPainter {
   // jiskřičky/hvězdičky stoupající vzhůru jako "vyléčení" - vše prosvětlené a měkké, žádné ostré
   // hrany (na rozdíl od DK efektů výš), rychlé a jemné (~500 ms).
   void _paintHealerBlessing(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
     final fade = (1 - ((t - 0.4) / 0.6).clamp(0.0, 1.0));
     if (fade <= 0.02) return;
@@ -710,7 +710,7 @@ class _SpellFxPainter extends CustomPainter {
   // uprostřed a létající zlatá pírka s jemným zavlněním místo ostrých úlomků (fáze 2). Delší a
   // razantnější (~900 ms) - ultimátní finisher spell léčitele.
   void _paintHealerJudgment(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     if (t < 0.32) {
       final p = (t / 0.32).clamp(0.0, 1.0);
       final eased = Curves.easeIn.transform(p);
@@ -822,7 +822,7 @@ class _SpellFxPainter extends CustomPainter {
   // Čepel/sek: rychlý diagonální "slash" streak přes cíl (jasná stopa co se rozšíří a zmizí),
   // + krátká druhá afterimage čepel se zpožděním, + pár jisker vylétávajících podél řezu.
   void _paintBladeSlash(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final slashT = (t / (epic ? 0.5 : 0.4)).clamp(0.0, 1.0);
     final eased = Curves.easeOutExpo.transform(slashT);
     final fade = (1 - ((t - 0.4) / 0.6).clamp(0.0, 1.0));
@@ -893,7 +893,7 @@ class _SpellFxPainter extends CustomPainter {
   // Blesk: cikcak paprsek shora dolů (2-3 zablikání), tenké radiální výboje ze středu, krátký
   // bílý flash - rychlé, ostré, elektrizující.
   void _paintStormLightning(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
     if (fade <= 0.02) return;
     final flicker = (sin(t * pi * (epic ? 14 : 10)).abs());
@@ -919,7 +919,7 @@ class _SpellFxPainter extends CustomPainter {
   // Stínové vsátí: dušičky implodují do temného portálu (kruh s prstencem), krátký záblesk a
   // rozplynutí v kouři - variace na Explozi prokletí, ale kompaktnější a bez kostěných úlomků.
   void _paintShadowVoid(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final implodeEnd = epic ? 0.38 : 0.3;
     if (t < implodeEnd) {
       final p = (t / implodeEnd).clamp(0.0, 1.0);
@@ -958,7 +958,7 @@ class _SpellFxPainter extends CustomPainter {
   // (Paladin/LightBearer) - měkký glow, rotující halo, stoupající jiskřičky; epické verze navíc
   // dostanou krátký paprsek shora.
   void _paintHolyRadianceGeneric(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
     final fade = (1 - ((t - 0.4) / 0.6).clamp(0.0, 1.0));
     if (fade <= 0.02) return;
@@ -990,7 +990,7 @@ class _SpellFxPainter extends CustomPainter {
   // "chladnější"/přesnější než DK hexagram, hodí se pro Mage linii (Elementalist/Arcanist/
   // Archmage).
   void _paintArcaneRune(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final stampT = (t / 0.35).clamp(0.0, 1.0);
     final scale = Curves.easeOutBack.transform(stampT);
     final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
@@ -1023,7 +1023,7 @@ class _SpellFxPainter extends CustomPainter {
   // "Chi" úder: koncentrické rozšiřující se kruhy (jako tlaková vlna z úderu dlaní), pár
   // radiálních krátkých obloučků a jemné stoupající tečky - čisté, rychlé, meditativní.
   void _paintChiBurst(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final fade = (1 - ((t - 0.5) / 0.5).clamp(0.0, 1.0));
     if (fade <= 0.02) return;
     void ring(double delay, double maxR, double opacityMul) {
@@ -1048,7 +1048,7 @@ class _SpellFxPainter extends CustomPainter {
   // Přírodní květ: měkké překrývající se "lístky" (blob tvary) expandující ven ze středu + pár
   // stoupajících pylových částic - organický, žádné ostré hrany.
   void _paintNatureBloom(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final eased = Curves.easeOutBack.transform(t.clamp(0.0, 1.0));
     final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
     if (fade <= 0.02) return;
@@ -1075,7 +1075,7 @@ class _SpellFxPainter extends CustomPainter {
   // Rozklad/kosti: sytě jedovatý implode+burst s "kostěnými" zubatými úlomky (sdílený tvar
   // s _paintCurseExplosion) - kompaktnější verze pro Necromancer/DeathReaper linii.
   void _paintBoneDecayGeneric(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
     final stampT = (t / 0.3).clamp(0.0, 1.0);
     final scale = Curves.easeOutBack.transform(stampT);
     final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
@@ -1139,7 +1139,7 @@ class _SpellFxOverlayState extends State<SpellFxOverlay> with SingleTickerProvid
     // stihl vizuál "vstřebat". MUSÍ odpovídat _spellFxSlowMoMs v game_state.dart, který podle
     // těchto časů pozastavuje auto-boj (viz isSpellSlowMo) - jinak by se rozjel dřív/později,
     // než animace doopravdy doběhne.
-    _c = AnimationController(vsync: this, duration: Duration(milliseconds: epic ? 1600 : 950));
+    _c = AnimationController(vsync: this, duration: Duration(milliseconds: epic ? 2200 : 1300));
     final rnd = Random();
     final shardCount = epic ? 14 : 0;
     _shards = List.generate(shardCount, (i) {
