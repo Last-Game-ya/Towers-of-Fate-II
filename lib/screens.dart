@@ -3861,7 +3861,9 @@ class CompanionsScreen extends StatelessWidget {
                                   ? tr("Odebrat", "Dismiss")
                                   : (state.everRecruitedCompanions.contains(c.name)
                                       ? tr("Povolat", "Recall")
-                                      : tr("Odemknout (${150 * pow(2, state.everRecruitedCompanions.length).toInt()} 🪙)", "Unlock (${150 * pow(2, state.everRecruitedCompanions.length).toInt()} 🪙)")),
+                                      : (state.everRecruitedCompanions.isEmpty
+                                          ? tr("Odemknout (Zdarma)", "Unlock (Free)")
+                                          : tr("Odemknout (${150 * pow(2, state.everRecruitedCompanions.length - 1).toInt()} 🪙)", "Unlock (${150 * pow(2, state.everRecruitedCompanions.length - 1).toInt()} 🪙)"))),
                             ),
                           ),
                         ),
