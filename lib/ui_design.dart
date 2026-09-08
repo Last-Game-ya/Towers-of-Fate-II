@@ -2259,15 +2259,28 @@ class _TeaseFogLightningPainter extends CustomPainter {
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
       );
     }
-    // Bleskový záblesk - dvě krátká okna viditelnosti za smyčku (jinak nic), cik-cak dráha od
-    // vršku zóny dolů, s jemnou fialovou září kolem v momentě záblesku.
-    final flashPhase1 = (t * 3) % 1.0;
-    final flashPhase2 = ((t + 0.5) * 3) % 1.0;
+    // Bleskový BURST - shluk 5 rychlých záblesků během prvních 1.5s smyčky (5s), pak 3.5s
+    // úplné ticho (jen mlha dál vine). Každý záblesk má jinou náhodnou cik-cak dráhu, ať to
+    // vypadá jako opravdová bouřka, ne jeden opakující se blesk.
+    const double burstFrac = 0.3; // 1.5s / 5s
+    const int flashCount = 5;
     double flashIntensity = 0;
-    if (flashPhase1 < 0.06) flashIntensity = 1 - (flashPhase1 / 0.06);
-    if (flashPhase2 < 0.04) flashIntensity = max(flashIntensity, 1 - (flashPhase2 / 0.04));
+    int flashSeed = 0;
+    if (t < burstFrac) {
+      final localT = t / burstFrac; // 0..1 napříč burstem
+      final segF = localT * flashCount;
+      final segment = segF.floor().clamp(0, flashCount - 1);
+      final segLocal = segF - segment; // 0..1 v rámci jednoho záblesku
+      // Rychlý nájezd na plnou jasnost, pak dohasnutí - typický "blik" blesku.
+      if (segLocal < 0.15) {
+        flashIntensity = segLocal / 0.15;
+      } else if (segLocal < 0.45) {
+        flashIntensity = 1 - (segLocal - 0.15) / 0.30;
+      }
+      flashSeed = segment;
+    }
     if (flashIntensity > 0) {
-      final rnd = Random((t * 997).floor());
+      final rnd = Random(flashSeed * 7919 + 13);
       double x = center.dx + (rnd.nextDouble() - 0.5) * size.width * 0.3;
       double y = 0;
       final path = Path()..moveTo(x, y);
@@ -3122,19 +3135,20 @@ class _SceneBuildingMarker extends StatelessWidget {
                   child: Text('${spot.badgeCount}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
                 ),
               ),
-            // Popisek: vždycky u odemčené budovy, u zamčené jen ve Městě (cedule) - v
-            // Dobrodružství žádný text, ani při mlžné předzvěsti.
-            if (!spot.locked || showLockedSign)
+            // Popisek jen u odemčené budovy - u zamčené (Město i Dobrodružství) žádný extra
+            // text na mapě: cedule (_WoodenClosedSign) už má "ZAVŘENO" vypálené v obrázku, a
+            // konkrétní level odemčení se ukazuje jen v info sheetu po ťuknutí, ne tady navrch.
+            if (!spot.locked)
               Container(
                 constraints: BoxConstraints(maxWidth: tapW - 12),
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(color: Colors.black.withOpacity(.6), borderRadius: BorderRadius.circular(6)),
                 child: Text(
-                  spot.locked ? (spot.lockedHint ?? spot.label) : spot.label,
+                  spot.label,
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: spot.locked ? Colors.grey.shade500 : const Color(0xFFF1E6D0), height: 1.1),
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFF1E6D0), height: 1.1),
                 ),
               ),
           ],
@@ -3600,7 +3614,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se po první smrti', 'Unlocks after your first death'),
           description: tr('Najímej a levelu společníky, kteří ti dávají trvalý bonus síly i mimo boj. Odemkne se po tvé první smrti jako útěcha do dalšího pokusu.',
               'Recruit and level up companions that give you a permanent power bonus outside combat too. Unlocks after your first death as a consolation for the next run.'),
-          dx: 0.20, dy: 0.22, prominence: 0.9,
+          dx: 0.20, dy: 0.22, prominence: 0.9, tapWidth: 133, tapHeight: 150,
           onTap: () {
             if (state.companionsTileLocked) return;
             state.markHubTileSeen('companions');
@@ -3613,7 +3627,7 @@ class CityScreen extends StatelessWidget {
           label: tr('Questy', 'Quests'),
           description: tr('Denní a týdenní úkoly za Zlato, Magický prach a další odměny. Pravidelný zdroj postupu, aniž bys musel celý den aktivně bojovat.',
               'Daily and weekly tasks for Gold, Magic Dust and other rewards. A steady source of progress without needing to actively fight all day.'),
-          dx: 0.68, dy: 0.31, prominence: 0.85,
+          dx: 0.68, dy: 0.31, prominence: 0.85, tapWidth: 82, tapHeight: 135,
           onTap: () => openWorldScreen(context, tr('Questy', 'Quests'), const QuestScreen()),
         ),
         SceneBuildingSpot(
@@ -3626,7 +3640,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se na levelu ${GameState.blacksmithUnlockLevel}', 'Unlocks at level ${GameState.blacksmithUnlockLevel}'),
           description: tr('Kup si vygenerované vybavení podle ranku Kováře, nebo si ho nech vykovat. Rank kováře roste s používáním a zlepšuje jak staty, tak ceny na Tržišti.',
               'Buy gear generated according to the Blacksmith rank, or have a piece forged. The rank grows with use and improves both stats and Market prices.'),
-          dx: 0.48, dy: 0.62, prominence: 1.15,
+          dx: 0.48, dy: 0.62, prominence: 1.15, tapWidth: 122, tapHeight: 170,
           onTap: () {
             if (!state.blacksmithUnlocked) return;
             state.markHubTileSeen('blacksmith');
@@ -3639,7 +3653,7 @@ class CityScreen extends StatelessWidget {
           label: tr('Alchymie', 'Alchemy'),
           description: tr('Vař lektvary a elixíry z nasbíraných surovin - léčení, dočasné buffy a další efekty do boje.',
               'Brew potions and elixirs from gathered materials - healing, temporary buffs and other combat effects.'),
-          dx: 0.13, dy: 0.50, prominence: 0.95,
+          dx: 0.13, dy: 0.50, prominence: 0.95, tapWidth: 100, tapHeight: 121,
           onTap: () => openWorldScreen(context, tr('Alchymie', 'Alchemy'), const AlchemistScreen()),
         ),
         SceneBuildingSpot(
@@ -3652,7 +3666,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se na levelu ${GameState.marketUnlockLevel}', 'Unlocks at level ${GameState.marketUnlockLevel}'),
           description: tr('Nakupuj základní vybavení a lektvary za Zlato, plus dvě Speciální nabídky (Rare/Epic/Legendary/SET), které se obnovují každou hodinu.',
               'Buy basic gear and potions with Gold, plus two Featured Offers (Rare/Epic/Legendary/SET) that refresh every hour.'),
-          dx: 0.80, dy: 0.46, prominence: 1.0,
+          dx: 0.80, dy: 0.46, prominence: 1.0, tapWidth: 110, tapHeight: 100,
           onTap: () {
             if (!state.marketUnlocked) return;
             state.markHubTileSeen('market');
@@ -3671,7 +3685,7 @@ class CityScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.runeWizardTileUnlockLevel}', 'Unlocks at level ${GameState.runeWizardTileUnlockLevel}'),
             description: tr('Endgame talentový strom za Runové kameny získané z bossů - trvalé pasivní bonusy nezávislé na aktuálním vybavení.',
                 'An endgame talent tree paid for with Rune Stones earned from bosses - permanent passive bonuses independent of your current gear.'),
-            dx: 0.14, dy: 0.86, prominence: 1.0,
+            dx: 0.14, dy: 0.86, prominence: 1.0, tapWidth: 95, tapHeight: 210,
             onTap: () {
               if (!state.runeWizardTileUnlocked) return;
               state.markHubTileSeen('runewizard');
@@ -3690,7 +3704,7 @@ class CityScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.runeBlacksmithUnlockLevel}', 'Unlocks at level ${GameState.runeBlacksmithUnlockLevel}'),
             description: tr('Vykovej si osobní Artefaktovou zbraň a postupně ji vylepšuj Esencí Moci a silnějšími zbraněmi z batohu. Zbraň roste s tebou po celou hru, bez stropu.',
                 'Forge your own Artifact Weapon and gradually upgrade it with Power Essence and stronger weapons from your bag. It grows with you for the whole game, with no cap.'),
-            dx: 0.85, dy: 0.88, prominence: 1.0,
+            dx: 0.85, dy: 0.88, prominence: 1.0, tapWidth: 90, tapHeight: 145,
             onTap: () {
               if (!state.runeBlacksmithTileUnlocked) return;
               state.markHubTileSeen('runeblacksmith');
@@ -3708,7 +3722,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se na levelu ${GameState.bankUnlockLevel}', 'Unlocks at level ${GameState.bankUnlockLevel}'),
           description: tr('Trvalé úložiště mimo inventář - ulož si vybavení jiné třídy nebo buildu, místo abys ho prodal nebo roztavil, když zrovna nesedí k aktuální specializaci.',
               'Permanent storage outside your inventory - stash gear from another class or build instead of selling or salvaging it when it does not fit your current spec.'),
-          dx: 0.50, dy: 0.19, prominence: 0.7,
+          dx: 0.50, dy: 0.16, prominence: 0.7, tapWidth: 121, tapHeight: 129,
           onTap: () {
             if (!state.bankUnlocked) return;
             state.markHubTileSeen('bank');
@@ -3726,7 +3740,7 @@ class CityScreen extends StatelessWidget {
             lockedHint: tr('Odemyká se na levelu ${GameState.kronikaUnlockLevel}', 'Unlocks at level ${GameState.kronikaUnlockLevel}'),
             description: tr('Denní/týdenní/měsíční přehled cílů a odměn (Chronicle coin) a trvalé úložiště vybavení napříč třídami.',
                 'A daily/weekly/monthly overview of goals and rewards (Chronicle coin), plus permanent cross-class gear storage.'),
-            dx: 0.90, dy: 0.20, prominence: 0.9,
+            dx: 0.90, dy: 0.20, prominence: 0.9, tapWidth: 78, tapHeight: 139,
             onTap: () {
               if (!state.kronikaUnlocked) return;
               state.markHubTileSeen('kronika');

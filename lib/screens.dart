@@ -4092,58 +4092,227 @@ class _ClassBadgeState extends State<_ClassBadge> with SingleTickerProviderState
   }
 }
 
-class _ClassPickerOption extends StatelessWidget {
+// ===== VÝBĚR TŘÍDY v2 - vodorovný karusel místo mřížky. Každá třída má krátký popis (co ta
+// třída je/jak hraje), a po potvrzení výběru obrazovka zčerná a odehraje se krátký úryvek
+// příběhu ("probudil ses na podlaze věže..."), než se skutečně zavolá state.selectClass a
+// přejde se do boje. =====
+class _ClassOption {
   final FantasyIconType iconType;
+  final HeroClass heroClass;
   final String name;
-  final VoidCallback onTap;
-  final HeroClass? heroClass;
-  const _ClassPickerOption({required this.iconType, required this.name, required this.onTap, this.heroClass});
+  final String description;
+  const _ClassOption({required this.iconType, required this.heroClass, required this.name, required this.description});
+}
 
-  static const double _ringSize = 104;
-  // Širší než samotný kruh ikony - dlouhé názvy (Lovec Démonů, Nekromant) se dřív vešly do
-  // labelu bez omezení šířky a vizuálně přetékaly do sousední dlaždice, protože Wrap počítal
-  // jen s šířkou ikony (104px), ne s reálně vykresleným labelem pod ní.
-  static const double _tileWidth = 118;
+enum _ClassSelectPhase { browsing, fadingOut, story1, story2 }
+
+class _ClassSelectionScreen extends StatefulWidget {
+  final GameState state;
+  final Widget? bossGuide;
+  const _ClassSelectionScreen({required this.state, this.bossGuide});
+
+  @override
+  State<_ClassSelectionScreen> createState() => _ClassSelectionScreenState();
+}
+
+class _ClassSelectionScreenState extends State<_ClassSelectionScreen> {
+  late final PageController _pageController;
+  double _page = 0;
+  _ClassSelectPhase _phase = _ClassSelectPhase.browsing;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(viewportFraction: 0.6);
+    _pageController.addListener(() {
+      setState(() => _page = _pageController.page ?? 0);
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  List<_ClassOption> _options() => [
+        _ClassOption(iconType: FantasyIconType.classWarrior, heroClass: HeroClass.warrior, name: tr("Válečník", "Warrior"), description: tr("Odolný bojovník v první linii - drtivé fyzické útoky nablízko a dost HP, na které se dá spolehnout.", "A tough frontline fighter - crushing melee attacks and enough HP to lean on.")),
+        _ClassOption(iconType: FantasyIconType.classHunter, heroClass: HeroClass.hunter, name: tr("Lovec", "Hunter"), description: tr("Stopař s lukem - stabilní poškození na dálku a pasti, co oslabí nepřítele dřív, než se přiblíží.", "A tracker with a bow - steady ranged damage and traps that weaken foes before they close in.")),
+        _ClassOption(iconType: FantasyIconType.classPriest, heroClass: HeroClass.healer, name: tr("Léčitel", "Healer"), description: tr("Podpora s léčivou magií - drží tě naživu v dlouhých soubojích, kde by jiná třída padla.", "Support with healing magic - keeps you alive through long fights that would drop other classes.")),
+        _ClassOption(iconType: FantasyIconType.classDeathKnight, heroClass: HeroClass.deathknight, name: tr("Rytíř Smrti", "Death Knight"), description: tr("Temný bojovník hybridního poškození - prokletí, krádež života a útoky, co bolí na dvou frontách zároveň.", "A dark hybrid-damage warrior - curses, life drain and attacks that hurt on two fronts at once.")),
+        _ClassOption(iconType: FantasyIconType.classMage, heroClass: HeroClass.mage, name: tr("Mág", "Mage"), description: tr("Křehký, ale ničivý - magické poškození na dálku ve velkých dávkách, pokud přežiješ dost dlouho na to ho seslat.", "Fragile but devastating - big bursts of ranged magic damage, if you survive long enough to cast it.")),
+        _ClassOption(iconType: FantasyIconType.classDuelist, heroClass: HeroClass.duelist, name: tr("Šermíř", "Duelist"), description: tr("Rychlá fyzická combo - vysoký crit a riskantní styl boje, kde rychlost rozhoduje víc než síla jednoho úderu.", "Fast physical combos - high crit and a risky style where speed matters more than any single hit.")),
+        _ClassOption(iconType: FantasyIconType.classMonk, heroClass: HeroClass.monk, name: tr("Mnich", "Monk"), description: tr("Hybridní bojovník na blízko - rovnováha mezi útokem a přežitím, bez extrémů na kteroukoliv stranu.", "A hybrid melee fighter - balance between offense and survival, without leaning too hard either way.")),
+        _ClassOption(iconType: FantasyIconType.classDruid, heroClass: HeroClass.druid, name: tr("Druid", "Druid"), description: tr("Přírodní magie a proměny - flexibilní třída, co se dokáže přizpůsobit mezi útokem a podporou.", "Nature magic and shapeshifting - a flexible class that adapts between offense and support.")),
+        _ClassOption(iconType: FantasyIconType.classPaladin, heroClass: HeroClass.paladin, name: tr("Paladin", "Paladin"), description: tr("Svatý ochránce - tank s vlastním léčením, co dokáže vydržet v boji sám, dlouho a bez pomoci.", "A holy protector - a tank with its own healing, able to hold the line alone for a long time.")),
+        _ClassOption(iconType: FantasyIconType.classDemonHunter, heroClass: HeroClass.demonhunter, name: tr("Lovec Démonů", "Demon Hunter"), description: tr("Agresivní lovec s démonickou energií - vysoké burst poškození za cenu vlastní zranitelnosti.", "An aggressive hunter fueled by demonic energy - high burst damage at the cost of its own fragility.")),
+        _ClassOption(iconType: FantasyIconType.classNecromancer, heroClass: HeroClass.necromancer, name: tr("Nekromant", "Necromancer"), description: tr("Vládce mrtvých - vyvolává poskoky a oslabuje nepřátele, místo aby bojoval čistě vlastníma rukama.", "A master of the dead - summons minions and weakens foes instead of fighting purely with its own hands.")),
+      ];
+
+  Future<void> _confirmClass(HeroClass cls) async {
+    setState(() => _phase = _ClassSelectPhase.fadingOut);
+    await Future.delayed(const Duration(milliseconds: 900));
+    if (!mounted) return;
+    setState(() => _phase = _ClassSelectPhase.story1);
+    await Future.delayed(const Duration(milliseconds: 2600));
+    if (!mounted) return;
+    setState(() => _phase = _ClassSelectPhase.story2);
+    await Future.delayed(const Duration(milliseconds: 2600));
+    if (!mounted) return;
+    widget.state.selectClass(cls);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final accent = FantasyIconRegistry.of(iconType).accentColor;
-    return InkWell(
-      borderRadius: BorderRadius.circular(_ringSize),
-      onTap: onTap,
-      child: SizedBox(
-        width: _tileWidth,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.topCenter,
-            children: [
-              _ClassBadge(iconType: iconType, accent: accent, size: _ringSize, heroClass: heroClass),
-              Positioned(
-                top: _ringSize - 16,
+    final options = _options();
+    final int centerIndex = _page.round().clamp(0, options.length - 1);
+    final centerOption = options[centerIndex];
+    return Stack(
+      children: [
+        // Skutečná ilustrace (viz konverzace o Copilot promptu "Síň Povolání") nahradila
+        // dřívější procedurální _ClassSelectHallPainter - ten zůstává v souboru nepoužitý
+        // (neškodí), kdyby bylo někdy potřeba fallback bez obrázku.
+        Positioned.fill(child: Image.asset('assets/images/scenes/class_hall.png', fit: BoxFit.cover)),
+        // Živá vrstva - přepočítané pozice podle skutečného obrázku class_hall.png (dřív odhad
+        // pro procedurální _ClassSelectHallPainter): 4 pochodně na zdi + jemný prach/kadidlo
+        // stoupající od run kruhu na podlaze (viz pentagram v popředí obrázku).
+        Positioned.fill(
+          child: _SceneLifeOverlay(
+            danger: false,
+            smokePoints: const [Offset(0.5, 0.76)],
+            glowPoints: const [Offset(0.15, 0.44), Offset(0.85, 0.44), Offset(0.30, 0.53), Offset(0.70, 0.53)],
+          ),
+        ),
+        Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                GearScoreBadge(state: widget.state),
+                const SizedBox(height: 12),
+                if (widget.bossGuide != null) ...[widget.bossGuide!, const SizedBox(height: 12)],
+                Text(tr("Zvolte si své povolání:", "Choose your class:"), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+                const SizedBox(height: 28),
+            SizedBox(
+              height: 210,
+              child: PageView.builder(
+                controller: _pageController,
+                itemCount: options.length,
+                itemBuilder: (context, i) {
+                  final o = options[i];
+                  final accent = FantasyIconRegistry.of(o.iconType).accentColor;
+                  final dist = (_page - i).abs().clamp(0.0, 1.0);
+                  final scale = 1.0 - dist * 0.24;
+                  final opacity = 1.0 - dist * 0.55;
+                  return Center(
+                    child: Transform.scale(
+                      scale: scale,
+                      child: Opacity(
+                        opacity: opacity,
+                        child: GestureDetector(
+                          onTap: () => _pageController.animateToPage(i, duration: const Duration(milliseconds: 280), curve: Curves.easeOut),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _ClassBadge(iconType: o.iconType, accent: accent, size: 130, heroClass: o.heroClass),
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(colors: [Color.lerp(accent, Colors.black, .75)!, const Color(0xFF17110A)]),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: accent, width: 1.6),
+                                  boxShadow: [BoxShadow(color: accent.withOpacity(0.4), blurRadius: 8)],
+                                ),
+                                child: Text(o.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFFF0DFC0), letterSpacing: .2)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 14),
+            // Krátký popis vybrané (nejbližší středu) třídy - mění se s posunem karuselu.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
                 child: Container(
-                  constraints: const BoxConstraints(maxWidth: _tileWidth),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  key: ValueKey(centerIndex),
+                  constraints: const BoxConstraints(minHeight: 56),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [Color.lerp(accent, Colors.black, .75)!, const Color(0xFF17110A)]),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: accent, width: 1.6),
-                    boxShadow: [BoxShadow(color: accent.withOpacity(0.4), blurRadius: 8)],
+                    color: Colors.black.withOpacity(.45),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: FantasyIconRegistry.of(centerOption.iconType).accentColor.withOpacity(.5)),
                   ),
                   child: Text(
-                    name,
+                    centerOption.description,
                     textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFF0DFC0), letterSpacing: .2),
+                    style: const TextStyle(color: Color(0xFFE6DCC5), fontSize: 12.5, height: 1.35),
                   ),
                 ),
               ),
-            ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: 260,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: FantasyIconRegistry.of(centerOption.iconType).accentColor,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () => _confirmClass(centerOption.heroClass),
+                child: Text(tr('Zvolit: ${centerOption.name}', 'Choose: ${centerOption.name}'), style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
         ),
-      ),
+          ),
         ),
+        // ===== ZATMĚNÍ + PŘÍBĚH po potvrzení volby - obrazovka zčerná a odehrají se dvě krátké
+        // věty, než se skutečně zavolá state.selectClass (viz _confirmClass výš). =====
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: _phase == _ClassSelectPhase.browsing,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 900),
+              opacity: _phase == _ClassSelectPhase.browsing ? 0.0 : 1.0,
+              child: Container(
+                color: Colors.black,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 36),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 600),
+                  child: _phase == _ClassSelectPhase.story1
+                      ? Text(
+                          tr('Probouzíš se na studené kamenné podlaze Věže Osudu. Hlava třeští, vzpomínky mlhavé.',
+                              'You wake on the cold stone floor of the Tower of Fate. Your head throbs, memories hazy.'),
+                          key: const ValueKey('s1'),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Color(0xFFE8D9B0), fontSize: 17, height: 1.5, fontStyle: FontStyle.italic),
+                        )
+                      : _phase == _ClassSelectPhase.story2
+                          ? Text(
+                              tr('Vtom zaslechneš kroky blížící se ze tmy chodby - první z mnoha nepřátel, co na tebe uvnitř čekají.',
+                                  'Then you hear footsteps approaching from the dark corridor - the first of many enemies waiting inside.'),
+                              key: const ValueKey('s2'),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Color(0xFFE8D9B0), fontSize: 17, height: 1.5, fontStyle: FontStyle.italic),
+                            )
+                          : const SizedBox.shrink(key: ValueKey('blank')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -4162,55 +4331,7 @@ class TowerScreen extends StatelessWidget {
         return const IntroScreen();
       }
       if (state.heroClass == HeroClass.none) {
-        return Stack(
-          children: [
-            // Skutečná ilustrace (viz konverzace o Copilot promptu "Síň Povolání") nahradila
-            // dřívější procedurální _ClassSelectHallPainter - ten zůstává v souboru nepoužitý
-            // (neškodí), kdyby bylo někdy potřeba fallback bez obrázku.
-            Positioned.fill(child: Image.asset('assets/images/scenes/class_hall.png', fit: BoxFit.cover)),
-            // Živá vrstva - přepočítané pozice podle skutečného obrázku class_hall.png (dřív
-            // odhad pro procedurální _ClassSelectHallPainter): 4 pochodně na zdi + jemný
-            // prach/kadidlo stoupající od run kruhu na podlaze (viz pentagram v popředí obrázku).
-            Positioned.fill(
-              child: _SceneLifeOverlay(
-                danger: false,
-                smokePoints: const [Offset(0.5, 0.76)],
-                glowPoints: const [Offset(0.15, 0.44), Offset(0.85, 0.44), Offset(0.30, 0.53), Offset(0.70, 0.53)],
-              ),
-            ),
-            Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-          GearScoreBadge(state: state), const SizedBox(height:12), if(state.isBoss)...[_bossGuide(state),const SizedBox(height:12)],
-                Text(tr("Zvolte si své povolání:", "Choose your class:"), style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
-                const SizedBox(height: 28),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 22,
-                  runSpacing: 28,
-                  children: [
-                    _ClassPickerOption(iconType: FantasyIconType.classWarrior, name: tr("Válečník", "Warrior"), heroClass: HeroClass.warrior, onTap: () => state.selectClass(HeroClass.warrior)),
-                    _ClassPickerOption(iconType: FantasyIconType.classHunter, name: tr("Lovec", "Hunter"), heroClass: HeroClass.hunter, onTap: () => state.selectClass(HeroClass.hunter)),
-                    _ClassPickerOption(iconType: FantasyIconType.classPriest, name: tr("Léčitel", "Healer"), heroClass: HeroClass.healer, onTap: () => state.selectClass(HeroClass.healer)),
-                    _ClassPickerOption(iconType: FantasyIconType.classDeathKnight, name: tr("Rytíř Smrti", "Death Knight"), heroClass: HeroClass.deathknight, onTap: () => state.selectClass(HeroClass.deathknight)),
-                    _ClassPickerOption(iconType: FantasyIconType.classMage, name: tr("Mág", "Mage"), heroClass: HeroClass.mage, onTap: () => state.selectClass(HeroClass.mage)),
-                    _ClassPickerOption(iconType: FantasyIconType.classDuelist, name: tr("Šermíř", "Duelist"), heroClass: HeroClass.duelist, onTap: () => state.selectClass(HeroClass.duelist)),
-                    _ClassPickerOption(iconType: FantasyIconType.classMonk, name: tr("Mnich", "Monk"), heroClass: HeroClass.monk, onTap: () => state.selectClass(HeroClass.monk)),
-                    _ClassPickerOption(iconType: FantasyIconType.classDruid, name: tr("Druid", "Druid"), heroClass: HeroClass.druid, onTap: () => state.selectClass(HeroClass.druid)),
-                    _ClassPickerOption(iconType: FantasyIconType.classPaladin, name: tr("Paladin", "Paladin"), heroClass: HeroClass.paladin, onTap: () => state.selectClass(HeroClass.paladin)),
-                    _ClassPickerOption(iconType: FantasyIconType.classDemonHunter, name: tr("Lovec Démonů", "Demon Hunter"), heroClass: HeroClass.demonhunter, onTap: () => state.selectClass(HeroClass.demonhunter)),
-                    _ClassPickerOption(iconType: FantasyIconType.classNecromancer, name: tr("Nekromant", "Necromancer"), heroClass: HeroClass.necromancer, onTap: () => state.selectClass(HeroClass.necromancer)),
-                  ],
-                ),
-              ],
-            ),
-          ),
-            ),
-          ],
-        );
+        return _ClassSelectionScreen(state: state, bossGuide: state.isBoss ? _bossGuide(state) : null);
       }
       if (state.isMerchantEncounter) {
         return const MerchantEncounterView();
@@ -5498,21 +5619,50 @@ class _SoulsScreenState extends State<SoulsScreen> {
             style: TextStyle(color: rank >= 100 ? Colors.redAccent : (rank >= 75 ? Colors.purpleAccent : (rank >= 40 ? Colors.purple : (rank >= 15 ? Colors.green : Colors.grey)))),
           ),
           const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => state.upgradeClass(selected),
-              child: Text(tr("Vylepšit (50 💎)", "Upgrade (50 💎)")),
-            ),
-          ),
-          const SizedBox(height: 6),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC69214)),
-              onPressed: state.crystals >= 50 ? () => state.upgradeClassMax(selected) : null,
-              child: Text(tr("Max (${state.crystals ~/ 50}×)", "Max (${state.crystals ~/ 50}×)"), style: const TextStyle(color: Colors.black)),
-            ),
+          // ===== 1×/10×/Max vedle sebe - dřív jen "Vylepšit" (1×) a "Max" nad sebou. 10× nemá
+          // vlastní GameState metodu, takže volá upgradeClass v cyklu (stejně jako by to dělal
+          // hráč 10× po sobě), s kontrolou krystalů před každým voláním. =====
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10)),
+                  onPressed: state.crystals >= 50 ? () => state.upgradeClass(selected) : null,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('1×', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('50 💎', style: TextStyle(fontSize: 11)),
+                  ]),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.tealAccent.shade700, padding: const EdgeInsets.symmetric(vertical: 10)),
+                  onPressed: state.crystals >= 500
+                      ? () {
+                          for (int i = 0; i < 10 && state.crystals >= 50; i++) {
+                            state.upgradeClass(selected);
+                          }
+                        }
+                      : null,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('10×', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+                    const Text('500 💎', style: TextStyle(fontSize: 11, color: Colors.black)),
+                  ]),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC69214), padding: const EdgeInsets.symmetric(vertical: 10)),
+                  onPressed: state.crystals >= 50 ? () => state.upgradeClassMax(selected) : null,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Max', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+                    Text('(${state.crystals ~/ 50}×)', style: const TextStyle(fontSize: 11, color: Colors.black)),
+                  ]),
+                ),
+              ),
+            ],
           ),
           if (isCurrent && rank >= 100) ...[
             const SizedBox(height: 10),
@@ -5648,20 +5798,29 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ===== HLAVIČKA: kapacita + tlačítko zvětšit vedle sebe (dřív odděleně - číslo
+          // nahoře, tlačítko až pod scénou s postavou). Číslo a akce, co ho mění, patří k
+          // sobě, takže je hráč vidí naráz bez scrollování. =====
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                tr("Batoh (${state.bagItemCount}/${state.maxInventorySize})", "Bag (${state.bagItemCount}/${state.maxInventorySize})"),
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFFFFB100),
+              Expanded(
+                child: Text(
+                  tr("Batoh (${state.bagItemCount}/${state.maxInventorySize})", "Bag (${state.bagItemCount}/${state.maxInventorySize})"),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFFFB100)),
+                ),
+              ),
+              Tooltip(
+                message: tr("Zvětšit batoh (+5 míst, ${(state.maxInventorySize - 15) * 50} 🪙)", "Expand bag (+5 slots, ${(state.maxInventorySize - 15) * 50} 🪙)"),
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: const Icon(Icons.add_box_outlined, color: Color(0xFFFFB100), size: 22),
+                  onPressed: state.upgradeInventoryCapacity,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 15),
+          const SizedBox(height: 10),
           // ===== ZÁLOŽKY: Vybavení / Lektvary (samostatná záložka, ne společný filtr) =====
           Row(children: [
             _tabButton(tr("⚔ Vybavení", "⚔ Gear"), !showPotions, () => setState(() => showPotions = false)),
@@ -5676,79 +5835,36 @@ class _InventoryScreenState extends State<InventoryScreen> {
           // takže tady na rozdíl od dřívějška netřeba `if (equippedItems.isEmpty) return...`).
           EquippedGearScene(state: state, onItemTap: (ctx, item) => _showItemDetailDialog(ctx, state, item)),
           const SizedBox(height: 15),
-          // ===== ZVĚTŠIT BATOH + AUTO-OBLÉKNUTÍ + ZÁMKY, hned pod scénou s postavou/itemy (dřív
-          // úplně nahoře obrazovky, nad postavou) - teď jsou blíž tomu, na co reálně působí. =====
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.unfold_more, size: 18),
-              label: Text(
-                tr("Zvětšit batoh (+5 míst, ${(state.maxInventorySize - 15) * 50} 🪙)", "Expand bag (+5 slots, ${(state.maxInventorySize - 15) * 50} 🪙)"),
-              ),
-              onPressed: state.upgradeInventoryCapacity,
-            ),
-          ),
-          const SizedBox(height: 10),
+          // ===== AUTO-OBLÉKNUTÍ + ZÁMKY - zkompaktněné na dvě tlačítka vedle sebe (dřív dva
+          // velké boxy s trvale vypsaným popisem). Popis teď nese tooltip (podržení/hover),
+          // hlavní akce je pořád jedno ťuknutí. =====
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.tealAccent, width: 1)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        const Icon(Icons.bolt, color: Colors.tealAccent, size: 16),
-                        const SizedBox(width: 4),
-                        Text(tr("Auto-obléknutí", "Auto-equip"), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.tealAccent, fontSize: 13)),
-                      ]),
-                      const SizedBox(height: 4),
-                      Text(tr("Nasadí nejsilnější kusy z batohu do každého slotu.", "Equips the strongest pieces from your bag into each slot."), style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.tealAccent.shade700),
-                          icon: const Icon(Icons.checkroom, size: 16, color: Colors.black),
-                          onPressed: state.autoEquipBestGear,
-                          label: Text(tr("Obléknout top gear", "Equip top gear"), style: const TextStyle(color: Colors.black)),
-                        ),
-                      ),
-                    ],
+                child: Tooltip(
+                  message: tr("Nasadí nejsilnější kusy z batohu do každého slotu.", "Equips the strongest pieces from your bag into each slot."),
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.tealAccent, side: const BorderSide(color: Colors.tealAccent), padding: const EdgeInsets.symmetric(vertical: 10)),
+                    icon: const Icon(Icons.bolt, size: 18),
+                    onPressed: state.autoEquipBestGear,
+                    label: Text(tr("Auto-obléknutí", "Auto-equip"), overflow: TextOverflow.ellipsis),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFC69214), width: 1)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        const Icon(Icons.lock, color: Color(0xFFC69214), size: 16),
-                        const SizedBox(width: 4),
-                        Expanded(child: Text(tr("Zámky: ${state.lockedItemCount}/${state.unlockedLockSlots}", "Locks: ${state.lockedItemCount}/${state.unlockedLockSlots}"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100), fontSize: 13))),
-                      ]),
-                      const SizedBox(height: 4),
-                      Text(tr("Chrání i item v batohu, co zrovna nemáš nasazený.", "Also protects a bag item you don't currently have equipped."), style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                      const SizedBox(height: 8),
-                      if (state.unlockedLockSlots < GameState.maxLockSlots)
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC69214)),
-                            icon: const Icon(Icons.lock_open, size: 16, color: Colors.black),
-                            onPressed: () => state.unlockLockSlot(),
-                            label: Text(tr("Odemknout (${state.nextLockSlotCost} 🪙)", "Unlock (${state.nextLockSlotCost} 🪙)"), style: const TextStyle(color: Colors.black), overflow: TextOverflow.ellipsis),
-                          ),
-                        )
-                      else
-                        Text(tr("Vše odemčeno!", "All unlocked!"), style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                    ],
+                child: Tooltip(
+                  message: tr("Chrání i item v batohu, co zrovna nemáš nasazený.", "Also protects a bag item you don't currently have equipped."),
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFC69214), side: const BorderSide(color: Color(0xFFC69214)), padding: const EdgeInsets.symmetric(vertical: 10)),
+                    icon: const Icon(Icons.lock, size: 18),
+                    onPressed: state.unlockedLockSlots < GameState.maxLockSlots ? () => state.unlockLockSlot() : null,
+                    label: Text(
+                      state.unlockedLockSlots < GameState.maxLockSlots
+                          ? tr("Zámky ${state.lockedItemCount}/${state.unlockedLockSlots} (${state.nextLockSlotCost} 🪙)", "Locks ${state.lockedItemCount}/${state.unlockedLockSlots} (${state.nextLockSlotCost} 🪙)")
+                          : tr("Zámky ${state.lockedItemCount}/${state.unlockedLockSlots} (max)", "Locks ${state.lockedItemCount}/${state.unlockedLockSlots} (max)"),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
               ),
@@ -5758,68 +5874,47 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ], // konec "if (!showPotions)" bloku pro nasazené vybavení + batoh akce
           const Divider(height: 30, thickness: 2),
           if (!showPotions) ...[
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            // ===== FILTRY - zkompaktněné na jeden vodorovně scrollovatelný pruh chipů
+            // (rarity + SET, nejčastěji používané), zbytek (slot, řazení, sloupce, zobrazení)
+            // je za ikonou "více filtrů" v bottom sheetu - dřív to všechno bylo v jednom Wrap,
+            // co se na mobilu lámal do 2-3 řádků. =====
+            Row(
               children: [
-                Text(tr("Filtr:", "Filter:"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
-                DropdownButton<String>(
-                  value: selectedRarity,
-                  dropdownColor: const Color(0xFF1E1E24),
-                  style: const TextStyle(color: Color(0xFFFFB100)),
-                  items: ["Vše", "Common", "Rare", "Epic", "Legendary"].map((String r) {
-                    return DropdownMenuItem<String>(value: r, child: Text(r == "Vše" ? tr("Vše", "All") : r));
-                  }).toList(),
-                  onChanged: (String? v) {
-                    if (v != null) setState(() => selectedRarity = v);
-                  },
-                ),
-                DropdownButton<EquipSlot?>(
-                  value: selectedSlot,
-                  dropdownColor: const Color(0xFF1E1E24),
-                  style: const TextStyle(color: Color(0xFFFFB100)),
-                  items: [
-                    DropdownMenuItem<EquipSlot?>(value: null, child: Text(tr("Vše (sloty)", "All (slots)"))),
-                    ...EquipSlot.values.map((s) => DropdownMenuItem<EquipSlot?>(value: s, child: Text(slotDisplayName(s)))),
-                  ],
-                  onChanged: (EquipSlot? v) => setState(() => selectedSlot = v),
-                ),
-                FilterChip(
-                  label: Text(tr("Jen SET", "SET only")),
-                  selected: setOnly,
-                  onSelected: (v) => setState(() => setOnly = v),
-                  selectedColor: const Color(0xFF00E676),
-                  checkmarkColor: Colors.black,
-                ),
-                Text(tr("Řadit:", "Sort:"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
-                DropdownButton<String>(
-                  value: sortBy,
-                  dropdownColor: const Color(0xFF1E1E24),
-                  style: const TextStyle(color: Color(0xFFFFB100)),
-                  items: ["Nejnovější", "Síla", "Hodnota", "Vzácnost"].map((String r) {
-                    const labels = {"Nejnovější": "Newest", "Síla": "Power", "Hodnota": "Value", "Vzácnost": "Rarity"};
-                    return DropdownMenuItem<String>(value: r, child: Text(tr(r, labels[r]!)));
-                  }).toList(),
-                  onChanged: (String? v) {
-                    if (v != null) setState(() => sortBy = v);
-                  },
-                ),
-                Text(tr("Sloupců:", "Columns:"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
-                ToggleButtons(
-                  isSelected: [gridColumns == 4, gridColumns == 5],
-                  onPressed: (i) => setState(() => gridColumns = i == 0 ? 4 : 5),
-                  borderRadius: BorderRadius.circular(6),
-                  selectedColor: Colors.black,
-                  fillColor: const Color(0xFFFFB100),
-                  color: const Color(0xFFF1E6D0),
-                  constraints: const BoxConstraints(minWidth: 34, minHeight: 30),
-                  children: const [Text('4'), Text('5')],
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final r in ["Vše", "Common", "Rare", "Epic", "Legendary"])
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ChoiceChip(
+                              label: Text(r == "Vše" ? tr("Vše", "All") : r),
+                              selected: selectedRarity == r,
+                              onSelected: (_) => setState(() => selectedRarity = r),
+                              selectedColor: const Color(0xFFFFB100),
+                              labelStyle: TextStyle(color: selectedRarity == r ? Colors.black : const Color(0xFFF1E6D0), fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: FilterChip(
+                            label: Text(tr("Jen SET", "SET only")),
+                            selected: setOnly,
+                            onSelected: (v) => setState(() => setOnly = v),
+                            selectedColor: const Color(0xFF00E676),
+                            checkmarkColor: Colors.black,
+                            labelStyle: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 IconButton(
-                  tooltip: useGridView ? tr("Přepnout na seznam", "Switch to list") : tr("Přepnout na grid", "Switch to grid"),
-                  icon: Icon(useGridView ? Icons.view_list : Icons.grid_view, color: const Color(0xFFFFB100)),
-                  onPressed: () => setState(() => useGridView = !useGridView),
+                  tooltip: tr("Více filtrů", "More filters"),
+                  icon: const Icon(Icons.tune, color: Color(0xFFFFB100)),
+                  onPressed: () => _showMoreFiltersSheet(context),
                 ),
               ],
             ),
@@ -5834,6 +5929,95 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ],
       );
     });
+  }
+
+  // ===== Bottom sheet s méně používanými filtry/zobrazovacími volbami (slot, řazení, počet
+  // sloupců, grid/list) - přesunuté sem z hlavního Wrap, aby nebyly pořád vidět. StatefulBuilder
+  // uvnitř, protože sheet žije mimo stromu _InventoryScreenState.build (setState by ho jinak
+  // nepřekreslil, dokud by se znovu neotevřel). =====
+  void _showMoreFiltersSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E24),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(tr("Více filtrů", "More filters"), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+              const SizedBox(height: 16),
+              Text(tr("Slot:", "Slot:"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
+              const SizedBox(height: 6),
+              DropdownButton<EquipSlot?>(
+                isExpanded: true,
+                value: selectedSlot,
+                dropdownColor: const Color(0xFF1E1E24),
+                style: const TextStyle(color: Color(0xFFFFB100)),
+                items: [
+                  DropdownMenuItem<EquipSlot?>(value: null, child: Text(tr("Vše (sloty)", "All (slots)"))),
+                  ...EquipSlot.values.map((s) => DropdownMenuItem<EquipSlot?>(value: s, child: Text(slotDisplayName(s)))),
+                ],
+                onChanged: (EquipSlot? v) {
+                  setState(() => selectedSlot = v);
+                  setSheetState(() {});
+                },
+              ),
+              const SizedBox(height: 14),
+              Text(tr("Řadit:", "Sort:"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
+              const SizedBox(height: 6),
+              DropdownButton<String>(
+                isExpanded: true,
+                value: sortBy,
+                dropdownColor: const Color(0xFF1E1E24),
+                style: const TextStyle(color: Color(0xFFFFB100)),
+                items: ["Nejnovější", "Síla", "Hodnota", "Vzácnost"].map((String r) {
+                  const labels = {"Nejnovější": "Newest", "Síla": "Power", "Hodnota": "Value", "Vzácnost": "Rarity"};
+                  return DropdownMenuItem<String>(value: r, child: Text(tr(r, labels[r]!)));
+                }).toList(),
+                onChanged: (String? v) {
+                  if (v == null) return;
+                  setState(() => sortBy = v);
+                  setSheetState(() {});
+                },
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Text(tr("Sloupců:", "Columns:"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
+                  const SizedBox(width: 10),
+                  ToggleButtons(
+                    isSelected: [gridColumns == 4, gridColumns == 5],
+                    onPressed: (i) {
+                      setState(() => gridColumns = i == 0 ? 4 : 5);
+                      setSheetState(() {});
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    selectedColor: Colors.black,
+                    fillColor: const Color(0xFFFFB100),
+                    color: const Color(0xFFF1E6D0),
+                    constraints: const BoxConstraints(minWidth: 34, minHeight: 30),
+                    children: const [Text('4'), Text('5')],
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: useGridView ? tr("Přepnout na seznam", "Switch to list") : tr("Přepnout na grid", "Switch to grid"),
+                    icon: Icon(useGridView ? Icons.view_list : Icons.grid_view, color: const Color(0xFFFFB100)),
+                    onPressed: () {
+                      setState(() => useGridView = !useGridView);
+                      setSheetState(() {});
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ===== BATOH: LEKTVARY (zůstává jako seznam - málo typů, tlačítko "Použít" chce být hned vidět) =====
