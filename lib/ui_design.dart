@@ -2198,6 +2198,112 @@ class _WoodenSignPainter extends CustomPainter {
   bool shouldRepaint(covariant _WoodenSignPainter old) => false;
 }
 
+// ===== KOSMETIKA Z BATTLE PASSU (rám portrétu + skin základního útoku) =====
+
+/// Ozdobný rám portrétu odemčený z Battle Passu (level 40, free větev) - tenký zlatý prstenec
+/// se 4 drobnými "klenoty" v hlavních bodech kompasu a jemnou vnitřní září. Kreslí se JAKO
+/// OVERLAY přes existující portrét (Positioned.fill uvnitř Stacku), ne jako náhrada za něj -
+/// takže funguje nad libovolným portrétem (LivingPortrait i procedurální ikona) bez úpravy
+/// samotného portrétu.
+class BattlePassFramePainter extends CustomPainter {
+  final String frameId;
+  const BattlePassFramePainter({required this.frameId});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (frameId == 'default') return; // výchozí = žádný rám navrch, jen portrét samotný
+    final center = Offset(size.width / 2, size.height / 2);
+    final r = size.shortestSide / 2 - 2;
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..shader = SweepGradient(colors: const [Color(0xFFFFD54F), Color(0xFFFFB100), Color(0xFFFFD54F), Color(0xFFFFB100)]).createShader(Rect.fromCircle(center: center, radius: r));
+    canvas.drawCircle(center, r, ringPaint);
+    canvas.drawCircle(center, r, Paint()..color = const Color(0xFFFFD54F).withOpacity(.25)..style = PaintingStyle.stroke..strokeWidth = 7..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
+    // 4 drobné klenoty na hlavních bodech kompasu.
+    for (int i = 0; i < 4; i++) {
+      final a = i * (pi / 2) - pi / 2;
+      final p = center + Offset(cos(a), sin(a)) * r;
+      canvas.drawCircle(p, 4, Paint()..color = const Color(0xFFE84393));
+      canvas.drawCircle(p, 4, Paint()..color = Colors.white.withOpacity(.5)..style = PaintingStyle.stroke..strokeWidth = 1);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant BattlePassFramePainter old) => old.frameId != frameId;
+}
+
+/// Widget, co obalí libovolný portrét rámem podle state.equippedFrame - dá se použít kdekoliv,
+/// kde se dnes kreslí hrdinův portrét (combat karty, Profil, výběr postavy...), bez zásahu do
+/// toho, co je uvnitř.
+class EquippedFrameOverlay extends StatelessWidget {
+  final String frameId;
+  final Widget child;
+  const EquippedFrameOverlay({super.key, required this.frameId, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        child,
+        if (frameId != 'default') Positioned.fill(child: CustomPaint(painter: BattlePassFramePainter(frameId: frameId))),
+      ],
+    );
+  }
+}
+
+/// Ikona skinu základního útoku odemčeného z Battle Passu (level 40, premium větev) - DVĚ
+/// varianty podle typu útoku (fyzický vs. magický), hra si sama vybere podle aktuální třídy.
+/// Fyzická: zkřížené čepele s pohybovými liniemi (ocelová/oranžová). Magická: vířící arkánová
+/// runa s jiskrami (modrofialová). Použito jak v Customization náhledu, tak (budoucně) jako
+/// hit-efekt v combatu.
+class AttackSkinIconPainter extends CustomPainter {
+  final bool physical;
+  const AttackSkinIconPainter({required this.physical});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final r = size.shortestSide / 2;
+    if (physical) {
+      final accent = const Color(0xFFFF8A3D);
+      // Dvě zkřížené čepele.
+      for (final flip in [1.0, -1.0]) {
+        final path = Path()
+          ..moveTo(center.dx - r * 0.6 * flip, center.dy - r * 0.6)
+          ..lineTo(center.dx + r * 0.6 * flip, center.dy + r * 0.6);
+        canvas.drawPath(path, Paint()..color = accent..style = PaintingStyle.stroke..strokeWidth = r * 0.16..strokeCap = StrokeCap.round);
+        canvas.drawPath(path, Paint()..color = Colors.white.withOpacity(.6)..style = PaintingStyle.stroke..strokeWidth = r * 0.05..strokeCap = StrokeCap.round);
+      }
+      // Pohybové linie za čepelemi.
+      for (int i = 0; i < 3; i++) {
+        final off = (i - 1) * r * 0.22;
+        canvas.drawLine(center + Offset(-r * 0.75, off - r * 0.1), center + Offset(-r * 0.35, off + r * 0.1), Paint()..color = accent.withOpacity(.4)..strokeWidth = 2);
+      }
+    } else {
+      final accent = const Color(0xFF8B5CF6);
+      canvas.drawCircle(center, r * 0.7, Paint()..color = accent.withOpacity(.18)..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.3));
+      // Vířící runový prstenec ze 6 oblouků.
+      for (int i = 0; i < 6; i++) {
+        final a0 = i * (pi / 3);
+        canvas.drawArc(Rect.fromCircle(center: center, radius: r * 0.62), a0, pi / 4, false, Paint()..color = accent..style = PaintingStyle.stroke..strokeWidth = r * 0.1..strokeCap = StrokeCap.round);
+      }
+      // Jiskry kolem.
+      final rnd = Random(7);
+      for (int i = 0; i < 8; i++) {
+        final a = rnd.nextDouble() * 2 * pi;
+        final d = r * (0.75 + rnd.nextDouble() * 0.2);
+        canvas.drawCircle(center + Offset(cos(a), sin(a)) * d, 1.6, Paint()..color = const Color(0xFFD8C6FF));
+      }
+      canvas.drawCircle(center, r * 0.16, Paint()..color = Colors.white.withOpacity(.85));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant AttackSkinIconPainter old) => old.physical != physical;
+}
+
 /// Tichá předzvěst blížícího se odemčení v Dobrodružství - vířící temná mlha + občasný záblesk
 /// blesku, BEZ jakéhokoliv textu (na rozdíl od _WoodenClosedSign ve Městě). Zobrazuje se jen
 /// těsně před odemčením (viz _SceneBuildingMarker._nearUnlockThreshold) - do té doby na mapě

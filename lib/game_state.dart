@@ -1,5 +1,24 @@
 part of 'main.dart';
 
+// Jedna odměna Battle Passu (free nebo prémiová větev, jedna úroveň) - viz
+// GameState.battlePassRewardFor().
+class BattlePassReward {
+  final int gold;
+  final int dust;
+  final int crystals;
+  final bool premium;
+  final int level;
+  // Truhla - na každém 5. levelu (5/10/15.../40, obě větve) dostane odměna navrch bonusový
+  // balíček (viz battlePassRewardFor) a v UI se místo běžných ikon zobrazí jako truhla.
+  final bool isChest;
+  // Kosmetický rám portrétu (free větev, level 40) - id z GameState.unlockedFrames.
+  final String? cosmeticFrameId;
+  // Kosmetický skin základního útoku (premium větev, level 40) - odemkne OBĚ varianty
+  // (fyzickou i magickou), hra sama vybere podle typu útoku aktuální třídy.
+  final String? cosmeticAttackSkinId;
+  const BattlePassReward({this.gold = 0, this.dust = 0, this.crystals = 0, required this.premium, required this.level, this.isChest = false, this.cosmeticFrameId, this.cosmeticAttackSkinId});
+}
+
 class GameState extends ChangeNotifier with WidgetsBindingObserver {
   // ===== AUTOSAVE =====
   // Cíl: hráč nikdy neztratí progress. Dvě vrstvy:
@@ -678,6 +697,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         "riftClearsThisMonth": riftClearsThisMonth,
         "triedCurses": triedCurses.map((c) => c.name).toList(),
         "everRecruitedCompanions": everRecruitedCompanions.toList(),
+        "battlePassRenown": battlePassRenown,
+        "battlePassSeasonStart": battlePassSeasonStart?.toIso8601String(),
+        "battlePassPremium": battlePassPremium,
+        "battlePassFreeClaimed": battlePassFreeClaimed.toList(),
+        "battlePassPremiumClaimed": battlePassPremiumClaimed.toList(),
+        "unlockedFrames": unlockedFrames.toList(),
+        "equippedFrame": equippedFrame,
+        "unlockedAttackSkins": unlockedAttackSkins.toList(),
+        "equippedAttackSkin": equippedAttackSkin,
         "redeemedPromoCodes": redeemedPromoCodes.toList(),
         "introSeen": introSeen,
         "introTutorialDone": introTutorialDone,
@@ -855,6 +883,18 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         .map((matches) => matches.first)
         .toSet();
     everRecruitedCompanions = Set<String>.from((json["everRecruitedCompanions"] as List?) ?? const []);
+    battlePassRenown = json["battlePassRenown"] as int? ?? 0;
+    final bpStart = json["battlePassSeasonStart"] as String?;
+    battlePassSeasonStart = bpStart != null ? DateTime.tryParse(bpStart) : null;
+    battlePassPremium = json["battlePassPremium"] as bool? ?? false;
+    battlePassFreeClaimed = Set<int>.from((json["battlePassFreeClaimed"] as List?) ?? const []);
+    battlePassPremiumClaimed = Set<int>.from((json["battlePassPremiumClaimed"] as List?) ?? const []);
+    unlockedFrames = Set<String>.from((json["unlockedFrames"] as List?) ?? const ['default']);
+    if (unlockedFrames.isEmpty) unlockedFrames.add('default');
+    equippedFrame = json["equippedFrame"] as String? ?? 'default';
+    unlockedAttackSkins = Set<String>.from((json["unlockedAttackSkins"] as List?) ?? const ['default']);
+    if (unlockedAttackSkins.isEmpty) unlockedAttackSkins.add('default');
+    equippedAttackSkin = json["equippedAttackSkin"] as String? ?? 'default';
     redeemedPromoCodes = Set<String>.from((json["redeemedPromoCodes"] as List?) ?? const []);
     introSeen = json["introSeen"] as bool? ?? false;
     introTutorialDone = json["introTutorialDone"] as bool? ?? true;
@@ -1655,6 +1695,170 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   Set<AchievementId> unlockedAchievements = {};
   AchievementId? activeTitle; // vybraný kosmetický titul zobrazený v Profilu (musí být odemčený)
   Set<String> everRecruitedCompanions = {}; // celoživotní historie (max 2 aktivních najednou, ale takhle jde sledovat "vyzkoušel jsi všechny")
+
+  // ===== BATTLE PASS =====
+  // 30denní sezóna, resetuje se automaticky (viz _checkBattlePassReset). Renown se získává za
+  // splnění denních/týdenních/měsíčních questů (viz _checkQuests) - 10/30/100 za splnění.
+  // battlePassLevel je odvozený getter z renown, ne samostatně uložený stav.
+  static const int battlePassMaxLevel = 40;
+  static const int battlePassRenownPerLevel = 45;
+  static const int battlePassSeasonDays = 30;
+  static const int battlePassPremiumCost = 500; // krystaly za odemčení prémiové větve na sezónu
+  int battlePassRenown = 0;
+  DateTime? battlePassSeasonStart;
+  bool battlePassPremium = false;
+  Set<int> battlePassFreeClaimed = {};
+  Set<int> battlePassPremiumClaimed = {};
+
+  // ===== KOSMETIKA (rám portrétu + skin základního útoku) =====
+  // Odemyká se přes Battle Pass (viz battlePassRewardFor/claimBattlePassReward), trvalé -
+  // nereseuje se sezónou ani smrtí. 'default' je vždycky odemčený a je to i výchozí nasazený.
+  Set<String> unlockedFrames = {'default'};
+  String equippedFrame = 'default';
+  Set<String> unlockedAttackSkins = {'default'};
+  String equippedAttackSkin = 'default';
+
+  void equipFrame(String id) {
+    if (!unlockedFrames.contains(id)) return;
+    equippedFrame = id;
+    notifyListeners();
+  }
+
+  void equipAttackSkin(String id) {
+    if (!unlockedAttackSkins.contains(id)) return;
+    equippedAttackSkin = id;
+    notifyListeners();
+  }
+
+  int get battlePassLevel => (battlePassRenown / battlePassRenownPerLevel).floor().clamp(0, battlePassMaxLevel);
+  int get battlePassRenownIntoLevel => battlePassRenown - battlePassLevel * battlePassRenownPerLevel;
+  int get battlePassRenownForNextLevel => battlePassLevel >= battlePassMaxLevel ? 0 : battlePassRenownPerLevel;
+  int get battlePassDaysLeft {
+    if (battlePassSeasonStart == null) return battlePassSeasonDays;
+    final elapsed = DateTime.now().difference(battlePassSeasonStart!).inDays;
+    return (battlePassSeasonDays - elapsed).clamp(0, battlePassSeasonDays);
+  }
+
+  bool get battlePassHasUnclaimedRewards {
+    for (int l = 1; l <= battlePassLevel; l++) {
+      if (!battlePassFreeClaimed.contains(l)) return true;
+      if (battlePassPremium && !battlePassPremiumClaimed.contains(l)) return true;
+    }
+    return false;
+  }
+
+  void _checkBattlePassReset() {
+    final now = DateTime.now();
+    if (battlePassSeasonStart == null) {
+      battlePassSeasonStart = now;
+      return;
+    }
+    if (now.difference(battlePassSeasonStart!).inDays >= battlePassSeasonDays) {
+      battlePassRenown = 0;
+      battlePassPremium = false;
+      battlePassFreeClaimed = {};
+      battlePassPremiumClaimed = {};
+      battlePassSeasonStart = now;
+      message = tr('🎖️ Nová sezóna Battle Passu právě začala!', '🎖️ A new Battle Pass season has just begun!');
+    }
+  }
+
+  void _addBattlePassRenown(int amount) {
+    if (amount <= 0) return;
+    battlePassRenown = (battlePassRenown + amount).clamp(0, battlePassMaxLevel * battlePassRenownPerLevel);
+  }
+
+  // Procedurální odměnová křivka - free větev dává hlavně Zlato/Dust s malou ochutnávkou
+  // krystalů co 5 úrovní; prémiová větev škáluje výš a co 10 úrovní přidá větší balík krystalů,
+  // poslední úroveň (battlePassMaxLevel) má navrch velký bonus. Na každém 5. levelu (obě větve)
+  // je odměna navíc "Truhla" - bonusový balíček navrch běžné odměny, v UI zobrazený ikonou
+  // truhly místo běžných ikon. Level 40 navíc odemyká kosmetiku: free = rám portrétu, premium =
+  // skin základního útoku (obě varianty, fyzická i magická - viz cosmeticAttackSkinId výš).
+  BattlePassReward battlePassRewardFor(int level, bool premium) {
+    final bool isChestLevel = level % 5 == 0;
+    final bool isMaxLevel = level == battlePassMaxLevel;
+    if (!premium) {
+      int crystals = level % 5 == 0 ? 5 : 0;
+      int gold = 40 * level;
+      int dust = 25 * level;
+      if (isChestLevel) {
+        gold += 30 * level;
+        dust += 20 * level;
+        crystals += 10;
+      }
+      return BattlePassReward(
+        gold: gold, dust: dust, crystals: crystals, premium: false, level: level,
+        isChest: isChestLevel,
+        cosmeticFrameId: isMaxLevel ? 'battlepass_frame' : null,
+      );
+    }
+    int crystals = 8 + level * 2 + (level % 10 == 0 ? 40 : 0);
+    int gold = 100 * level;
+    int dust = 70 * level;
+    if (isChestLevel) {
+      gold += 60 * level;
+      dust += 40 * level;
+      crystals += 20;
+    }
+    if (isMaxLevel) {
+      crystals += 150;
+      gold += 3000;
+      dust += 2000;
+    }
+    return BattlePassReward(
+      gold: gold, dust: dust, crystals: crystals, premium: true, level: level,
+      isChest: isChestLevel,
+      cosmeticAttackSkinId: isMaxLevel ? 'battlepass_attack_skin' : null,
+    );
+  }
+
+  void claimBattlePassReward(int level, bool premium) {
+    if (level < 1 || level > battlePassLevel) return;
+    if (premium && !battlePassPremium) return;
+    final claimedSet = premium ? battlePassPremiumClaimed : battlePassFreeClaimed;
+    if (claimedSet.contains(level)) return;
+    final reward = battlePassRewardFor(level, premium);
+    gold += reward.gold;
+    magicDust += reward.dust;
+    crystals += reward.crystals;
+    claimedSet.add(level);
+    if (reward.cosmeticFrameId != null) unlockedFrames.add(reward.cosmeticFrameId!);
+    if (reward.cosmeticAttackSkinId != null) unlockedAttackSkins.add(reward.cosmeticAttackSkinId!);
+    message = reward.cosmeticFrameId != null
+        ? tr('Battle Pass odměna vyzvednuta: nový rám portrétu odemčen!', 'Battle Pass reward claimed: new portrait frame unlocked!')
+        : reward.cosmeticAttackSkinId != null
+            ? tr('Battle Pass odměna vyzvednuta: nový skin základního útoku odemčen!', 'Battle Pass reward claimed: new basic attack skin unlocked!')
+            : tr('Battle Pass odměna vyzvednuta: úroveň $level${premium ? " (prémiová)" : ""}!', 'Battle Pass reward claimed: level $level${premium ? " (premium)" : ""}!');
+    notifyListeners();
+  }
+
+  void claimAllBattlePassRewards() {
+    bool any = false;
+    for (int l = 1; l <= battlePassLevel; l++) {
+      if (!battlePassFreeClaimed.contains(l)) {
+        claimBattlePassReward(l, false);
+        any = true;
+      }
+      if (battlePassPremium && !battlePassPremiumClaimed.contains(l)) {
+        claimBattlePassReward(l, true);
+        any = true;
+      }
+    }
+    if (!any) message = tr('Žádné nevyzvednuté odměny Battle Passu.', 'No unclaimed Battle Pass rewards.');
+  }
+
+  void buyBattlePassPremium() {
+    if (battlePassPremium) return;
+    if (crystals < battlePassPremiumCost) {
+      message = tr('Nedostatek krystalů! Prémiová sezóna stojí $battlePassPremiumCost 💎 (máš $crystals 💎).', 'Not enough crystals! The premium season costs $battlePassPremiumCost 💎 (you have $crystals 💎).');
+      notifyListeners();
+      return;
+    }
+    crystals -= battlePassPremiumCost;
+    battlePassPremium = true;
+    message = tr('Prémiová větev Battle Passu odemčena! Teď můžeš vyzvednout i prémiové odměny za úrovně, které jsi už dosáhl.', 'Battle Pass Premium track unlocked! You can now claim premium rewards for levels you have already reached.');
+    notifyListeners();
+  }
 
   // ===== PROMO KÓDY =====
   Set<String> redeemedPromoCodes = {}; // uloženo velkými písmeny, permanentní (nereseuje se smrtí)
@@ -7817,6 +8021,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _checkQuestResets() {
+    _checkBattlePassReset();
     final now = DateTime.now();
     bool changed = false;
 
@@ -7908,9 +8113,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
       if (floorOk && killsOk && classOk && lairOk && paragonOk && specOk && hardcoreOk && companionOk && riftOk && curseOk && riftClearsOk) {
         q.isCompleted = true;
-        if (q.type == QuestType.daily) _checkDailyChronicleCoin(2, true);
+        if (q.type == QuestType.daily) {
+          _checkDailyChronicleCoin(2, true);
+          _addBattlePassRenown(10);
+        }
+        if (q.type == QuestType.weekly) _addBattlePassRenown(30);
         totalQuestsCompleted++;
-        if (q.type == QuestType.monthly) everCompletedMonthlyQuest = true;
+        if (q.type == QuestType.monthly) {
+          everCompletedMonthlyQuest = true;
+          _addBattlePassRenown(100);
+        }
         magicDust += q.rewardDust;
         gold += q.rewardGold;
         crystals += q.rewardCrystals;

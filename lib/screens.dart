@@ -4529,6 +4529,8 @@ class TowerScreen extends StatelessWidget {
                                           child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: heroAccent)),
                                         ),
                                       ),
+                                      // Kosmetický rám z Battle Passu (viz CustomizationScreen) - 'default' nekreslí nic.
+                                      if (state.equippedFrame != 'default') Positioned.fill(child: CustomPaint(painter: BattlePassFramePainter(frameId: state.equippedFrame))),
                                     ],
                                   ),
                                 ),
@@ -4838,7 +4840,11 @@ class QuestScreen extends StatelessWidget {
             ...state.quests.where((q) => !q.isCompleted),
             ...state.quests.where((q) => q.isCompleted),
           ];
-          return ListView.builder(
+          return Column(
+            children: [
+              _BattlePassBanner(state: state),
+              Expanded(
+                child: ListView.builder(
           itemCount: sortedQuests.length,
           itemBuilder: (context, index) {
             final q = sortedQuests[index];
@@ -4866,9 +4872,365 @@ class QuestScreen extends StatelessWidget {
               ),
             );
           },
-        );
+                ),
+              ),
+            ],
+          );
         },
       );
+}
+
+// Kompaktní banner Battle Passu nahoře v Questech - úroveň, progress bar do dalšího levelu,
+// dny do konce sezóny, a tlačítko dovnitř. Tap kamkoliv na banner otevře BattlePassScreen.
+class _BattlePassBanner extends StatelessWidget {
+  final GameState state;
+  const _BattlePassBanner({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = state.battlePassLevel >= GameState.battlePassMaxLevel ? 1.0 : state.battlePassRenownIntoLevel / state.battlePassRenownForNextLevel;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BattlePassScreen())),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(colors: [Color(0xFF3A2B12), Color(0xFF1E1E24)]),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFFB100).withOpacity(.6)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.military_tech, color: Color(0xFFFFB100), size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(tr('Battle Pass - Úroveň ${state.battlePassLevel}', 'Battle Pass - Level ${state.battlePassLevel}'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+                        const Spacer(),
+                        if (state.battlePassHasUnclaimedRewards)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(8)),
+                            child: Text(tr('Odměny!', 'Rewards!'), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(value: progress.clamp(0.0, 1.0), minHeight: 6, backgroundColor: Colors.black38, color: const Color(0xFFFFB100)),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      tr('Zbývá ${state.battlePassDaysLeft} dní sezóny', '${state.battlePassDaysLeft} days left in the season'),
+                      style: const TextStyle(color: Colors.grey, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Obrazovka Battle Passu - dřív jen banner s odkazem, samotná obrazovka chyběla. Vrstva na
+/// GameState logice (renown/level/free+premium claim/nákup premium), co už existovala hotová -
+/// tohle je jen UI nad ní. Sezóna 30 dní, 40 úrovní, renown se plní přes denní/týdenní/měsíční
+/// questy (viz _checkQuests).
+class BattlePassScreen extends StatelessWidget {
+  const BattlePassScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<GameState>(builder: (context, state, _) {
+      final progress = state.battlePassLevel >= GameState.battlePassMaxLevel ? 1.0 : state.battlePassRenownIntoLevel / state.battlePassRenownForNextLevel;
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // ===== HLAVIČKA - úroveň, progress bar do dalšího levelu, dny do konce sezóny =====
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFF3A2B12), Color(0xFF1E1E24)]),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFFFB100).withOpacity(.6)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  const Icon(Icons.military_tech, color: Color(0xFFFFB100), size: 30),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      tr('Battle Pass - Úroveň ${state.battlePassLevel}/${GameState.battlePassMaxLevel}', 'Battle Pass - Level ${state.battlePassLevel}/${GameState.battlePassMaxLevel}'),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFFFFB100)),
+                    ),
+                  ),
+                  Text(tr('${state.battlePassDaysLeft} dní', '${state.battlePassDaysLeft} days'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                ]),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(5),
+                  child: LinearProgressIndicator(value: progress.clamp(0.0, 1.0), minHeight: 10, backgroundColor: Colors.black38, color: const Color(0xFFFFB100)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  state.battlePassLevel >= GameState.battlePassMaxLevel
+                      ? tr('Maximální úroveň dosažena!', 'Max level reached!')
+                      : tr('${state.battlePassRenownIntoLevel}/${state.battlePassRenownForNextLevel} renown do další úrovně', '${state.battlePassRenownIntoLevel}/${state.battlePassRenownForNextLevel} renown to next level'),
+                  style: const TextStyle(color: Colors.grey, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // ===== PREMIUM ODEMČENÍ / STAV =====
+          if (!state.battlePassPremium)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF8B5CF6), padding: const EdgeInsets.symmetric(vertical: 12)),
+                icon: const Icon(Icons.workspace_premium),
+                onPressed: state.buyBattlePassPremium,
+                label: Text(tr('Odemknout Premium (${GameState.battlePassPremiumCost} 💎)', 'Unlock Premium (${GameState.battlePassPremiumCost} 💎)'), style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            )
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(color: const Color(0xFF8B5CF6).withOpacity(.18), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF8B5CF6))),
+              child: Text(tr('✨ Premium aktivní pro tuto sezónu', '✨ Premium active for this season'), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold)),
+            ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.done_all, size: 18),
+              onPressed: state.claimAllBattlePassRewards,
+              label: Text(tr('Vyzvednout vše', 'Claim all')),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // ===== SLOUPCE FREE / PREMIUM =====
+          Row(children: [
+            const Expanded(child: SizedBox()),
+            Expanded(child: Text(tr('FREE', 'FREE'), textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12))),
+            Expanded(child: Text(tr('PREMIUM', 'PREMIUM'), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold, fontSize: 12))),
+          ]),
+          const SizedBox(height: 6),
+          // ===== ŽEBŘÍK ÚROVNÍ - od 1 do battlePassMaxLevel, každá s free i premium buňkou =====
+          for (int level = 1; level <= GameState.battlePassMaxLevel; level++) ...[
+            _BattlePassLevelRow(state: state, level: level),
+            const SizedBox(height: 6),
+          ],
+        ],
+      );
+    });
+  }
+}
+
+class _BattlePassLevelRow extends StatelessWidget {
+  final GameState state;
+  final int level;
+  const _BattlePassLevelRow({required this.state, required this.level});
+
+  @override
+  Widget build(BuildContext context) {
+    final bool reached = level <= state.battlePassLevel;
+    final bool isCurrent = level == state.battlePassLevel + 1 && !reached;
+    final freeReward = state.battlePassRewardFor(level, false);
+    final premiumReward = state.battlePassRewardFor(level, true);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: isCurrent ? const Color(0xFFFFB100).withOpacity(.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: isCurrent ? Border.all(color: const Color(0xFFFFB100).withOpacity(.5)) : null,
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 34,
+            child: Text('$level', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, color: reached ? const Color(0xFFFFB100) : Colors.grey)),
+          ),
+          Expanded(child: _rewardCell(context, freeReward, premium: false, reached: reached)),
+          const SizedBox(width: 6),
+          Expanded(child: _rewardCell(context, premiumReward, premium: true, reached: reached)),
+        ],
+      ),
+    );
+  }
+
+  Widget _rewardCell(BuildContext context, BattlePassReward reward, {required bool premium, required bool reached}) {
+    final claimed = premium ? state.battlePassPremiumClaimed.contains(level) : state.battlePassFreeClaimed.contains(level);
+    final bool locked = premium && !state.battlePassPremium;
+    final accent = premium ? const Color(0xFF8B5CF6) : const Color(0xFFFFB100);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E24),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: (reached && !locked ? accent : Colors.grey).withOpacity(.4)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (reward.cosmeticFrameId != null)
+            const Icon(Icons.auto_awesome, color: Color(0xFFFFD54F), size: 18)
+          else if (reward.cosmeticAttackSkinId != null)
+            const Icon(Icons.auto_awesome, color: Color(0xFF8B5CF6), size: 18)
+          else if (reward.isChest)
+            Icon(Icons.card_giftcard, color: accent, size: 16),
+          if (reward.cosmeticFrameId != null || reward.cosmeticAttackSkinId != null || reward.isChest) const SizedBox(height: 3),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            children: [
+              if (reward.gold > 0) Text('🪙${reward.gold}', style: const TextStyle(fontSize: 11)),
+              if (reward.dust > 0) Text('✨${reward.dust}', style: const TextStyle(fontSize: 11)),
+              if (reward.crystals > 0) Text('💎${reward.crystals}', style: const TextStyle(fontSize: 11)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (locked)
+            const Icon(Icons.lock, size: 16, color: Colors.grey)
+          else if (!reached)
+            const Icon(Icons.lock_clock, size: 16, color: Colors.grey)
+          else if (claimed)
+            const Icon(Icons.check_circle, size: 18, color: Colors.greenAccent)
+          else
+            SizedBox(
+              height: 26,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: accent, padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                onPressed: () => state.claimBattlePassReward(level, premium),
+                child: Text(tr('Vyzvednout', 'Claim'), style: const TextStyle(fontSize: 10, color: Colors.black, fontWeight: FontWeight.bold)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Obrazovka, kde si hráč vybírá nasazený rám portrétu a skin základního útoku z toho, co má
+/// odemčené (zatím jen z Battle Passu, level 40 obou větví - viz claimBattlePassReward). Zamčené
+/// položky jsou vidět taky (šedě, se zámkem), ať hráč ví, co ho čeká a odkud to jde odemknout.
+class CustomizationScreen extends StatelessWidget {
+  const CustomizationScreen({super.key});
+
+  static const List<(String, String, String)> _frames = [
+    ('default', 'Žádný', 'No frame'),
+    ('battlepass_frame', 'Zlatý rám', 'Golden frame'),
+  ];
+  static const List<(String, String, String)> _attackSkins = [
+    ('default', 'Žádný', 'No skin'),
+    ('battlepass_attack_skin', 'Sezónní čepel/aura', 'Season blade/aura'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(tr('Kosmetika', 'Cosmetics'))),
+      body: Consumer<GameState>(builder: (context, state, _) {
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(tr('RÁM PORTRÉTU', 'PORTRAIT FRAME'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12, runSpacing: 12,
+              children: _frames.map((f) {
+                final id = f.$1;
+                final unlocked = state.unlockedFrames.contains(id);
+                final equipped = state.equippedFrame == id;
+                return _cosmeticTile(
+                  label: tr(f.$2, f.$3),
+                  unlocked: unlocked,
+                  equipped: equipped,
+                  accent: const Color(0xFFFFD54F),
+                  preview: EquippedFrameOverlay(
+                    frameId: id,
+                    child: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [FantasyColors.gold.withOpacity(.25), FantasyColors2.obsidian]))),
+                  ),
+                  onTap: unlocked ? () => state.equipFrame(id) : null,
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 24),
+            Text(tr('SKIN ZÁKLADNÍHO ÚTOKU', 'BASIC ATTACK SKIN'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+            const SizedBox(height: 4),
+            Text(tr('Vizuál se přizpůsobí typu tvého útoku - fyzický, nebo magický.', 'The visual adapts to your attack type - physical or magical.'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12, runSpacing: 12,
+              children: _attackSkins.map((sDef) {
+                final id = sDef.$1;
+                final unlocked = state.unlockedAttackSkins.contains(id);
+                final equipped = state.equippedAttackSkin == id;
+                return _cosmeticTile(
+                  label: tr(sDef.$2, sDef.$3),
+                  unlocked: unlocked,
+                  equipped: equipped,
+                  accent: const Color(0xFF8B5CF6),
+                  preview: id == 'default'
+                      ? Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, color: FantasyColors2.obsidian))
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(width: 30, height: 60, child: CustomPaint(painter: const AttackSkinIconPainter(physical: true))),
+                            SizedBox(width: 30, height: 60, child: CustomPaint(painter: const AttackSkinIconPainter(physical: false))),
+                          ],
+                        ),
+                  onTap: unlocked ? () => state.equipAttackSkin(id) : null,
+                );
+              }).toList(),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _cosmeticTile({required String label, required bool unlocked, required bool equipped, required Color accent, required Widget preview, required VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 110,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E24),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: equipped ? accent : Colors.grey.withOpacity(.3), width: equipped ? 2 : 1),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Opacity(opacity: unlocked ? 1.0 : 0.35, child: preview),
+            const SizedBox(height: 8),
+            Text(label, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: unlocked ? const Color(0xFFF1E6D0) : Colors.grey, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            if (equipped)
+              const Icon(Icons.check_circle, size: 16, color: Colors.greenAccent)
+            else if (!unlocked)
+              const Icon(Icons.lock, size: 14, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // Pomocná funkce mimo třídu: vykreslí dlaždici lektvaru v tržišti.
@@ -6974,6 +7336,7 @@ class ProfileScreen extends StatelessWidget {
       // schovat celý - žije v něm zadávání promo kódu, které musí jít vždy. Rift Season a Alt
       // Catch-up (oboje irelevantní pro nováčka) se gatují jen jednotlivě, panel po panelu.
       ListView(padding: const EdgeInsets.all(16), children: [
+        _p(_cosmeticsPanel(context, state)),
         if (state.isHubTileRevealed(GameState.riftUnlockLevel)) _riftSeasonPanel(state),
         if (state.totalDeaths > 0) _p(_altCatchUpPanel(context,state)),
         _p(const PromoCodePanel()),
@@ -7278,6 +7641,29 @@ class ProfileScreen extends StatelessWidget {
 
   // ===== PARAGON 50 — SPECIALIZACE (Berserk/Ochránce/Krvežíznivý pro Warriora, atd.) =====
   Widget _relicPanel(BuildContext context,GameState s)=>FantasyPanel(title:tr('PARAGON • AMULETY A MASTERY (${s.unlockedRelicIds.length}/${LegendaryRelic.values.length})','PARAGON • AMULETS AND MASTERY (${s.unlockedRelicIds.length}/${LegendaryRelic.values.length})'),titleIcon:Icons.auto_awesome,accent:const Color(0xFFFFC857),child:Column(children:[for(final r in LegendaryRelic.values)Card(color:s.activeRelic==r?const Color(0xFF3A2A12):const Color(0xFF1E1E24),child:ListTile(leading:Icon(s.relicUnlocked(r)?Icons.auto_awesome:Icons.lock,color:const Color(0xFFFFC857)),title:Text(r.displayName),subtitle:Text(s.relicUnlocked(r)?'${r.description}\nLv ${s.relicLevel(r)}/10 • XP ${s.relicXpInLevel(r)}/100 • Mastery ${s.relicMasteryLevel(r)}':'${r.description}\nDrop: Tower 1 %, Rift 3 %, Lair 5 %'),trailing:!s.relicUnlocked(r)?null:s.activeRelic==r?Chip(label:Text(tr('AKTIVNÍ','ACTIVE'))):ElevatedButton(onPressed:()=>s.equipRelic(r),child:Text(tr('Aktivovat','Activate')))))]));
+  // Vstup do Kosmetiky - náhled aktuálně nasazeného rámu/skinu + tlačítko na CustomizationScreen.
+  // Odemyká se přes Battle Pass (level 40 free = rám, level 40 premium = skin útoku).
+  Widget _cosmeticsPanel(BuildContext context, GameState state) => FantasyPanel(
+        title: tr('KOSMETIKA', 'COSMETICS'),
+        titleIcon: Icons.auto_awesome,
+        accent: const Color(0xFFFFD54F),
+        child: ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: EquippedFrameOverlay(
+            frameId: state.equippedFrame,
+            child: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [FantasyColors.gold.withOpacity(.3), FantasyColors2.obsidian])),
+              child: state.equippedAttackSkin != 'default' ? CustomPaint(painter: AttackSkinIconPainter(physical: state.physAtk >= state.magAtk)) : null,
+            ),
+          ),
+          title: Text(tr('Rám a skin útoku', 'Frame and attack skin'), style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text(tr('Odemyká se z Battle Passu (úroveň 40).', 'Unlocked from the Battle Pass (level 40).'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CustomizationScreen())),
+        ),
+      );
+
   Widget _riftSeasonPanel(GameState s)=>FantasyPanel(title:tr('RIFT SEASON','RIFT SEASON'),titleIcon:Icons.storm,accent:Colors.deepPurpleAccent,child:ListTile(title:Text(s.currentRiftSeason.displayName),subtitle:Text(tr('${s.currentRiftSeason.description}\nSezóna #${s.currentRiftSeasonNumber}','${s.currentRiftSeason.description}\nSeason #${s.currentRiftSeasonNumber}')),leading:const Icon(Icons.storm,color:Colors.deepPurpleAccent)));
 
   Widget _specDetailRow(IconData icon, String label, String value, Color color) {
