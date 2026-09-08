@@ -11322,16 +11322,20 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         message = tr("V družize můžeš mít maximálně 2 společníky současně!", "You can have at most 2 companions in your party at once!");
       } else if (!everRecruitedCompanions.contains(companion.name)) {
         // Odemčení NOVÉHO společníka (poprvé v historii účtu) stojí zlato, dvojnásobně za
-        // každého dalšího: 1. = 150, 2. = 300, 3. = 600, 4. = 1200... Znovupřijetí už dřív
-        // odemčeného společníka (po propuštění) je zdarma - platí se jen prvotní odemčení.
-        final cost = 150 * pow(2, everRecruitedCompanions.length).toInt();
+        // každého dalšího - ALE úplně první společník v historii účtu je zdarma (viz
+        // mustHireFirstCompanion výš), teprve druhý stojí 150, třetí 300, čtvrtý 600...
+        // Znovupřijetí už dřív odemčeného společníka (po propuštění) je taky zdarma - platí se
+        // jen prvotní odemčení.
+        final cost = everRecruitedCompanions.isEmpty ? 0 : 150 * pow(2, everRecruitedCompanions.length - 1).toInt();
         if (gold < cost) {
           message = tr("Nedostatek zlata! Odemčení ${companion.name} stojí $cost 🪙 (máš $gold 🪙).", "Not enough gold! Unlocking ${companion.name} costs $cost 🪙 (you have $gold 🪙).");
         } else {
           gold -= cost;
           companion.isRecruited = true;
           everRecruitedCompanions.add(companion.name);
-          message = tr("Společník ${companion.name} odemčen a přidán do družiny za $cost 🪙!", "Companion ${companion.name} unlocked and added to the party for $cost 🪙!");
+          message = cost == 0
+              ? tr("Společník ${companion.name} odemčen a přidán do družiny zdarma!", "Companion ${companion.name} unlocked and added to the party for free!")
+              : tr("Společník ${companion.name} odemčen a přidán do družiny za $cost 🪙!", "Companion ${companion.name} unlocked and added to the party for $cost 🪙!");
           if (everRecruitedCompanions.length == 1) _queueContextTip(TutorialTipId.tipCompanionsUnlocked);
           _checkAchievements();
         }
@@ -13135,13 +13139,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     heroName = ""; // Nový hrdina po smrti dostane nové jméno.
     resetGame();
     if (isFirstDeathEver) {
-      // Tutorial gate: první smrt v historii účtu dá přesně tolik zlata, kolik stojí najmutí
-      // prvního společníka (150 = 150*2^0, viz toggleCompanion) - hráč teď nemůže dělat nic
-      // jiného než si ho najmout (viz mustHireFirstCompanion + overlay v hlavní obrazovce).
+      // Tutorial gate: první smrt v historii účtu dá útěchu ve zlatě - hráč teď nemůže dělat nic
+      // jiného než si najmout svého prvního společníka (viz mustHireFirstCompanion + overlay
+      // v hlavní obrazovce), což je od teď zdarma (viz toggleCompanion), takže tohle zlato už
+      // není vázané na jeho cenu, jen obecná útěcha do dalšího pokusu.
       // Přidáno AŽ PO resetGame(), aby ho neshodila poloviční penalizace zlata za smrt.
       gold += 150;
-      message += tr("\n\n💀 Tvá první smrt tě naučila cenit si spojenců. Získal jsi 150 🪙 - najmi si prvního společníka v Družině, než budeš pokračovat.",
-          "\n\n💀 Your first death taught you to value allies. You gained 150 🪙 - hire your first companion in the Companions screen before you continue.");
+      message += tr("\n\n💀 Tvá první smrt tě naučila cenit si spojenců. Najmi si prvního společníka v Družině zdarma, než budeš pokračovat.",
+          "\n\n💀 Your first death taught you to value allies. Hire your first companion in the Companions screen for free before you continue.");
     }
   }
 

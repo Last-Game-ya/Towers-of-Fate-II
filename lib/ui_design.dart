@@ -2901,6 +2901,12 @@ class SceneBuildingSpot {
   // zavolá onTap - pro Věž Osudu, kde je hlavní herní smyčka a mezikrok jen zdržuje. Ostatní
   // budovy si drží info popis/odemykací stav v menu, tam skip nedává smysl.
   final bool skipMenu;
+  // NPC, co v info okně "mluví" místo procedurální ikony - jméno + cesta k portrétu (zatím
+  // nevygenerovanému, stejný postup jako u ostatních scén: až obrázek přibude do
+  // assets/images/npc/, načte se sám; do té doby padá na starou ikonu). description výš je
+  // teď napsaný jako přímá řeč tohoto NPC, ne jako neutrální popis budovy.
+  final String? npcName;
+  final String? npcPortrait;
   const SceneBuildingSpot({
     required this.iconType,
     required this.accent,
@@ -2919,6 +2925,8 @@ class SceneBuildingSpot {
     this.tapWidth = 120,
     this.tapHeight = 132,
     this.skipMenu = false,
+    this.npcName,
+    this.npcPortrait,
   });
 }
 
@@ -2994,6 +3002,7 @@ class _SceneBackdropPainter extends CustomPainter {
 void _showSceneBuildingMenu(BuildContext context, SceneBuildingSpot spot) {
   HapticFeedback.mediumImpact();
   final color = spot.locked ? Colors.grey.shade400 : spot.accent;
+  final bool hasNpc = !spot.locked && spot.npcName != null;
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
@@ -3013,15 +3022,34 @@ void _showSceneBuildingMenu(BuildContext context, SceneBuildingSpot spot) {
           children: [
             Row(children: [
               Container(
-                width: 46, height: 46, padding: const EdgeInsets.all(9),
+                width: 46, height: 46, padding: hasNpc && spot.npcPortrait != null ? EdgeInsets.zero : const EdgeInsets.all(9),
                 decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [color.withOpacity(.35), FantasyColors2.obsidian]), border: Border.all(color: color)),
-                child: CustomPaint(painter: FantasyIconRegistry.of(spot.iconType).proceduralPainter(color)),
+                child: hasNpc && spot.npcPortrait != null
+                    ? ClipOval(child: LivingPortrait(assetPath: spot.npcPortrait!, accent: color, mode: PortraitLifeMode.subtle))
+                    : CustomPaint(painter: FantasyIconRegistry.of(spot.iconType).proceduralPainter(color)),
               ),
               const SizedBox(width: 12),
-              Expanded(child: Text(spot.label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 18))),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(spot.label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 18)),
+                    if (hasNpc) Text(spot.npcName!, style: TextStyle(color: color.withOpacity(.75), fontSize: 12.5, fontStyle: FontStyle.italic)),
+                  ],
+                ),
+              ),
             ]),
             const SizedBox(height: 14),
-            if (spot.description.isNotEmpty) Text(spot.description, style: const TextStyle(color: Color(0xFFF1E6D0), height: 1.35)),
+            if (spot.description.isNotEmpty)
+              hasNpc
+                  // Řeč NPC - orámovaná jako "bublina", uvozovky navíc naznačí přímou řeč.
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(color: Colors.black.withOpacity(.25), borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withOpacity(.3))),
+                      child: Text('„${spot.description}"', style: const TextStyle(color: Color(0xFFF1E6D0), height: 1.35, fontStyle: FontStyle.italic)),
+                    )
+                  : Text(spot.description, style: const TextStyle(color: Color(0xFFF1E6D0), height: 1.35)),
             if (spot.locked && spot.lockedHint != null) ...[
               const SizedBox(height: 12),
               Container(
@@ -3430,6 +3458,37 @@ class _SceneLifePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Bouřková obloha v Dobrodružství - měkké žhnoucí shluky v horní třetině scény, driftující
+    // pomalu do stran, co občas jasně zablikají (jako vzdálený blesk osvítí mrak zevnitř).
+    // Jen pro danger scény - Město má klidnou soumrakovou oblohu beze změny.
+    if (danger) {
+      final stormRnd = Random(21);
+      for (int i = 0; i < 5; i++) {
+        final baseX = stormRnd.nextDouble();
+        final baseY = 0.06 + stormRnd.nextDouble() * 0.22;
+        final speed = 0.05 + stormRnd.nextDouble() * 0.05;
+        final phase = (t * speed + i * 0.37) % 1.0;
+        final drift = sin(phase * 2 * pi) * 0.05;
+        final center = Offset((baseX + drift).clamp(0.0, 1.0) * size.width, baseY * size.height);
+        final r = size.width * (0.16 + 0.05 * sin(phase * pi));
+        // Tichá základní záře mraku - pořád trochu vidět, ne úplně černá obloha.
+        final baseOpacity = 0.09 + 0.04 * sin(phase * 2 * pi + i);
+        canvas.drawCircle(
+          center, r,
+          Paint()
+            ..color = const Color(0xFFFF7A33).withOpacity(baseOpacity.clamp(0.0, 0.4))
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.6),
+        );
+        // Krátký jasný záblesk - blesk uvnitř mraku, jiná fáze/frekvence pro každý shluk, ať
+        // neblikají všechny najednou.
+        final flickerPhase = (t * (0.7 + i * 0.15) + i * 0.51) % 1.0;
+        final flicker = flickerPhase < 0.05 ? (1 - flickerPhase / 0.05) : 0.0;
+        if (flicker > 0) {
+          canvas.drawCircle(center, r * 1.5, Paint()..color = const Color(0xFFFFE0B0).withOpacity(flicker * 0.30)..maskFilter = MaskFilter.blur(BlurStyle.normal, r));
+          canvas.drawCircle(center, r * 0.7, Paint()..color = const Color(0xFFFFF3D8).withOpacity(flicker * 0.45)..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.5));
+        }
+      }
+    }
     // Kouř z komínů - 3 částice na komín, každá s jinou fází, stoupá a rozplývá se.
     for (int p = 0; p < smokePoints.length; p++) {
       final base = Offset(smokePoints[p].dx * size.width, smokePoints[p].dy * size.height);
@@ -3501,8 +3560,10 @@ class AdventureScreen extends StatelessWidget {
             isNew: state.lairUnlocked && !state.seenHubTiles.contains('lair'),
             unlockProgress: state.level / GameState.lairUnlockLevel,
             lockedHint: tr('Odemyká se na levelu ${GameState.lairUnlockLevel}', 'Unlocks at level ${GameState.lairUnlockLevel}'),
-            description: tr('Řada čím dál těžších bossů se stoupající obtížností (Normal → Hardcore → Předpeklí → Peklo). Poražení bosse dává Zlato, Krystaly a Suroviny - od patra 30 i Esenci Moci na vylepšení legendárního vybavení.',
-                'A series of increasingly tough bosses across rising difficulties (Normal → Hardcore → Předpeklí → Peklo). Defeating a boss gives Gold, Crystals and Materials - from floor 30 also Power Essence for upgrading legendary gear.'),
+            description: tr('Tahle jeskyně? Past za pastí, bossové čím dál mrštnější - Normal, Hardcore, Předpeklí, až po Peklo. Ale kdo je srazí, ten si odnese zlato, krystaly, suroviny... a od třicátého patra i esenci moci na tvůj legendární kus. Vejdi, jestli si věříš.',
+                'This cavern? One trap after another, bosses getting nastier with every step - Normal, Hardcore, Předpeklí, all the way to Peklo. Drop them and you walk out with gold, crystals, materials... and past floor thirty, Power Essence for that legendary piece of yours. Step in, if you think you have got it.'),
+            npcName: tr('Grymm, Lovec bossů', 'Grymm, Boss Hunter'),
+            npcPortrait: 'assets/images/npc/boss_hunter.png',
             dx: 0.16, dy: 0.30, prominence: 1.05,
             onTap: () {
               if (!state.lairUnlocked) return;
@@ -3519,8 +3580,10 @@ class AdventureScreen extends StatelessWidget {
             isNew: state.arenaUnlocked && !state.seenHubTiles.contains('arena'),
             unlockProgress: state.level / GameState.arenaUnlockLevel,
             lockedHint: tr('Odemyká se na levelu ${GameState.arenaUnlockLevel}', 'Unlocks at level ${GameState.arenaUnlockLevel}'),
-            description: tr('Souboj proti AI generovanému soupeři tvé třídy za Zlato, Magický prach a truhly. Dobrý zdroj postupu, i když jsi zrovna zaseklý na patře ve Věži.',
-                'Fight an AI-generated opponent of your class for Gold, Magic Dust and chests. A solid source of progress even when you are stuck on a Tower floor.'),
+            description: tr('Vítej v aréně, bojovníku! Postav se soupeři vlastní třídy, jakého AI vykove z tvého odrazu - vyhraj a odnes si zlato, magický prach a truhly. Zaseknutý ve věži? Tady si aspoň zabojuješ a něco vyděláš.',
+                'Welcome to the arena, fighter! Face an opponent of your own class, forged by the AI in your own reflection - win and you walk away with gold, magic dust and chests. Stuck on a tower floor? At least here you get to fight and earn something.'),
+            npcName: tr('Rufus, Herold Arény', 'Rufus, Arena Herald'),
+            npcPortrait: 'assets/images/npc/arena_herald.png',
             dx: 0.82, dy: 0.38, prominence: 1.0,
             onTap: () {
               if (!state.arenaUnlocked) return;
@@ -3538,8 +3601,10 @@ class AdventureScreen extends StatelessWidget {
             isNew: state.worldBossUnlocked && !state.seenHubTiles.contains('worldboss'),
             unlockProgress: state.level / GameState.worldBossUnlockLevel,
             lockedHint: tr('Odemyká se na levelu ${GameState.worldBossUnlockLevel}', 'Unlocks at level ${GameState.worldBossUnlockLevel}'),
-            description: tr('Jednou denně dostupný extrémně silný boss. Poražení dává velkou odměnu (Zlato, Esenci Moci, Runové kameny) - pokusy navíc jdou získat za rewarded reklamu.',
-                'An extremely tough boss available once per day. Defeating it gives a big reward (Gold, Power Essence, Rune Stones) - extra attempts can be earned via a rewarded ad.'),
+            description: tr('Jednou denně se probouzí. Obrovský, žhavý a nemilosrdný. Kdo ho skolí, dostane odměnu, na jakou nezapomene - zlato, esenci moci, runové kameny. A pokud jeden pokus nestačí, znám způsob, jak si vyžebrat další - stačí se podívat na pár obrazů.',
+                'Once a day, it wakes. Enormous, burning, merciless. Whoever brings it down earns a reward worth remembering - gold, power essence, rune stones. And if one attempt is not enough, I know a way to beg for another - just watch a few pictures.'),
+            npcName: tr('Wardek, Hlasatel Zkázy', 'Wardek, Herald of Doom'),
+            npcPortrait: 'assets/images/npc/doom_herald.png',
             dx: 0.50, dy: 0.62, prominence: 1.15,
             onTap: () {
               if (!state.worldBossUnlocked) return;
@@ -3557,8 +3622,10 @@ class AdventureScreen extends StatelessWidget {
             isNew: state.riftUnlocked && !state.seenHubTiles.contains('rift'),
             unlockProgress: state.level / GameState.riftUnlockLevel,
             lockedHint: tr('Odemyká se na levelu ${GameState.riftUnlockLevel}', 'Unlocks at level ${GameState.riftUnlockLevel}'),
-            description: tr('Náhodně generované výzvy s modifikátory a omezeným počtem pokusů denně. Odměnou jsou truhly s Magickým prachem/Krystaly a šance na vzácné vybavení.',
-                'Randomly generated challenges with modifiers and a limited number of daily attempts. Rewards are chests with Magic Dust/Crystals and a chance at rare gear.'),
+            description: tr('Trhlina se mění každý den - jiné výzvy, jiné modifikátory, omezený počet vstupů. Kdo projde, najde truhly s magickým prachem a krystaly... a někdy i vzácný kus vybavení, jaký jinde nenajdeš. Ale pokusy nejsou nekonečné, tak si je važ.',
+                'The rift shifts every day - different challenges, different modifiers, a limited number of entries. Those who make it through find chests of magic dust and crystals... and sometimes gear rare enough you will not find it anywhere else. But your attempts are not endless, so spend them wisely.'),
+            npcName: tr('Vesper, Strážkyně Trhlin', 'Vesper, Keeper of the Rift'),
+            npcPortrait: 'assets/images/npc/rift_keeper.png',
             dx: 0.15, dy: 0.78, prominence: 0.95,
             onTap: () {
               if (!state.riftUnlocked) return;
@@ -3572,8 +3639,9 @@ class AdventureScreen extends StatelessWidget {
             iconType: FantasyIconType.systemBossLair, accent: Colors.deepPurpleAccent, fill: const Color(0xFF1A0A2A),
             label: 'Endless Scale',
             isNew: !state.seenHubTiles.contains('endlessscale'),
-            description: tr('Nekonečně škálující souboj bez stropu obtížnosti - test toho, jak daleko tvůj build dokáže zajít.',
-                'An endlessly scaling fight with no difficulty cap - a test of how far your build can go.'),
+            description: tr('Tady souboj nekončí. Každé vítězství přivolá silnějšího nepřítele, znovu a znovu, bez konce a bez stropu. Ptáš se, jak daleko dojdeš? Jenom jeden způsob, jak to zjistit.',
+                'The fight does not end here. Every victory summons a stronger foe, again and again, without end and without a ceiling. Wondering how far you will get? There is only one way to find out.'),
+            npcName: tr('Hlas z Propasti', 'Voice from the Abyss'),
             dx: 0.78, dy: 0.83, prominence: 0.9,
             onTap: () {
               state.markHubTileSeen('endlessscale');
@@ -3612,8 +3680,10 @@ class CityScreen extends StatelessWidget {
           locked: state.companionsTileLocked,
           isNew: !state.companionsTileLocked && !state.seenHubTiles.contains('companions'),
           lockedHint: tr('Odemyká se po první smrti', 'Unlocks after your first death'),
-          description: tr('Najímej a levelu společníky, kteří ti dávají trvalý bonus síly i mimo boj. Odemkne se po tvé první smrti jako útěcha do dalšího pokusu.',
-              'Recruit and level up companions that give you a permanent power bonus outside combat too. Unlocks after your first death as a consolation for the next run.'),
+          description: tr('Najímej a levelu společníky, kteří ti dávají trvalý bonus síly i mimo boj. Padl jsi poprvé, co? To se stává každému. Aspoň teď máš komu zavolat na pomoc příště.',
+              'Recruit and level up companions that give you a permanent power bonus outside combat too. Fell for the first time, did you? Happens to everyone. At least now you have someone to call on for the next run.'),
+          npcName: tr('Kapitánka Sera', 'Captain Sera'),
+          npcPortrait: 'assets/images/npc/companions_captain.png',
           dx: 0.20, dy: 0.22, prominence: 0.9, tapWidth: 133, tapHeight: 150,
           onTap: () {
             if (state.companionsTileLocked) return;
@@ -3625,8 +3695,10 @@ class CityScreen extends StatelessWidget {
           // Dřevěná nástěnka s pergameny uprostřed vpravo.
           iconType: FantasyIconType.systemQuests, accent: FantasyColors2.emberGold, fill: const Color(0xFF3A2B12),
           label: tr('Questy', 'Quests'),
-          description: tr('Denní a týdenní úkoly za Zlato, Magický prach a další odměny. Pravidelný zdroj postupu, aniž bys musel celý den aktivně bojovat.',
-              'Daily and weekly tasks for Gold, Magic Dust and other rewards. A steady source of progress without needing to actively fight all day.'),
+          description: tr('Mám pro tebe denní i týdenní úkoly - splň je a čeká tě zlato, magický prach a další odměny. Slušný způsob, jak postupovat, aniž bys musel bojovat od rána do večera.',
+              'I have got daily and weekly tasks for you - finish them and gold, magic dust and other rewards are waiting. A decent way to keep progressing without fighting from dawn till dusk.'),
+          npcName: tr('Posel Toma', 'Messenger Toma'),
+          npcPortrait: 'assets/images/npc/quest_herald.png',
           dx: 0.68, dy: 0.31, prominence: 0.85, tapWidth: 82, tapHeight: 135,
           onTap: () => openWorldScreen(context, tr('Questy', 'Quests'), const QuestScreen()),
         ),
@@ -3638,8 +3710,10 @@ class CityScreen extends StatelessWidget {
           isNew: state.blacksmithUnlocked && !state.seenHubTiles.contains('blacksmith'),
           unlockProgress: state.level / GameState.blacksmithUnlockLevel,
           lockedHint: tr('Odemyká se na levelu ${GameState.blacksmithUnlockLevel}', 'Unlocks at level ${GameState.blacksmithUnlockLevel}'),
-          description: tr('Kup si vygenerované vybavení podle ranku Kováře, nebo si ho nech vykovat. Rank kováře roste s používáním a zlepšuje jak staty, tak ceny na Tržišti.',
-              'Buy gear generated according to the Blacksmith rank, or have a piece forged. The rank grows with use and improves both stats and Market prices.'),
+          description: tr('Kup si kus podle mého ranku, nebo si ho nech rovnou vykovat. Čím víc kovám, tím výš můj rank stoupá - zlepší se staty i ceny na Tržišti. Pojď blíž, ukážu ti, co mám na kovadlině.',
+              'Buy a piece based on my current rank, or have one forged for you. The more I forge, the higher my rank climbs - better stats, better Market prices too. Come closer, let me show you what is on the anvil.'),
+          npcName: tr('Bram Ocelák', 'Bram Steelhand'),
+          npcPortrait: 'assets/images/npc/blacksmith.png',
           dx: 0.48, dy: 0.62, prominence: 1.15, tapWidth: 122, tapHeight: 170,
           onTap: () {
             if (!state.blacksmithUnlocked) return;
@@ -3651,8 +3725,10 @@ class CityScreen extends StatelessWidget {
           // Chalupa se zeleným kouřem z komína a svítícími lahvičkami v okně vlevo.
           iconType: FantasyIconType.systemAlchemy, accent: FantasyColors2.arcaneViolet, fill: const Color(0xFF241A38),
           label: tr('Alchymie', 'Alchemy'),
-          description: tr('Vař lektvary a elixíry z nasbíraných surovin - léčení, dočasné buffy a další efekty do boje.',
-              'Brew potions and elixirs from gathered materials - healing, temporary buffs and other combat effects.'),
+          description: tr('Přines mi suroviny a uvařím ti, co bude třeba - léčivé lektvary, dočasné buffy, ledacos jiného na cestu do boje. Kotlík se sám nepromíchá.',
+              'Bring me materials and I will brew whatever you need - healing potions, temporary buffs, and a few other things for the road into battle. The cauldron does not stir itself.'),
+          npcName: tr('Elowen, Alchymistka', 'Elowen, the Alchemist'),
+          npcPortrait: 'assets/images/npc/alchemist.png',
           dx: 0.13, dy: 0.50, prominence: 0.95, tapWidth: 100, tapHeight: 121,
           onTap: () => openWorldScreen(context, tr('Alchymie', 'Alchemy'), const AlchemistScreen()),
         ),
@@ -3664,8 +3740,10 @@ class CityScreen extends StatelessWidget {
           isNew: state.marketUnlocked && !state.seenHubTiles.contains('market'),
           unlockProgress: state.level / GameState.marketUnlockLevel,
           lockedHint: tr('Odemyká se na levelu ${GameState.marketUnlockLevel}', 'Unlocks at level ${GameState.marketUnlockLevel}'),
-          description: tr('Nakupuj základní vybavení a lektvary za Zlato, plus dvě Speciální nabídky (Rare/Epic/Legendary/SET), které se obnovují každou hodinu.',
-              'Buy basic gear and potions with Gold, plus two Featured Offers (Rare/Epic/Legendary/SET) that refresh every hour.'),
+          description: tr('Základní vybavení a lektvary tu mám za zlato pořád, ale ty dvě Speciální nabídky vzadu - Rare až SET kousky - ty se mění každou hodinu. Kdo pozdě chodí, sám sobě škodí.',
+              'Basic gear and potions are always here for gold, but those two Featured Offers in the back - Rare through SET pieces - those refresh every hour. Come back too late and you will only have yourself to blame.'),
+          npcName: tr('Kupec Dorin', 'Merchant Dorin'),
+          npcPortrait: 'assets/images/npc/merchant.png',
           dx: 0.80, dy: 0.46, prominence: 1.0, tapWidth: 110, tapHeight: 100,
           onTap: () {
             if (!state.marketUnlocked) return;
@@ -3683,8 +3761,10 @@ class CityScreen extends StatelessWidget {
             isNew: state.runeWizardTileUnlocked && !state.seenHubTiles.contains('runewizard'),
             unlockProgress: state.level / GameState.runeWizardTileUnlockLevel,
             lockedHint: tr('Odemyká se na levelu ${GameState.runeWizardTileUnlockLevel}', 'Unlocks at level ${GameState.runeWizardTileUnlockLevel}'),
-            description: tr('Endgame talentový strom za Runové kameny získané z bossů - trvalé pasivní bonusy nezávislé na aktuálním vybavení.',
-                'An endgame talent tree paid for with Rune Stones earned from bosses - permanent passive bonuses independent of your current gear.'),
+            description: tr('Runové kameny z bossů proměním v trvalé bonusy, co ti zůstanou napořád, ať máš na sobě cokoliv. Tohle už je opravdový endgame, chlapče - pojď, ukážu ti strom.',
+                'Rune stones from bosses, I turn into permanent bonuses that stay with you no matter what you are wearing. This is real endgame territory, my boy - come, let me show you the tree.'),
+            npcName: 'Ma-Túš',
+            npcPortrait: 'assets/images/npc/matus.png',
             dx: 0.14, dy: 0.86, prominence: 1.0, tapWidth: 95, tapHeight: 210,
             onTap: () {
               if (!state.runeWizardTileUnlocked) return;
@@ -3702,8 +3782,10 @@ class CityScreen extends StatelessWidget {
             isNew: state.runeBlacksmithTileUnlocked && !state.seenHubTiles.contains('runeblacksmith'),
             unlockProgress: state.level / GameState.runeBlacksmithUnlockLevel,
             lockedHint: tr('Odemyká se na levelu ${GameState.runeBlacksmithUnlockLevel}', 'Unlocks at level ${GameState.runeBlacksmithUnlockLevel}'),
-            description: tr('Vykovej si osobní Artefaktovou zbraň a postupně ji vylepšuj Esencí Moci a silnějšími zbraněmi z batohu. Zbraň roste s tebou po celou hru, bez stropu.',
-                'Forge your own Artifact Weapon and gradually upgrade it with Power Essence and stronger weapons from your bag. It grows with you for the whole game, with no cap.'),
+            description: tr('Vykuj si vlastní Artefaktovou zbraň a syť ji esencí moci a silnějšími kusy z batohu. Roste s tebou celou hru, chlapče - žádný strop, žádný konec.',
+                'Forge your own Artifact Weapon and feed it with power essence and stronger pieces from your bag. It grows with you the whole game, my boy - no cap, no end.'),
+            npcName: tr('Grendel, Runový Mistr', 'Grendel, Rune Master'),
+            npcPortrait: 'assets/images/npc/rune_blacksmith.png',
             dx: 0.85, dy: 0.88, prominence: 1.0, tapWidth: 90, tapHeight: 145,
             onTap: () {
               if (!state.runeBlacksmithTileUnlocked) return;
@@ -3720,9 +3802,11 @@ class CityScreen extends StatelessWidget {
           isNew: state.bankUnlocked && !state.seenHubTiles.contains('bank'),
           unlockProgress: state.level / GameState.bankUnlockLevel,
           lockedHint: tr('Odemyká se na levelu ${GameState.bankUnlockLevel}', 'Unlocks at level ${GameState.bankUnlockLevel}'),
-          description: tr('Trvalé úložiště mimo inventář - ulož si vybavení jiné třídy nebo buildu, místo abys ho prodal nebo roztavil, když zrovna nesedí k aktuální specializaci.',
-              'Permanent storage outside your inventory - stash gear from another class or build instead of selling or salvaging it when it does not fit your current spec.'),
-          dx: 0.50, dy: 0.16, prominence: 0.7, tapWidth: 121, tapHeight: 129,
+          description: tr('Trvalé úložiště, mimo tvůj batoh. Vybavení jiné třídy nebo buildu si tu ulož místo prodeje či tavení - třeba se ti bude ještě hodit, až přehodíš specializaci.',
+              'Permanent storage, outside your bag. Stash gear from another class or build here instead of selling or salvaging it - might still come in handy once you switch specializations.'),
+          npcName: tr('Mistr Zlaťák', 'Master Goldstack'),
+          npcPortrait: 'assets/images/npc/banker.png',
+          dx: 0.50, dy: 0.21, prominence: 0.7, tapWidth: 121, tapHeight: 129,
           onTap: () {
             if (!state.bankUnlocked) return;
             state.markHubTileSeen('bank');
@@ -3738,8 +3822,10 @@ class CityScreen extends StatelessWidget {
             isNew: state.kronikaUnlocked && !state.seenHubTiles.contains('kronika'),
             unlockProgress: state.level / GameState.kronikaUnlockLevel,
             lockedHint: tr('Odemyká se na levelu ${GameState.kronikaUnlockLevel}', 'Unlocks at level ${GameState.kronikaUnlockLevel}'),
-            description: tr('Denní/týdenní/měsíční přehled cílů a odměn (Chronicle coin) a trvalé úložiště vybavení napříč třídami.',
-                'A daily/weekly/monthly overview of goals and rewards (Chronicle coin), plus permanent cross-class gear storage.'),
+            description: tr('Zapisuju denní, týdenní i měsíční cíle - splň je a čeká tě Chronicle coin. A pokud chceš uložit vybavení napříč třídami mimo batoh, i na to tu mám místo.',
+                'I keep the daily, weekly and monthly goals - complete them and a Chronicle coin awaits. And if you want to store gear across classes outside your bag, I have got room for that too.'),
+            npcName: tr('Kronikář Aldous', 'Chronicler Aldous'),
+            npcPortrait: 'assets/images/npc/chronicler.png',
             dx: 0.90, dy: 0.20, prominence: 0.9, tapWidth: 78, tapHeight: 139,
             onTap: () {
               if (!state.kronikaUnlocked) return;
