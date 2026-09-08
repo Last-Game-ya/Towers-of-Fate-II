@@ -3594,6 +3594,82 @@ class _SceneLifePainter extends CustomPainter {
           canvas.drawCircle(center, r * 0.7, Paint()..color = const Color(0xFFFFF3D8).withOpacity(flicker * 0.45)..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.5));
         }
       }
+      // ===== OŽIVENÍ JEDNOTLIVÝCH BUDOV - každá má vlastní "dech" na svojí skutečné pozici
+      // (viz dx/dy v AdventureScreen), místo generické mlhy pro všechny stejně. =====
+      // Doupě bosse (0.16, 0.30) - lebka s planoucíma očima/ústy, pomalu "dýchá" žár + občas
+      // z ní vyletí trocha jisker/žhavého popela.
+      {
+        final p = Offset(0.16 * size.width, 0.30 * size.height);
+        final breathe = 0.5 + 0.5 * sin(t * 2 * pi * 0.5);
+        canvas.drawCircle(p + Offset(0, size.height * 0.012), size.width * 0.045, Paint()..color = const Color(0xFFFF4500).withOpacity(0.22 + 0.18 * breathe)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.035));
+        final emberRnd = Random(31);
+        for (int i = 0; i < 3; i++) {
+          final ep = (t * (0.25 + i * 0.07) + i * 0.4) % 1.0;
+          final ex = p.dx + (emberRnd.nextDouble() - 0.5) * size.width * 0.05;
+          final ey = p.dy - ep * size.height * 0.09;
+          canvas.drawCircle(Offset(ex, ey), 1.6 * (1 - ep), Paint()..color = const Color(0xFFFFAB40).withOpacity((1 - ep) * 0.6));
+        }
+      }
+      // Aréna (0.82, 0.38) - 4 pochodně po obvodu kruhu, každá nezávisle poblikává (klasický
+      // pochodňový flicker, rychlejší a nepravidelnější než dech u ostatních bodů).
+      {
+        final center = Offset(0.82 * size.width, 0.38 * size.height);
+        final torchRnd = Random(42);
+        for (int i = 0; i < 4; i++) {
+          final a = i * (pi / 2) + pi / 4;
+          final tp = center + Offset(cos(a), sin(a) * 0.5) * size.width * 0.10;
+          final flick = 0.55 + 0.45 * sin(t * 2 * pi * (3.5 + torchRnd.nextDouble()) + i * 2.1);
+          canvas.drawCircle(tp, size.width * 0.014 * flick, Paint()..color = const Color(0xFFFFA000).withOpacity(0.5 * flick)..maskFilter = MaskFilter.blur(BlurStyle.normal, 4));
+        }
+      }
+      // World Boss (0.50, 0.62) - tepající žár v hrudi bestie, rytmus jako tlukot srdce (dvě
+      // rychlá bum-bum, pak pauza) - má to působit jako živá hrozba, ne jen dekorace.
+      {
+        final p = Offset(0.50 * size.width, 0.60 * size.height);
+        final beatT = (t * 1.4) % 1.0;
+        double beat = 0;
+        if (beatT < 0.10) {
+          beat = sin((beatT / 0.10) * pi);
+        } else if (beatT > 0.16 && beatT < 0.26) {
+          beat = sin(((beatT - 0.16) / 0.10) * pi) * 0.8;
+        }
+        canvas.drawCircle(p, size.width * (0.05 + 0.03 * beat), Paint()..color = const Color(0xFFFF3D00).withOpacity(0.20 + 0.35 * beat)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.05));
+      }
+      // Trhlina Osudu (0.15, 0.78) - fialová arkánová energie praská kolem krystalu - základní
+      // pulzující záře + občasný větvící se výboj (jiná paleta a rytmus než bouřka nahoře, ať
+      // je jasné, že jde o jiný typ energie - magickou, ne přírodní).
+      {
+        final p = Offset(0.15 * size.width, 0.76 * size.height);
+        final pulse = 0.5 + 0.5 * sin(t * 2 * pi * 0.6);
+        canvas.drawCircle(p, size.width * (0.05 + 0.015 * pulse), Paint()..color = const Color(0xFFB388FF).withOpacity(0.18 + 0.14 * pulse)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.04));
+        final sparkPhase = (t * 0.8) % 1.0;
+        final sparkFlicker = sparkPhase < 0.08 ? (1 - sparkPhase / 0.08) : 0.0;
+        if (sparkFlicker > 0) {
+          final sparkRnd = Random((t * 500).floor());
+          var sx = p.dx;
+          var sy = p.dy;
+          final path = Path()..moveTo(sx, sy);
+          for (int i = 0; i < 4; i++) {
+            sx += (sparkRnd.nextDouble() - 0.5) * size.width * 0.04;
+            sy -= size.height * 0.02;
+            path.lineTo(sx, sy);
+          }
+          canvas.drawPath(path, Paint()..color = const Color(0xFFE1BEE7).withOpacity(sparkFlicker * 0.8)..style = PaintingStyle.stroke..strokeWidth = 1.4);
+        }
+      }
+      // Endless Scale (0.78, 0.83) - fialové "duše" pomalu stoupají z propasti nahoru po
+      // schodišti a mizí - klidnější, plynulý pohyb (na rozdíl od jisker/blesků jinde), ať to
+      // ladí s tichou hrozbou nekonečného souboje.
+      {
+        final base = Offset(0.78 * size.width, 0.90 * size.height);
+        final soulRnd = Random(53);
+        for (int i = 0; i < 4; i++) {
+          final sp = (t * (0.12 + i * 0.03) + i * 0.27) % 1.0;
+          final sx = base.dx + (soulRnd.nextDouble() - 0.5) * size.width * 0.06 + sin(sp * 2 * pi) * 4;
+          final sy = base.dy - sp * size.height * 0.16;
+          canvas.drawCircle(Offset(sx, sy), 2.2 * (1 - sp * 0.6), Paint()..color = const Color(0xFF9575CD).withOpacity((1 - sp) * 0.5)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2));
+        }
+      }
     } else {
       // Sluneční paprsky Města - protějšek bouřkové oblohy Dobrodružství, ale opačná nálada:
       // klidné, teplé, dýchající "god rays" vycházející ze slunce v obrázku (pozice odpovídá
@@ -3642,6 +3718,50 @@ class _SceneLifePainter extends CustomPainter {
           ..quadraticBezierTo(x, y + 3, x, y)
           ..quadraticBezierTo(x, y + 3, x + bw, y - wingFlap * 4);
         canvas.drawPath(path, Paint()..color = const Color(0xFF2A1E12).withOpacity(0.35)..style = PaintingStyle.stroke..strokeWidth = 1.4..strokeCap = StrokeCap.round);
+      }
+      // Kovárna (0.48, 0.66) - výheň u kovadliny občas jasně vzplane, jako by kovář právě
+      // vytáhl žhavý kov z ohně - krátký jasný záblesk, dlouhá pauza mezi nimi (ne dýchání jako
+      // jinde, tohle má být nečekaný "moment", ne pravidelný rytmus).
+      {
+        final forgeP = Offset(0.48 * size.width, 0.665 * size.height);
+        final forgePhase = (t * 0.22) % 1.0;
+        final forgeFlare = forgePhase < 0.06 ? sin((forgePhase / 0.06) * pi) : 0.0;
+        if (forgeFlare > 0) {
+          canvas.drawCircle(forgeP, size.width * (0.03 + 0.025 * forgeFlare), Paint()..color = const Color(0xFFFFAB40).withOpacity(0.5 * forgeFlare)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.03));
+          canvas.drawCircle(forgeP, size.width * 0.06 * forgeFlare, Paint()..color = const Color(0xFFFFE0B2).withOpacity(0.20 * forgeFlare)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.05));
+        }
+      }
+      // Runový Čaroděj (0.145, 0.86) - modré runy na věži se rozsvěcí jedna po druhé odspoda
+      // nahoru (ne všechny najednou) - 5 run podél výšky věže, v každém okamžiku svítí jen
+      // jedna, ostatní jsou tlumené.
+      {
+        final towerBase = Offset(0.145 * size.width, 0.94 * size.height);
+        const runeCount = 5;
+        final activeIndex = ((t * 1.6) % runeCount).floor();
+        for (int i = 0; i < runeCount; i++) {
+          final ry = towerBase.dy - size.height * (0.06 + i * 0.045);
+          final isActive = i == activeIndex;
+          final localPhase = (t * 1.6) % 1.0;
+          final glow = isActive ? sin(localPhase * pi) : 0.0;
+          canvas.drawCircle(
+            Offset(towerBase.dx, ry), 4 + 3 * glow,
+            Paint()
+              ..color = const Color(0xFF64B5F6).withOpacity(0.10 + 0.55 * glow)
+              ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + 5 * glow),
+          );
+        }
+      }
+      // Tržiště (0.80, 0.46) - lucerny se rozsvítí až večer podle SKUTEČNÉHO času v telefonu
+      // (ne herního) - svítí mimo 8:00-18:00 (večer i brzy ráno), přes den je tam jen to, co je
+      // namalované na obrázku.
+      if (DateTime.now().hour >= 18 || DateTime.now().hour < 8) {
+        final marketRnd = Random(64);
+        for (int i = 0; i < 5; i++) {
+          final lx = 0.72 * size.width + marketRnd.nextDouble() * size.width * 0.20;
+          final ly = 0.40 * size.height + marketRnd.nextDouble() * size.height * 0.14;
+          final flick = 0.6 + 0.4 * sin(t * 2 * pi * (2.0 + marketRnd.nextDouble() * 1.5) + i * 1.7);
+          canvas.drawCircle(Offset(lx, ly), 3.5 * flick, Paint()..color = const Color(0xFFFFCC80).withOpacity(0.55 * flick)..maskFilter = MaskFilter.blur(BlurStyle.normal, 5));
+        }
       }
     }
     for (int p = 0; p < smokePoints.length; p++) {
@@ -3881,7 +4001,7 @@ class CityScreen extends StatelessWidget {
           label: tr('Alchymie', 'Alchemy'),
           description: tr('Přines mi suroviny a uvařím ti, co bude třeba - léčivé lektvary, dočasné buffy, ledacos jiného na cestu do boje. Kotlík se sám nepromíchá.',
               'Bring me materials and I will brew whatever you need - healing potions, temporary buffs, and a few other things for the road into battle. The cauldron does not stir itself.'),
-          npcName: tr('Elowen, Alchymistka', 'Elowen, the Alchemist'),
+          npcName: tr('Ellinor, Alchymistka', 'Ellinor, the Alchemist'),
           npcPortrait: 'assets/images/npc/alchemist.png',
           dx: 0.13, dy: 0.50, prominence: 0.95, tapWidth: 100, tapHeight: 121,
           onTap: () => openWorldScreen(context, tr('Alchymie', 'Alchemy'), const AlchemistScreen()),
@@ -6989,7 +7109,7 @@ class FantasyProgressBar extends StatefulWidget {
   State<FantasyProgressBar> createState() => _FantasyProgressBarState();
 }
 
-class _FantasyProgressBarState extends State<FantasyProgressBar> with SingleTickerProviderStateMixin {
+class _FantasyProgressBarState extends State<FantasyProgressBar> with TickerProviderStateMixin {
   late final AnimationController _pulseController;
   // Krátký bílý záblesk, co se spustí u velkého zásahu (viz didUpdateWidget) - hráč nejdřív
   // "ucítí" ránu, pak teprve vidí HP plynule odkapávat (viz drain TweenAnimationBuilder níž).

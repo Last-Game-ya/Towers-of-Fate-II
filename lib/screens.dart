@@ -4156,10 +4156,10 @@ class _ClassSelectionScreenState extends State<_ClassSelectionScreen> {
     await Future.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
     setState(() => _phase = _ClassSelectPhase.story1);
-    await Future.delayed(const Duration(milliseconds: 2600));
+    await Future.delayed(const Duration(milliseconds: 4100));
     if (!mounted) return;
     setState(() => _phase = _ClassSelectPhase.story2);
-    await Future.delayed(const Duration(milliseconds: 2600));
+    await Future.delayed(const Duration(milliseconds: 4100));
     if (!mounted) return;
     widget.state.selectClass(cls);
   }
@@ -4191,7 +4191,6 @@ class _ClassSelectionScreenState extends State<_ClassSelectionScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                GearScoreBadge(state: widget.state),
                 const SizedBox(height: 12),
                 if (widget.bossGuide != null) ...[widget.bossGuide!, const SizedBox(height: 12)],
                 Text(tr("Zvolte si své povolání:", "Choose your class:"), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
@@ -5765,54 +5764,120 @@ class BlacksmithScreen extends StatelessWidget {
 
 class AlchemistScreen extends StatelessWidget {
   const AlchemistScreen({super.key});
+  static const Color _accent = Color(0xFFAB47BC); // fialová - stejná paleta jako ikona/kouř Alchymie na mapě
+
   @override
   Widget build(BuildContext context) {
     return Consumer<GameState>(builder: (context, state, _) {
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(tr("Alchymistka Ellinor (Rank ${state.alchemistRank})", "Alchemist Ellinor (Rank ${state.alchemistRank})"), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
-          const SizedBox(height: 10),
-          ElevatedButton(
-            onPressed: state.upgradeAlchemist,
-            child: Text(tr("Vylepšit alchymistu (Cena: ${state.alchemistRank * 500} Dust)", "Upgrade alchemist (Price: ${state.alchemistRank * 500} Dust)")),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            tr(
-              "Léčivý lektvar: ${(40 + state.alchemistRank).toString()}% HP\n"
-              "Upíří lektvar: ${10 + state.alchemistRank} kol lifestealu\n"
-              "Sleva na lektvary v tržišti: ${(state.potionDiscount * 100).toInt()}%",
-              "Health Potion: ${(40 + state.alchemistRank).toString()}% HP\n"
-              "Vampire Potion: ${10 + state.alchemistRank} turns of lifesteal\n"
-              "Market potion discount: ${(state.potionDiscount * 100).toInt()}%",
+          // ===== HLAVIČKA - portrét Ellinor přes celou šířku (stejný jazyk jako combat karty a
+          // rám v Duši: velký obdélník, jméno + rank vypálené na gradientu dole), místo
+          // dřívějšího holého textového nadpisu. =====
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              width: double.infinity,
+              height: 150,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  LivingPortrait(assetPath: 'assets/images/npc/alchemist.png', accent: _accent, mode: PortraitLifeMode.subtle),
+                  DecoratedBox(decoration: BoxDecoration(border: Border.all(color: _accent.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
+                  Positioned(
+                    left: 0, right: 0, bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(tr('Alchymistka Ellinor', 'Alchemist Ellinor'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _accent)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: _accent.withOpacity(.25), borderRadius: BorderRadius.circular(20), border: Border.all(color: _accent)),
+                            child: Text('Rank ${state.alchemistRank}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            style: const TextStyle(color: Colors.tealAccent),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _accent),
+              onPressed: state.upgradeAlchemist,
+              child: Text(tr("Vylepšit alchymistu (Cena: ${state.alchemistRank * 500} Dust)", "Upgrade alchemist (Price: ${state.alchemistRank * 500} Dust)")),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.tealAccent.withOpacity(.4))),
+            child: Text(
+              tr(
+                "Léčivý lektvar: ${(40 + state.alchemistRank).toString()}% HP\n"
+                "Upíří lektvar: ${10 + state.alchemistRank} kol lifestealu\n"
+                "Sleva na lektvary v tržišti: ${(state.potionDiscount * 100).toInt()}%",
+                "Health Potion: ${(40 + state.alchemistRank).toString()}% HP\n"
+                "Vampire Potion: ${10 + state.alchemistRank} turns of lifesteal\n"
+                "Market potion discount: ${(state.potionDiscount * 100).toInt()}%",
+              ),
+              style: const TextStyle(color: Colors.tealAccent, height: 1.4),
+            ),
+          ),
+          const SizedBox(height: 14),
           Text(tr("Odemykané lektvary:", "Unlockable potions:"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
-          const SizedBox(height: 4),
-          for (var entry in {
-            "Lektvar Síly": 2,
-            "Lektvar Kamenné kůže": 4,
-            "Lektvar Moudrosti": 6,
-            "Elixír Fénixe": 8,
-          }.entries)
-            Text(
-              "${state.alchemistRank >= entry.value ? '✅' : '🔒'} ${entry.key} (${tr('Rank', 'Rank')} ${entry.value})",
-              style: TextStyle(color: state.alchemistRank >= entry.value ? Colors.greenAccent : Colors.grey),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(10)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var entry in {
+                  "Lektvar Síly": 2,
+                  "Lektvar Kamenné kůže": 4,
+                  "Lektvar Moudrosti": 6,
+                  "Elixír Fénixe": 8,
+                }.entries)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      "${state.alchemistRank >= entry.value ? '✅' : '🔒'} ${entry.key} (${tr('Rank', 'Rank')} ${entry.value})",
+                      style: TextStyle(color: state.alchemistRank >= entry.value ? Colors.greenAccent : Colors.grey),
+                    ),
+                  ),
+              ],
             ),
-          const Divider(),
+          ),
+          const SizedBox(height: 14),
           if (!state.autoHealUnlocked)
-            ElevatedButton(
-              onPressed: state.unlockAutoHeal,
-              child: Text(tr("Odemknout Auto-Léčení (1000 Dust)", "Unlock Auto-Heal (1000 Dust)")),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _accent),
+                onPressed: state.unlockAutoHeal,
+                child: Text(tr("Odemknout Auto-Léčení (1000 Dust)", "Unlock Auto-Heal (1000 Dust)")),
+              ),
             )
           else
-            SwitchListTile(
-              title: Text(tr("Auto-Léčení Aktivní", "Auto-Heal Active")),
-              value: state.autoHealEnabled,
-              onChanged: (_) => state.toggleAutoHeal(),
+            Container(
+              decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(10)),
+              child: SwitchListTile(
+                title: Text(tr("Auto-Léčení Aktivní", "Auto-Heal Active")),
+                value: state.autoHealEnabled,
+                activeColor: _accent,
+                onChanged: (_) => state.toggleAutoHeal(),
+              ),
             ),
         ],
       );
@@ -5874,8 +5939,38 @@ class _SoulsScreenState extends State<SoulsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Text(tr("Vylepšení tříd za krystaly", "Class Upgrades with Crystals"), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
-          const SizedBox(height: 4),
-          Text(tr('Projeď postavy vlevo/vpravo a vyber třídu, kterou chceš vylepšit.', 'Scroll the characters left/right and pick the class you want to upgrade.'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          const SizedBox(height: 10),
+          // ===== NPC HLAVIČKA - Strážkyně Duší, kompaktní karta (malý kulatý portrét + jméno +
+          // jedna promluvená věta) místo dřívější neutrální instrukce. Záměrně malá a nahoře,
+          // ne velká - hlavní pozornost patří rámu vybrané třídy níž, tohle je jen "uvítání". =====
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: const Color(0xFF1E1424), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF9C6ADE).withOpacity(.4))),
+            child: Row(
+              children: [
+                Container(
+                  width: 46, height: 46,
+                  decoration: BoxDecoration(shape: BoxShape.circle, gradient: const RadialGradient(colors: [Color(0x559C6ADE), Color(0xFF14101C)]), border: Border.all(color: const Color(0xFF9C6ADE))),
+                  child: ClipOval(child: LivingPortrait(assetPath: 'assets/images/npc/soul_keeper.png', accent: const Color(0xFF9C6ADE), mode: PortraitLifeMode.subtle)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(tr('Nyx, Strážkyně Duší', 'Nyx, Keeper of Souls'), style: const TextStyle(color: Color(0xFF9C6ADE), fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 2),
+                      Text(
+                        tr('„Projeď postavy vlevo a vpravo, a řekni mi, čí duši mám posílit."', '"Scroll the characters left and right, and tell me whose soul to strengthen."'),
+                        style: const TextStyle(color: Color(0xFFE6DCF0), fontSize: 12, fontStyle: FontStyle.italic, height: 1.3),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
           // ===== VODOROVNÝ KARUSEL TŘÍD - stejné portréty/odznaky jako u výběru třídy
           // (_ClassBadge), jen místo mřížky jako scrollovací pás. Tap/scroll na postavu ji
@@ -8562,8 +8657,8 @@ class IntroScreen extends StatelessWidget {
                     ),
                     _bullet(
                       tr('První společník je povinný', 'Your first companion is mandatory'),
-                      tr('Po tvé první smrti si musíš najmout společníka, než budeš pokračovat dál - dostaneš na to přesně tolik zlata, kolik stojí.',
-                          "After your first death you must hire a companion before continuing - you'll get exactly enough gold for it."),
+                      tr('Po tvé první smrti si musíš najmout společníka, než budeš pokračovat dál - ten první je zdarma.',
+                          "After your first death you must hire a companion before continuing - the first one is free."),
                       icon: Icons.groups,
                       accent: const Color(0xFF9575CD),
                     ),
