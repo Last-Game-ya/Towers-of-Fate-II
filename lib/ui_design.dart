@@ -2129,95 +2129,10 @@ class HexBadgePainter extends CustomPainter {
       oldDelegate.fill != fill || oldDelegate.stroke != stroke;
 }
 
-/// Jen obrys hexagonu (žádná výplň) - používá stejné vrcholy jako HexBadgePainter, ale kreslí
-/// pouze tenkou svítící linku. Používá se pro odemčené budovy na scéně (SceneMapView), kde má
-/// tlačítkem být budova samotná na malovaném pozadí, ne vyplněný odznak s ikonou navrch.
-class HexOutlinePainter extends CustomPainter {
-  final Color stroke;
-  final double opacity;
-  const HexOutlinePainter({required this.stroke, this.opacity = 1.0});
-
-  Path _hex(Size size) {
-    const vb = Size(62, 68);
-    final pts = <Offset>[
-      const Offset(31, 2), const Offset(58, 16), const Offset(58, 43),
-      const Offset(31, 66), const Offset(4, 43), const Offset(4, 16),
-    ];
-    final path = Path();
-    for (var i = 0; i < pts.length; i++) {
-      final p = pts[i];
-      final sx = p.dx / vb.width * size.width;
-      final sy = p.dy / vb.height * size.height;
-      if (i == 0) {
-        path.moveTo(sx, sy);
-      } else {
-        path.lineTo(sx, sy);
-      }
-    }
-    path.close();
-    return path;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawPath(
-      _hex(size),
-      Paint()
-        ..color = stroke.withOpacity(opacity)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.4),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant HexOutlinePainter old) => old.stroke != stroke || old.opacity != opacity;
-}
-
-/// Jemně "dýchající" obrys kolem odemčené budovy na scéně - nahrazuje dřívější vyplněný
-/// hex-odznak s ikonou. Budova samotná (namalovaná na pozadí) je tak vizuálně tlačítkem, tohle
-/// je jen nenápadný ukazatel, kam přesně sáhnout, který se pomalu rozjasňuje a ztlumuje.
-class _BuildingOutlinePulse extends StatefulWidget {
-  final Color color;
-  final double width;
-  final double height;
-  const _BuildingOutlinePulse({required this.color, required this.width, required this.height});
-
-  @override
-  State<_BuildingOutlinePulse> createState() => _BuildingOutlinePulseState();
-}
-
-class _BuildingOutlinePulseState extends State<_BuildingOutlinePulse> with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
-
-  @override
-  void initState() {
-    super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) => CustomPaint(
-        size: Size(widget.width, widget.height),
-        painter: HexOutlinePainter(stroke: widget.color, opacity: 0.5 + _c.value * 0.4),
-      ),
-    );
-  }
-}
-
-/// Dřevěná visící cedule "ZAVŘENO" pro ještě neodemčenou budovu ve Městě - nahrazuje dřívější
-/// šedý zámek/hex odznak. Mírně nakloněná deska na dvou provazech, jako by ji tam pověsil
-/// majitel než bude budova hotová. Používá se jen v Městě (danger: false) - v Dobrodružství
-/// (danger: true) zamčenou budovu zahaluje _SceneFogOverlay, žádná cedule tam není potřeba.
+/// Dřevěná visící cedule "ZAVŘENO" pro ještě neodemčenou budovu - nahrazuje dřívější šedý
+/// zámek/hex odznak (a dřívější mlhu v Dobrodružství). Mírně nakloněná deska na dvou provazech,
+/// jako by ji tam pověsil majitel než bude budova hotová. Používá se stejně ve Městě i
+/// Dobrodružství.
 class _WoodenClosedSign extends StatelessWidget {
   final double width;
   final double height;
@@ -2281,6 +2196,105 @@ class _WoodenSignPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WoodenSignPainter old) => false;
+}
+
+/// Tichá předzvěst blížícího se odemčení v Dobrodružství - vířící temná mlha + občasný záblesk
+/// blesku, BEZ jakéhokoliv textu (na rozdíl od _WoodenClosedSign ve Městě). Zobrazuje se jen
+/// těsně před odemčením (viz _SceneBuildingMarker._nearUnlockThreshold) - do té doby na mapě
+/// není u zamčené budovy vidět vůbec nic.
+class _NearUnlockTeaseFx extends StatefulWidget {
+  final double width;
+  final double height;
+  const _NearUnlockTeaseFx({required this.width, required this.height});
+
+  @override
+  State<_NearUnlockTeaseFx> createState() => _NearUnlockTeaseFxState();
+}
+
+class _NearUnlockTeaseFxState extends State<_NearUnlockTeaseFx> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(seconds: 5))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) => CustomPaint(size: Size(widget.width, widget.height), painter: _TeaseFogLightningPainter(t: _c.value)),
+      ),
+    );
+  }
+}
+
+class _TeaseFogLightningPainter extends CustomPainter {
+  final double t; // 0..1 smyčka (5s)
+  _TeaseFogLightningPainter({required this.t});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    // Vířící temně fialová mlha - 4 překrývající se shluky, pomalu driftující kolem středu
+    // zóny. Stejný jazyk jako ostatní ambientní efekty na mapě (viz _SceneLifePainter výš).
+    for (int i = 0; i < 4; i++) {
+      final phase = t * 2 * pi + i * (pi / 2);
+      final dx = sin(phase) * size.width * 0.12;
+      final dy = cos(phase * 0.7) * size.height * 0.10;
+      final r = size.shortestSide * (0.34 + 0.06 * sin(phase * 1.3));
+      canvas.drawCircle(
+        center + Offset(dx, dy),
+        r,
+        Paint()
+          ..color = const Color(0xFF3A1050).withOpacity(0.30)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+      );
+    }
+    // Bleskový záblesk - dvě krátká okna viditelnosti za smyčku (jinak nic), cik-cak dráha od
+    // vršku zóny dolů, s jemnou fialovou září kolem v momentě záblesku.
+    final flashPhase1 = (t * 3) % 1.0;
+    final flashPhase2 = ((t + 0.5) * 3) % 1.0;
+    double flashIntensity = 0;
+    if (flashPhase1 < 0.06) flashIntensity = 1 - (flashPhase1 / 0.06);
+    if (flashPhase2 < 0.04) flashIntensity = max(flashIntensity, 1 - (flashPhase2 / 0.04));
+    if (flashIntensity > 0) {
+      final rnd = Random((t * 997).floor());
+      double x = center.dx + (rnd.nextDouble() - 0.5) * size.width * 0.3;
+      double y = 0;
+      final path = Path()..moveTo(x, y);
+      while (y < size.height * 0.85) {
+        x += (rnd.nextDouble() - 0.5) * size.width * 0.22;
+        y += size.height * (0.12 + rnd.nextDouble() * 0.10);
+        path.lineTo(x, y);
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = const Color(0xFFB9A6FF).withOpacity(flashIntensity * 0.9)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+      );
+      canvas.drawCircle(
+        center, size.shortestSide * 0.48,
+        Paint()
+          ..color = const Color(0xFF8A6CFF).withOpacity(flashIntensity * 0.12)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TeaseFogLightningPainter old) => old.t != t;
 }
 
 /// Jedna dlaždice na domovské obrazovce (HubScreen): hex odznak + ikona +
@@ -2864,6 +2878,12 @@ class SceneBuildingSpot {
   final double dx; // 0..1 - horizontální pozice na scéně
   final double dy; // 0..1 - vertikální pozice (0 = v dálce/nahoře, 1 = vpředu/dole - blíž hráči)
   final double prominence; // relativní velikost budovy na mapě (1.0 = základ)
+  // Rozměry neviditelné oválné tap zóny (před vynásobením prominence) - má pokrýt skutečnou
+  // budovu na malovaném pozadí, ne jen malý odznak uprostřed. Výchozí hodnota sedí na většinu
+  // budov přiměřené velikosti; jednotlivé spoty si mohou nastavit vlastní, pokud je jejich
+  // budova na obrázku výrazně větší/menší nebo protáhlejší.
+  final double tapWidth;
+  final double tapHeight;
   // Pokud true, tap na budovu přeskočí info bottom-sheet (_showSceneBuildingMenu) a rovnou
   // zavolá onTap - pro Věž Osudu, kde je hlavní herní smyčka a mezikrok jen zdržuje. Ostatní
   // budovy si drží info popis/odemykací stav v menu, tam skip nedává smysl.
@@ -2883,6 +2903,8 @@ class SceneBuildingSpot {
     required this.dx,
     required this.dy,
     this.prominence = 1.0,
+    this.tapWidth = 120,
+    this.tapHeight = 132,
     this.skipMenu = false,
   });
 }
@@ -3029,24 +3051,34 @@ void _showSceneBuildingMenu(BuildContext context, SceneBuildingSpot spot) {
   );
 }
 
-/// Vizuální marker jedné budovy na scéně. Odemčená budova nemá žádný vyplněný odznak ani ikonu -
-/// tlačítkem je budova samotná na malovaném pozadí, marker jen jemně "dýchajícím" obrysem
-/// naznačuje kam sáhnout. Zamčená budova se řeší podle scény: v Dobrodružství (danger) ji
-/// zahaluje _SceneFogOverlay (žádný marker navrch, jen tap zóna), ve Městě visí dřevěná cedule
-/// "ZAVŘENO" (_WoodenClosedSign) místo dřívějšího šedého zámku.
+/// Vizuální marker jedné budovy na scéně. Odemčená budova nemá žádný vyplněný odznak, ikonu ani
+/// obrys - tap zóna je neviditelná oválná plocha (velikostí odpovídající skutečné budově na
+/// malovaném pozadí), ClipOval omezuje hit-test na elipsu, ne na celý obdélníkový box, takže
+/// klik vedle budovy (do cesty/oblohy) neprochází. Popisek je vykreslený uvnitř této zóny,
+/// dřív byl jako samostatný chip pod ní.
+/// Zamčená budova se řeší jinak podle scény: ve Městě visí dřevěná cedule "ZAVŘENO" s textem
+/// (_WoodenClosedSign) jako dřív. V Dobrodružství hráč nemá vidět VŮBEC žádný text ani náznak,
+/// dokud se odemčení nepřiblíží - pak tam místo textu naskočí tichá animovaná mlha s blesky
+/// (_NearUnlockTeaseFx), taky bez textu. Tap na budovu (i bez viditelného marku) pořád funguje
+/// a otevře info sheet s popisem/postupem odemčení.
 class _SceneBuildingMarker extends StatelessWidget {
   final SceneBuildingSpot spot;
   final bool danger;
   const _SceneBuildingMarker({required this.spot, required this.danger});
 
+  // Jak blízko musí být unlockProgress k odemčení, aby se v Dobrodružství objevila mlha s
+  // blesky - do té doby na mapě není vidět vůbec nic.
+  static const double _nearUnlockThreshold = 0.75;
+
   @override
   Widget build(BuildContext context) {
     final bool showNewGlow = spot.isNew && !spot.locked;
-    final double w = 62 * spot.prominence;
-    final double h = 68 * spot.prominence;
-    // V Dobrodružství se zamčená budova řeší mlhou nad ní (_SceneFogOverlay v SceneMapView),
-    // takže tady navrch nic dalšího nekreslíme - jen neviditelnou tap zónu (locked onTap je
-    // stejně no-op). Label s levelem odemčení zůstává vidět pod mlhou stejně jako dřív.
+    final bool showLockedSign = spot.locked && !danger;
+    final bool showNearUnlockTease = spot.locked && danger && (spot.unlockProgress ?? 0) >= _nearUnlockThreshold;
+    final double tapW = spot.tapWidth * spot.prominence;
+    final double tapH = spot.tapHeight * spot.prominence;
+    final double signW = 62 * spot.prominence;
+    final double signH = 68 * spot.prominence;
     return GestureDetector(
       onTap: () {
         if (spot.skipMenu && !spot.locked) {
@@ -3056,59 +3088,57 @@ class _SceneBuildingMarker extends StatelessWidget {
         }
         _showSceneBuildingMenu(context, spot);
       },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: w + 8,
-            height: h,
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
-              children: [
-                if (showNewGlow)
-                  Container(width: w + 6, height: w + 6, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: FantasyColors.gold.withOpacity(.6), blurRadius: 18, spreadRadius: 2)])),
-                if (!spot.locked)
-                  _BuildingOutlinePulse(color: spot.accent, width: w, height: h)
-                else if (!danger)
-                  _WoodenClosedSign(width: w, height: h)
-                else
-                  const SizedBox.shrink(),
-                if (showNewGlow)
-                  Positioned(
-                    top: -4, left: -6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(color: FantasyColors.gold, borderRadius: BorderRadius.circular(6), border: Border.all(color: FantasyColors2.obsidian, width: 1.2), boxShadow: [BoxShadow(color: FantasyColors.gold.withOpacity(.7), blurRadius: 6)]),
-                      child: Text(tr('NOVÉ', 'NEW'), style: const TextStyle(color: Colors.black, fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: .3)),
-                    ),
-                  ),
-                if (!spot.locked && spot.badgeCount != null && spot.badgeCount! > 0)
-                  Positioned(
-                    top: -4, right: 2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(color: FantasyColors2.hp, borderRadius: BorderRadius.circular(8), border: Border.all(color: FantasyColors2.obsidian, width: 1.5)),
-                      child: Text('${spot.badgeCount}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            constraints: const BoxConstraints(maxWidth: 84),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: Colors.black.withOpacity(.55), borderRadius: BorderRadius.circular(6)),
-            child: Text(
-              spot.locked && spot.lockedHint != null ? spot.lockedHint! : spot.label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: spot.locked ? Colors.grey.shade500 : const Color(0xFFF1E6D0), height: 1.1),
-            ),
-          ),
-        ],
+      child: SizedBox(
+        width: tapW,
+        height: tapH,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            if (!spot.locked)
+              // Neviditelná - jen definuje tap plochu (ClipOval ořízne hit-test na elipsu).
+              ClipOval(child: SizedBox(width: tapW, height: tapH))
+            else if (showLockedSign)
+              _WoodenClosedSign(width: signW, height: signH)
+            else if (showNearUnlockTease)
+              _NearUnlockTeaseFx(width: tapW, height: tapH)
+            else
+              const SizedBox.shrink(),
+            if (showNewGlow)
+              Positioned(
+                top: 6, left: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(color: FantasyColors.gold, borderRadius: BorderRadius.circular(6), border: Border.all(color: FantasyColors2.obsidian, width: 1.2), boxShadow: [BoxShadow(color: FantasyColors.gold.withOpacity(.7), blurRadius: 6)]),
+                  child: Text(tr('NOVÉ', 'NEW'), style: const TextStyle(color: Colors.black, fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: .3)),
+                ),
+              ),
+            if (!spot.locked && spot.badgeCount != null && spot.badgeCount! > 0)
+              Positioned(
+                top: 6, right: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(color: FantasyColors2.hp, borderRadius: BorderRadius.circular(8), border: Border.all(color: FantasyColors2.obsidian, width: 1.5)),
+                  child: Text('${spot.badgeCount}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                ),
+              ),
+            // Popisek: vždycky u odemčené budovy, u zamčené jen ve Městě (cedule) - v
+            // Dobrodružství žádný text, ani při mlžné předzvěsti.
+            if (!spot.locked || showLockedSign)
+              Container(
+                constraints: BoxConstraints(maxWidth: tapW - 12),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(color: Colors.black.withOpacity(.6), borderRadius: BorderRadius.circular(6)),
+                child: Text(
+                  spot.locked ? (spot.lockedHint ?? spot.label) : spot.label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: spot.locked ? Colors.grey.shade500 : const Color(0xFFF1E6D0), height: 1.1),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -3318,25 +3348,10 @@ class SceneMapView extends StatelessWidget {
                       Positioned.fill(child: _SceneLifeOverlay(danger: danger, smokePoints: smokePoints, glowPoints: glowPoints)),
                       for (final b in buildings)
                         Positioned(
-                          left: (b.dx * size.width - (35 * b.prominence)).clamp(0.0, size.width - 70 * b.prominence),
-                          top: (b.dy * size.height - (37 * b.prominence)).clamp(0.0, size.height - 74 * b.prominence),
+                          left: (b.dx * size.width - (b.tapWidth * b.prominence) / 2).clamp(0.0, size.width - b.tapWidth * b.prominence),
+                          top: (b.dy * size.height - (b.tapHeight * b.prominence) / 2).clamp(0.0, size.height - b.tapHeight * b.prominence),
                           child: _SceneBuildingMarker(spot: b, danger: danger),
                         ),
-                      // Mlha nad ještě neodemčenými lokacemi - hustota vychází přímo z
-                      // unlockProgress dané budovy, takže řídne sama, jak se hráč blíží
-                      // odemykacímu levelu, a úplně zmizí v okamžiku odemčení (spot.locked
-                      // přestane platit → vypadne z filtru níž). Nad markerem, ne pod ním -
-                      // aby lokaci vizuálně "zahalovala", ale IgnorePointer uvnitř nechá tap
-                      // proklouznout na budovu pod ní.
-                      Positioned.fill(
-                        child: _SceneFogOverlay(
-                          patches: [
-                            for (final b in buildings)
-                              if (b.locked)
-                                _FogPatch(pos: Offset(b.dx, b.dy), density: (1 - (b.unlockProgress ?? 0).clamp(0.0, 1.0) * 0.7).clamp(0.0, 1.0), prominence: b.prominence),
-                          ],
-                        ),
-                      ),
                     ],
                   );
                 }),
@@ -3435,86 +3450,6 @@ class _SceneLifePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SceneLifePainter old) => old.t != t;
-}
-
-/// Mlha nad ještě neodemčenou lokací na mapě. `density` (0..1) řídne přímo podle
-/// unlockProgress dané budovy (viz volání v SceneMapView výš) - hustá daleko od odemčení,
-/// skoro průhledná těsně před ním, a úplně zmizí v okamžiku odemčení (locked přestane platit).
-class _FogPatch {
-  final Offset pos; // frakční pozice 0..1
-  final double density; // 0..1
-  final double prominence;
-  const _FogPatch({required this.pos, required this.density, required this.prominence});
-}
-
-class _SceneFogOverlay extends StatefulWidget {
-  final List<_FogPatch> patches;
-  const _SceneFogOverlay({required this.patches});
-
-  @override
-  State<_SceneFogOverlay> createState() => _SceneFogOverlayState();
-}
-
-class _SceneFogOverlayState extends State<_SceneFogOverlay> with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
-
-  @override
-  void initState() {
-    super.initState();
-    // Pomalý cyklus (20s) - mlha se má nenápadně vlnit, ne "bublat".
-    _c = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.patches.isEmpty) return const SizedBox.shrink();
-    return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: _c,
-        builder: (context, _) => CustomPaint(painter: _SceneFogPainter(t: _c.value, patches: widget.patches), size: Size.infinite),
-      ),
-    );
-  }
-}
-
-class _SceneFogPainter extends CustomPainter {
-  final double t;
-  final List<_FogPatch> patches;
-  _SceneFogPainter({required this.t, required this.patches});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final p in patches) {
-      final base = Offset(p.pos.dx * size.width, p.pos.dy * size.height);
-      final baseR = 46 * p.prominence;
-      // 4 překrývající se měkké mlžné shluky, pomalu driftující kolem pozice budovy - "živá"
-      // mlha místo statické šedé skvrny, ladí to s ostatní ambientní vrstvou (kouř/světla).
-      for (int i = 0; i < 4; i++) {
-        final phase = t * 2 * pi + i * (pi / 2);
-        final dx = sin(phase) * 10 * p.prominence;
-        final dy = cos(phase * 0.7) * 6 * p.prominence;
-        final r = baseR * (0.75 + 0.25 * sin(phase * 1.3));
-        // Temně fialová/černá mlha (ne světle šedá) - ať lokace skutečně vypadá zahalená tmou,
-        // ne jen "zaprášená". Hustota pořád vychází z unlockProgress (viz volání výš).
-        canvas.drawCircle(
-          base + Offset(dx, dy),
-          r,
-          Paint()
-            ..color = const Color(0xFF130B1E).withOpacity(0.5 * p.density)
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 14 * p.prominence),
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SceneFogPainter old) => old.t != t || old.patches.length != patches.length;
 }
 
 /// Záložka "Dobrodružství" ve spodní navigaci - dřív horní sekce v HubScreen. Stejná byznys
@@ -3773,7 +3708,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se na levelu ${GameState.bankUnlockLevel}', 'Unlocks at level ${GameState.bankUnlockLevel}'),
           description: tr('Trvalé úložiště mimo inventář - ulož si vybavení jiné třídy nebo buildu, místo abys ho prodal nebo roztavil, když zrovna nesedí k aktuální specializaci.',
               'Permanent storage outside your inventory - stash gear from another class or build instead of selling or salvaging it when it does not fit your current spec.'),
-          dx: 0.50, dy: 0.15, prominence: 0.7,
+          dx: 0.50, dy: 0.19, prominence: 0.7,
           onTap: () {
             if (!state.bankUnlocked) return;
             state.markHubTileSeen('bank');

@@ -2436,11 +2436,35 @@ class LairScreen extends StatelessWidget {
       if (state.isInLair) {
         int healingPotionsCount = state.consumables.where((i) => i.name == "Léčivý lektvar").fold(0, (sum, i) => sum + i.stackCount);
         int vampirePotionsCount = state.consumables.where((i) => i.name == "Upíří Lektvar").fold(0, (sum, i) => sum + i.stackCount);
+        final heroAccent = heroClassAccent(state.heroClass);
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              Text(tr("SOUBOJ V LAIR (Patro ${state.lairTargetFloor})", "LAIR BATTLE (Floor ${state.lairTargetFloor})"), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(tr("SOUBOJ V LAIR (Patro ${state.lairTargetFloor})", "LAIR BATTLE (Floor ${state.lairTargetFloor})"), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                  ),
+                  // Stejné přepínače zobrazení jako ve Věži - portrét/detail a viditelnost statů.
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    iconSize: 18,
+                    tooltip: state.portraitCombatMode ? tr('Přepnout na detailní zobrazení', 'Switch to detailed view') : tr('Přepnout na portrét', 'Switch to portrait view'),
+                    icon: Icon(state.portraitCombatMode ? Icons.view_list : Icons.portrait, color: Colors.grey),
+                    onPressed: state.togglePortraitCombatMode,
+                  ),
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    iconSize: 18,
+                    tooltip: state.combatStatsVisible ? tr('Skrýt staty', 'Hide stats') : tr('Zobrazit staty', 'Show stats'),
+                    icon: Icon(state.combatStatsVisible ? Icons.visibility : Icons.visibility_off, color: Colors.grey),
+                    onPressed: state.toggleCombatStats,
+                  ),
+                ],
+              ),
               const SizedBox(height: 10),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2453,8 +2477,57 @@ class LairScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5))),
-                            const Divider(),
+                            if (state.portraitCombatMode) ...[
+                              if (kClassPortraitAssets[state.heroClass] != null)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    height: 170,
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        LivingPortrait(assetPath: kClassPortraitAssets[state.heroClass]!, accent: heroAccent, mode: PortraitLifeMode.subtle),
+                                        DecoratedBox(decoration: BoxDecoration(border: Border.all(color: heroAccent.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(12))),
+                                        Positioned(
+                                          left: 0, right: 0, bottom: 0,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                            decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                                            child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: heroAccent)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              else
+                                Center(
+                                  child: Column(children: [
+                                    Container(
+                                      width: 64, height: 64, padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [heroAccent.withOpacity(.5), const Color(0xFF14181C)]), border: Border.all(color: heroAccent.withOpacity(.7), width: 2), boxShadow: [BoxShadow(color: heroAccent.withOpacity(.6), blurRadius: 14)]),
+                                      child: CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent)),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: heroAccent)),
+                                  ]),
+                                ),
+                              const SizedBox(height: 8),
+                            ] else ...[
+                              Row(children: [
+                                Container(
+                                  width: 26, height: 26, padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [heroAccent.withOpacity(.45), const Color(0xFF14181C)]), boxShadow: [BoxShadow(color: heroAccent.withOpacity(.6), blurRadius: 8)]),
+                                  child: kClassPortraitAssets[state.heroClass] != null
+                                      ? ClipOval(child: Image.asset(kClassPortraitAssets[state.heroClass]!, width: 16, height: 16, fit: BoxFit.cover))
+                                      : CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent)),
+                                ),
+                                const SizedBox(width: 7),
+                                Expanded(child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: heroAccent))),
+                              ]),
+                              const Divider(),
+                            ],
                             BarWidget(value: state.hp.toDouble(), max: state.maxHp.toDouble(), color: Colors.green, label: "HP"),
                             Padding(
                               padding: const EdgeInsets.only(top: 4),
@@ -2467,12 +2540,14 @@ class LairScreen extends StatelessWidget {
                             const SizedBox(height: 4),
                             BarWidget(value: state.currentResourceValue.toDouble(), max: max(1, state.maxResourceValue).toDouble(), color: state.resourceColor, label: state.resourceName),
                             const SizedBox(height: 6),
-                            Text("P.Atk: ${formatCompactNumber(state.physAtk)}", style: const TextStyle(fontSize: 12)),
-                            Text("M.Atk: ${formatCompactNumber(state.magAtk)}", style: const TextStyle(fontSize: 12)),
-                            Text("Armor: ${formatCompactNumber(state.armor)}", style: const TextStyle(fontSize: 12)),
-                            Text(tr("Redukce: ${(state.physicalReduction*100).toStringAsFixed(1)} % fyz. / ${(state.magicalReduction*100).toStringAsFixed(1)} % mag.", "Reduction: ${(state.physicalReduction*100).toStringAsFixed(1)}% phys. / ${(state.magicalReduction*100).toStringAsFixed(1)}% mag."), style: const TextStyle(fontSize: 12)),
-                            Text(tr("Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Úhyb: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Blok: ${(state.blockChance * 100).toStringAsFixed(1)}%", "Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Dodge: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Block: ${(state.blockChance * 100).toStringAsFixed(1)}%"), style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
-                            const SizedBox(height: 8),
+                            if (state.combatStatsVisible && !state.portraitCombatMode) ...[
+                              Text("P.Atk: ${formatCompactNumber(state.physAtk)}", style: const TextStyle(fontSize: 12)),
+                              Text("M.Atk: ${formatCompactNumber(state.magAtk)}", style: const TextStyle(fontSize: 12)),
+                              Text("Armor: ${formatCompactNumber(state.armor)}", style: const TextStyle(fontSize: 12)),
+                              Text(tr("Redukce: ${(state.physicalReduction*100).toStringAsFixed(1)} % fyz. / ${(state.magicalReduction*100).toStringAsFixed(1)} % mag.", "Reduction: ${(state.physicalReduction*100).toStringAsFixed(1)}% phys. / ${(state.magicalReduction*100).toStringAsFixed(1)}% mag."), style: const TextStyle(fontSize: 12)),
+                              Text(tr("Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Úhyb: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Blok: ${(state.blockChance * 100).toStringAsFixed(1)}%", "Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Dodge: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Block: ${(state.blockChance * 100).toStringAsFixed(1)}%"), style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+                              const SizedBox(height: 8),
+                            ],
                             Text(tr("Buffy / Debuffy:", "Buffs / Debuffs:"), style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
                             const SizedBox(height: 4),
                             StatusEffectsListWidget(effects: state.heroEffects),
@@ -2493,6 +2568,43 @@ class LairScreen extends StatelessWidget {
                             Builder(builder: (context) {
                               final (bossIcon, bossColor) = state.bossThemeIconFor({'name': state.currentLairBossName, 'ability': state.currentLairBossAbility});
                               final bossPortrait = kBossPortraitAssets[state.currentLairBossName];
+                              if (state.portraitCombatMode && bossPortrait != null) {
+                                return ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    height: 170,
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        LivingPortrait(assetPath: bossPortrait, accent: bossColor, mode: PortraitLifeMode.subtle),
+                                        DecoratedBox(decoration: BoxDecoration(border: Border.all(color: bossColor.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(12))),
+                                        Positioned(
+                                          left: 0, right: 0, bottom: 0,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                            decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                                            child: Text(state.currentLairBossName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+                              if (state.portraitCombatMode) {
+                                return Center(
+                                  child: Column(children: [
+                                    Container(
+                                      width: 64, height: 64, padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [bossColor.withOpacity(.5), const Color(0xFF1E1613)]), border: Border.all(color: bossColor.withOpacity(.7), width: 2), boxShadow: [BoxShadow(color: bossColor.withOpacity(.6), blurRadius: 14)]),
+                                      child: Icon(bossIcon, size: 32, color: bossColor),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(state.currentLairBossName, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                  ]),
+                                );
+                              }
                               return Row(children: [
                                 Container(
                                   width: 32, height: 32, padding: bossPortrait != null ? EdgeInsets.zero : const EdgeInsets.all(6),
@@ -2513,8 +2625,10 @@ class LairScreen extends StatelessWidget {
                             ],
                             const SizedBox(height: 8),
                             BarWidget(value: state.currentLairBossHp.toDouble(), max: state.currentLairBossMaxHp.toDouble(), color: Colors.deepOrange, label: tr("HP Bosse", "Boss HP")),
-                            const SizedBox(height: 6),
-                            Text(tr("Atk: ${formatCompactNumber(state.currentLairBossAtk)} | Def: ${formatCompactNumber(state.currentLairBossDef)}", "Atk: ${formatCompactNumber(state.currentLairBossAtk)} | Def: ${formatCompactNumber(state.currentLairBossDef)}"), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                            if (state.combatStatsVisible && !state.portraitCombatMode) ...[
+                              const SizedBox(height: 6),
+                              Text(tr("Atk: ${formatCompactNumber(state.currentLairBossAtk)} | Def: ${formatCompactNumber(state.currentLairBossDef)}", "Atk: ${formatCompactNumber(state.currentLairBossAtk)} | Def: ${formatCompactNumber(state.currentLairBossDef)}"), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                            ],
                             const SizedBox(height: 8),
                             Text(tr("Buffy / Debuffy:", "Buffs / Debuffs:"), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
                             const SizedBox(height: 4),
@@ -4403,14 +4517,51 @@ class TowerScreen extends StatelessWidget {
                             Builder(builder: (context) {
                               final (bossIcon, bossColor) = state.bossThemeIconFor({'name': state.currentEnemyName, 'ability': state.currentEnemyAbility});
                               final bossPortrait = kBossPortraitAssets[state.currentEnemyName] ?? (state.isBoss ? null : kRegularEnemyPortraitAssets[state.currentEnemyName]);
+                              // Stejné měřítko jako hráčův portrét níž (velký obdélník přes celou
+                              // šířku karty, jméno vypálené na gradientním scrimu dole) - dřív měl
+                              // nepřítel jen malé 64px kolečko, i když měl skutečnou ilustraci.
+                              // Fallback na malé kolečko s procedurální ikonou zůstává pro
+                              // nepřátele, co ještě nemají portrét (bossPortrait == null).
+                              if (bossPortrait != null) {
+                                return Column(children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      height: 170,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          LivingPortrait(assetPath: bossPortrait, accent: bossColor, mode: PortraitLifeMode.subtle),
+                                          DecoratedBox(
+                                            decoration: BoxDecoration(border: Border.all(color: bossColor.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(12)),
+                                          ),
+                                          Positioned(
+                                            left: 0, right: 0, bottom: 0,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                              decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                                Flexible(child: Text(state.currentEnemyName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: enemyAccent))),
+                                                const SizedBox(width: 4),
+                                                ComboStreakBadge(streak: state.comboStreak),
+                                              ]),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(tr("Schopnost: ${state.currentEnemyAbility}", "Ability: ${state.currentEnemyAbility}"), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Colors.amberAccent)),
+                                ]);
+                              }
                               return Center(
                                 child: Column(children: [
                                   Container(
-                                    width: 64, height: 64, padding: bossPortrait != null ? EdgeInsets.zero : const EdgeInsets.all(12),
+                                    width: 64, height: 64, padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [bossColor.withOpacity(.5), const Color(0xFF1E1613)]), border: Border.all(color: bossColor.withOpacity(.7), width: 2), boxShadow: [BoxShadow(color: bossColor.withOpacity(.6), blurRadius: 14)]),
-                                    child: bossPortrait != null
-                                        ? ClipOval(child: LivingPortrait(assetPath: bossPortrait, accent: bossColor, mode: PortraitLifeMode.subtle))
-                                        : Icon(bossIcon, size: 32, color: bossColor),
+                                    child: Icon(bossIcon, size: 32, color: bossColor),
                                   ),
                                   const SizedBox(height: 6),
                                   Row(mainAxisSize: MainAxisSize.min, children: [
@@ -5184,92 +5335,210 @@ class AlchemistScreen extends StatelessWidget {
   }
 }
 
-class SoulsScreen extends StatelessWidget {
+// Zobrazované jméno + FantasyIconType pro každou třídu - sdílené mezi karuselem výběru a
+// velkým rámem postavy níž v SoulsScreen (stejné páry jako u _ClassPickerOption na obrazovce
+// výběru třídy).
+const Map<HeroClass, FantasyIconType> _soulsClassIcon = {
+  HeroClass.warrior: FantasyIconType.classWarrior,
+  HeroClass.hunter: FantasyIconType.classHunter,
+  HeroClass.healer: FantasyIconType.classPriest,
+  HeroClass.deathknight: FantasyIconType.classDeathKnight,
+  HeroClass.mage: FantasyIconType.classMage,
+  HeroClass.duelist: FantasyIconType.classDuelist,
+  HeroClass.monk: FantasyIconType.classMonk,
+  HeroClass.druid: FantasyIconType.classDruid,
+  HeroClass.paladin: FantasyIconType.classPaladin,
+  HeroClass.demonhunter: FantasyIconType.classDemonHunter,
+  HeroClass.necromancer: FantasyIconType.classNecromancer,
+};
+
+class SoulsScreen extends StatefulWidget {
   const SoulsScreen({super.key});
+  @override
+  State<SoulsScreen> createState() => _SoulsScreenState();
+}
+
+class _SoulsScreenState extends State<SoulsScreen> {
+  // Ručně vybraná třída v karuselu - null dokud se hráč nedotkne karuselu, pak se defaultuje
+  // na jeho aktuální hranou třídu (viz build níž).
+  HeroClass? _selected;
+
   @override
   Widget build(BuildContext context) {
     return Consumer<GameState>(builder: (context, state, _) {
+      final classes = HeroClass.values.where((c) => c != HeroClass.none).toList();
+      final HeroClass selected = _selected ?? (state.heroClass != HeroClass.none ? state.heroClass : classes.first);
+      final classNames = <HeroClass, String>{
+        HeroClass.warrior: tr("Válečník", "Warrior"),
+        HeroClass.hunter: tr("Lovec", "Hunter"),
+        HeroClass.healer: tr("Léčitel", "Healer"),
+        HeroClass.deathknight: tr("Rytíř Smrti", "Death Knight"),
+        HeroClass.mage: tr("Mág", "Mage"),
+        HeroClass.duelist: tr("Šermíř", "Duelist"),
+        HeroClass.monk: tr("Mnich", "Monk"),
+        HeroClass.druid: tr("Druid", "Druid"),
+        HeroClass.paladin: tr("Paladin", "Paladin"),
+        HeroClass.demonhunter: tr("Lovec Démonů", "Demon Hunter"),
+        HeroClass.necromancer: tr("Nekromant", "Necromancer"),
+      };
+      final int rank = state.classRanks[selected] ?? 1;
+      final bool isCurrent = state.heroClass == selected;
+      final accent = FantasyIconRegistry.of(_soulsClassIcon[selected]!).accentColor;
+
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(tr("Vylepšení tříd za krystaly", "Class Upgrades with Crystals"), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
-          const SizedBox(height: 10),
-          ...HeroClass.values.where((c) => c != HeroClass.none).map((c) {
-            int rank = state.classRanks[c] ?? 1;
-            bool isCurrent = state.heroClass == c;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(tr("Třída: ${c.name.toUpperCase()} (Rank $rank)", "Class: ${c.name.toUpperCase()} (Rank $rank)"), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                      const SizedBox(height: 4),
-                      Text(
-                        (rank >= 100
-                                ? tr("Rank 100 odemčen!", "Rank 100 unlocked!")
-                                : (rank >= 75
-                                    ? tr("Božská evoluce (Rank 100 pro volbu cesty)", "Divine evolution (Rank 100 for path choice)")
-                                    : (rank >= 40
-                                        ? tr("Ultimate schopnost (Rank 75 pro 3. spell)", "Ultimate ability (Rank 75 for 3rd spell)")
-                                        : (rank >= 15 ? tr("1. schopnost aktivní (Rank 40, 75, 100)", "1st ability active (Rank 40, 75, 100)") : tr("Rank 15, 40, 75, 100 pro spelly", "Rank 15, 40, 75, 100 for spells"))))) +
-                            (isCurrent && state.paragonLevel > 0 ? tr("\nParagon ${state.paragonLevel} (+${state.paragonLevel * 10}% na klíčové staty z itemů)", "\nParagon ${state.paragonLevel} (+${state.paragonLevel * 10}% to key stats from items)") : "") +
-                            // Alt catch-up: tahle třída má rank pod tvou nejvyšší třídou, takže z Paragon
-                            // postupu na hlavní třídě těží rychlejším ziskem ranku (viz altCatchUpBonus).
-                            (state.rankGainMultiplierFor(c) > 1.0 ? tr("\n⚡ Alt catch-up: rank roste +${((state.rankGainMultiplierFor(c) - 1) * 100).round()}% rychleji (za každých 100 Paragon dosažených na libovolné třídě účtu)", "\n⚡ Alt catch-up: rank grows +${((state.rankGainMultiplierFor(c) - 1) * 100).round()}% faster (for every 100 Paragon reached on any class on this account)") : ""),
-                        style: TextStyle(color: rank >= 100 ? Colors.redAccent : (rank >= 75 ? Colors.purpleAccent : (rank >= 40 ? Colors.purple : (rank >= 15 ? Colors.green : Colors.grey)))),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () => state.upgradeClass(c),
-                          child: Text(tr("Vylepšit (50 💎)", "Upgrade (50 💎)")),
+          const SizedBox(height: 4),
+          Text(tr('Projeď postavy vlevo/vpravo a vyber třídu, kterou chceš vylepšit.', 'Scroll the characters left/right and pick the class you want to upgrade.'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          const SizedBox(height: 12),
+          // ===== VODOROVNÝ KARUSEL TŘÍD - stejné portréty/odznaky jako u výběru třídy
+          // (_ClassBadge), jen místo mřížky jako scrollovací pás. Tap/scroll na postavu ji
+          // vybere - zvýrazní se (větší, plná opacity), ostatní ztlumí. =====
+          SizedBox(
+            height: 132,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: classes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (context, i) {
+                final c = classes[i];
+                final cIconType = _soulsClassIcon[c]!;
+                final cAccent = FantasyIconRegistry.of(cIconType).accentColor;
+                final cRank = state.classRanks[c] ?? 1;
+                final bool isSel = c == selected;
+                return GestureDetector(
+                  onTap: () => setState(() => _selected = c),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: isSel ? 1.0 : 0.5,
+                    child: AnimatedScale(
+                      duration: const Duration(milliseconds: 200),
+                      scale: isSel ? 1.0 : 0.86,
+                      child: SizedBox(
+                        width: 78,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _ClassBadge(iconType: cIconType, accent: cAccent, size: 72, heroClass: c),
+                            const SizedBox(height: 4),
+                            Text('Rank $cRank', style: TextStyle(color: cAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC69214)),
-                          onPressed: state.crystals >= 50 ? () => state.upgradeClassMax(c) : null,
-                          child: Text(tr("Max (${state.crystals ~/ 50}×)", "Max (${state.crystals ~/ 50}×)"), style: const TextStyle(color: Colors.black)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (isCurrent && rank >= 100) ...[
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E1E24),
-                      border: Border.all(color: const Color(0xFFFF8000)),
-                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.military_tech, color: Color(0xFFFF8000)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            state.rank100Choice > 0
-                                ? tr('Rank 100 cesta zvolena: ${spellVisualTier4(c, state.rank100Choice).name} (viz Profil).', 'Rank 100 path chosen: ${spellVisualTier4(c, state.rank100Choice).name} (see Profile).')
-                                : tr('Rank 100 odemčeno! Volbu pokročilé cesty najdeš v Profilu vedle specializace.', 'Rank 100 unlocked! You can choose your advanced path in Profile next to your specialization.'),
-                            style: const TextStyle(color: Color(0xFFFF8000), fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                        ),
-                      ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 18),
+          // ===== RÁM POSTAVY - velký portrét vybrané třídy na pozadí síně s NPC (Strážkyně
+          // Duší), stejný jazyk jako ostatní malované scény (WorldBossBackdrop/RiftBackdrop).
+          // Pozadí (souls_bg.png) zatím není vygenerované - stejný postup jako u ostatních scén
+          // (Copilot prompt → assets/images/scenes/), do té doby padá na tmavou barvu.
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              height: 260,
+              decoration: BoxDecoration(border: Border.all(color: accent.withOpacity(.5), width: 1.5)),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    'assets/images/scenes/souls_bg.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stack) => Container(
+                      decoration: const BoxDecoration(gradient: RadialGradient(center: Alignment.topCenter, radius: 1.3, colors: [Color(0xFF241C30), Color(0xFF120A18)])),
+                    ),
+                  ),
+                  Positioned.fill(child: Container(color: Colors.black.withOpacity(.25))),
+                  Center(
+                    child: Container(
+                      width: 150, height: 150,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(colors: [accent.withOpacity(.35), const Color(0xFF141019)]),
+                        border: Border.all(color: accent, width: 3),
+                        boxShadow: [BoxShadow(color: accent.withOpacity(.6), blurRadius: 20, spreadRadius: 2)],
+                      ),
+                      child: kClassPortraitAssets[selected] != null
+                          ? ClipOval(child: LivingPortrait(assetPath: kClassPortraitAssets[selected]!, accent: accent, mode: PortraitLifeMode.full))
+                          : CustomPaint(painter: FantasyIconRegistry.of(_soulsClassIcon[selected]!).proceduralPainter(accent)),
+                    ),
+                  ),
+                  Positioned(
+                    left: 0, right: 0, bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                      child: Text(classNames[selected]!, textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: accent)),
                     ),
                   ),
                 ],
-                const Divider(),
-              ],
-            );
-          }),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          // ===== INFO + TLAČÍTKA pro vybranou třídu - stejná logika jako dřív, jen teď platí
+          // pro "selected" z karuselu místo procházení celého seznamu. =====
+          Text(tr("Rank $rank", "Rank $rank"), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const SizedBox(height: 4),
+          Text(
+            (rank >= 100
+                    ? tr("Rank 100 odemčen!", "Rank 100 unlocked!")
+                    : (rank >= 75
+                        ? tr("Božská evoluce (Rank 100 pro volbu cesty)", "Divine evolution (Rank 100 for path choice)")
+                        : (rank >= 40
+                            ? tr("Ultimate schopnost (Rank 75 pro 3. spell)", "Ultimate ability (Rank 75 for 3rd spell)")
+                            : (rank >= 15 ? tr("1. schopnost aktivní (Rank 40, 75, 100)", "1st ability active (Rank 40, 75, 100)") : tr("Rank 15, 40, 75, 100 pro spelly", "Rank 15, 40, 75, 100 for spells"))))) +
+                (isCurrent && state.paragonLevel > 0 ? tr("\nParagon ${state.paragonLevel} (+${state.paragonLevel * 10}% na klíčové staty z itemů)", "\nParagon ${state.paragonLevel} (+${state.paragonLevel * 10}% to key stats from items)") : "") +
+                (state.rankGainMultiplierFor(selected) > 1.0 ? tr("\n⚡ Alt catch-up: rank roste +${((state.rankGainMultiplierFor(selected) - 1) * 100).round()}% rychleji (za každých 100 Paragon dosažených na libovolné třídě účtu)", "\n⚡ Alt catch-up: rank grows +${((state.rankGainMultiplierFor(selected) - 1) * 100).round()}% faster (for every 100 Paragon reached on any class on this account)") : ""),
+            style: TextStyle(color: rank >= 100 ? Colors.redAccent : (rank >= 75 ? Colors.purpleAccent : (rank >= 40 ? Colors.purple : (rank >= 15 ? Colors.green : Colors.grey)))),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => state.upgradeClass(selected),
+              child: Text(tr("Vylepšit (50 💎)", "Upgrade (50 💎)")),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC69214)),
+              onPressed: state.crystals >= 50 ? () => state.upgradeClassMax(selected) : null,
+              child: Text(tr("Max (${state.crystals ~/ 50}×)", "Max (${state.crystals ~/ 50}×)"), style: const TextStyle(color: Colors.black)),
+            ),
+          ),
+          if (isCurrent && rank >= 100) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E24),
+                border: Border.all(color: const Color(0xFFFF8000)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.military_tech, color: Color(0xFFFF8000)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      state.rank100Choice > 0
+                          ? tr('Rank 100 cesta zvolena: ${spellVisualTier4(selected, state.rank100Choice).name} (viz Profil).', 'Rank 100 path chosen: ${spellVisualTier4(selected, state.rank100Choice).name} (see Profile).')
+                          : tr('Rank 100 odemčeno! Volbu pokročilé cesty najdeš v Profilu vedle specializace.', 'Rank 100 unlocked! You can choose your advanced path in Profile next to your specialization.'),
+                      style: const TextStyle(color: Color(0xFFFF8000), fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       );
     });
@@ -5390,69 +5659,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   color: Color(0xFFFFB100),
                 ),
               ),
-              ElevatedButton(
-                onPressed: state.upgradeInventoryCapacity,
-                child: Text(
-                  tr("Zvětšit (+5 míst, ${(state.maxInventorySize - 15) * 50} 🪙)", "Expand (+5 slots, ${(state.maxInventorySize - 15) * 50} 🪙)"),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 15),
-          // ===== AUTO-OBLÉKNUTÍ + ZÁMKY, vedle sebe (dřív Zámky samotné přes celou šířku) =====
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.tealAccent, width: 1)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("⚡ Auto-obléknutí", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.tealAccent, fontSize: 13)),
-                      const SizedBox(height: 4),
-                      Text(tr("Nasadí nejsilnější kusy z batohu do každého slotu.", "Equips the strongest pieces from your bag into each slot."), style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.tealAccent.shade700),
-                          onPressed: state.autoEquipBestGear,
-                          child: Text(tr("Obléknout top gear", "Equip top gear"), style: const TextStyle(color: Colors.black)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFC69214), width: 1)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(tr("🔒 Zámky: ${state.lockedItemCount}/${state.unlockedLockSlots}", "🔒 Locks: ${state.lockedItemCount}/${state.unlockedLockSlots}"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100), fontSize: 13)),
-                      const SizedBox(height: 4),
-                      Text(tr("Chrání i item v batohu, co zrovna nemáš nasazený.", "Also protects a bag item you don't currently have equipped."), style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                      const SizedBox(height: 8),
-                      if (state.unlockedLockSlots < GameState.maxLockSlots)
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC69214)),
-                            onPressed: () => state.unlockLockSlot(),
-                            child: Text(tr("Odemknout (${state.nextLockSlotCost} 🪙)", "Unlock (${state.nextLockSlotCost} 🪙)"), style: const TextStyle(color: Colors.black), overflow: TextOverflow.ellipsis),
-                          ),
-                        )
-                      else
-                        Text(tr("Vše odemčeno!", "All unlocked!"), style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 15),
@@ -5470,7 +5676,86 @@ class _InventoryScreenState extends State<InventoryScreen> {
           // takže tady na rozdíl od dřívějška netřeba `if (equippedItems.isEmpty) return...`).
           EquippedGearScene(state: state, onItemTap: (ctx, item) => _showItemDetailDialog(ctx, state, item)),
           const SizedBox(height: 15),
-          ], // konec "if (!showPotions)" bloku pro nasazené vybavení
+          // ===== ZVĚTŠIT BATOH + AUTO-OBLÉKNUTÍ + ZÁMKY, hned pod scénou s postavou/itemy (dřív
+          // úplně nahoře obrazovky, nad postavou) - teď jsou blíž tomu, na co reálně působí. =====
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.unfold_more, size: 18),
+              label: Text(
+                tr("Zvětšit batoh (+5 míst, ${(state.maxInventorySize - 15) * 50} 🪙)", "Expand bag (+5 slots, ${(state.maxInventorySize - 15) * 50} 🪙)"),
+              ),
+              onPressed: state.upgradeInventoryCapacity,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.tealAccent, width: 1)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.bolt, color: Colors.tealAccent, size: 16),
+                        const SizedBox(width: 4),
+                        Text(tr("Auto-obléknutí", "Auto-equip"), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.tealAccent, fontSize: 13)),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text(tr("Nasadí nejsilnější kusy z batohu do každého slotu.", "Equips the strongest pieces from your bag into each slot."), style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.tealAccent.shade700),
+                          icon: const Icon(Icons.checkroom, size: 16, color: Colors.black),
+                          onPressed: state.autoEquipBestGear,
+                          label: Text(tr("Obléknout top gear", "Equip top gear"), style: const TextStyle(color: Colors.black)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFC69214), width: 1)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.lock, color: Color(0xFFC69214), size: 16),
+                        const SizedBox(width: 4),
+                        Expanded(child: Text(tr("Zámky: ${state.lockedItemCount}/${state.unlockedLockSlots}", "Locks: ${state.lockedItemCount}/${state.unlockedLockSlots}"), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100), fontSize: 13))),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text(tr("Chrání i item v batohu, co zrovna nemáš nasazený.", "Also protects a bag item you don't currently have equipped."), style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                      const SizedBox(height: 8),
+                      if (state.unlockedLockSlots < GameState.maxLockSlots)
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC69214)),
+                            icon: const Icon(Icons.lock_open, size: 16, color: Colors.black),
+                            onPressed: () => state.unlockLockSlot(),
+                            label: Text(tr("Odemknout (${state.nextLockSlotCost} 🪙)", "Unlock (${state.nextLockSlotCost} 🪙)"), style: const TextStyle(color: Colors.black), overflow: TextOverflow.ellipsis),
+                          ),
+                        )
+                      else
+                        Text(tr("Vše odemčeno!", "All unlocked!"), style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          ], // konec "if (!showPotions)" bloku pro nasazené vybavení + batoh akce
           const Divider(height: 30, thickness: 2),
           if (!showPotions) ...[
             Wrap(
