@@ -807,7 +807,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         "setSlotUpgradeLevels": setSlotUpgradeLevels,
         "ladder": ladder.map((l) => l.toJson()).toList(),
         "runeWizardUnlocked": runeWizardUnlocked,
-        "post20BossKills": post20BossKills,
+        "lairBoss15PlusKills": lairBoss15PlusKills,
         "runeTalentPoints": runeTalentPoints,
         "unlockedRuneNodeIds": unlockedRuneNodeIds.toList(),
         "runeLibrary": runeLibrary,
@@ -1139,7 +1139,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     ladder = (json["ladder"] as List? ?? []).map((l) => LadderEntry.fromJson(Map<String, dynamic>.from(l as Map))).toList();
 
     runeWizardUnlocked = json["runeWizardUnlocked"] as bool? ?? false;
-    post20BossKills = json["post20BossKills"] as int? ?? 0;
+    lairBoss15PlusKills = json["lairBoss15PlusKills"] as int? ?? 0;
     runeTalentPoints = json["runeTalentPoints"] as int? ?? 0;
     unlockedRuneNodeIds = Set<String>.from(json["unlockedRuneNodeIds"] as List? ?? []);
     runeLibrary = List<String>.from(json["runeLibrary"] as List? ?? []);
@@ -2348,9 +2348,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   int heroSpellBlockTurns = 0;
   List<StatusEffect> enemyEffects = [];
 
-  // ===== RUNOVÝ ČARODĚJ (end-game, odemyká se po bossovi na patře 20+) =====
+  // ===== RUNOVÝ ČARODĚJ (end-game, odemyká se po bossovi v Lairu na patře 15+) =====
   bool runeWizardUnlocked = false;
-  int post20BossKills = 0; // Každých 5 = 1 talentový bod.
+  int lairBoss15PlusKills = 0; // Každých 5 (jen Lair, patro 15+) = 1 talentový bod.
   int runeTalentPoints = 0;
   Set<String> unlockedRuneNodeIds = {}; // Odemčené uzly talentového stromu (RuneNode.id).
   List<String> runeLibrary = []; // Aktivované runy (RuneNode.id) připravené k vsazení do zbraně.
@@ -7483,18 +7483,18 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  // Voláno při zabití libovolného bosse na patře 20+ (věž i Lair) - viz _handleEnemyDeath / _handleLairBossDeath.
-  void _registerPost20BossKill() {
+  // Voláno při zabití bosse v Lairu na patře 15+ (jen Lair - viz _handleLairBossDeath).
+  void _registerLairBoss15PlusKill() {
     if (!runeWizardUnlocked) {
       runeWizardUnlocked = true;
       message = tr("🔮 Odemčen Runový Čaroděj! Navštiv jeho sekci ve světě.", "🔮 Rune Wizard unlocked! Visit their section in the World.");
       _queueContextTip(TutorialTipId.tipRune);
     }
-    post20BossKills++;
+    lairBoss15PlusKills++;
     // Strom run má celkem RuneTree.allNodes.length uzlů (3 větve × 7 tierů = 21), takže
     // celoživotní zisk talentových bodů (už odemčené uzly + aktuálně nevyužité body) je
     // zastropovaný přesně na tenhle počet - stejná hranice jako u _grantBonusRuneTalentPoint().
-    if (post20BossKills % 5 == 0 && (unlockedRuneNodeIds.length + runeTalentPoints) < RuneTree.allNodes.length) {
+    if (lairBoss15PlusKills % 5 == 0 && (unlockedRuneNodeIds.length + runeTalentPoints) < RuneTree.allNodes.length) {
       runeTalentPoints++;
     }
     // Strom zbraně (Runový kovář) už neběží na bodech z boss killů - odemyká se za eskalující
@@ -8826,7 +8826,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     // Vzácný bonusový drop runy - Hardcore mód nebo vyšší obtížnost Lairu (Předpeklí/Peklo).
     if (atLeastHardcore && Random().nextDouble() < 0.04) _grantBonusRuneTalentPoint();
     if ((predpekliMode || pekloMode) && Random().nextDouble() < 0.06) _grantBonusRuneTalentPoint();
-    if (lairTargetFloor >= 20) _registerPost20BossKill();
+    if (lairTargetFloor >= 15) _registerLairBoss15PlusKill();
     _syncAscensionLevel();
     _checkAchievements();
   }
@@ -14146,7 +14146,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       // Hardcore set drop - 1 % z Tower bosse. powerLevel na stejném měřítku jako běžný Tower
       // drop (floor/5, viz _tryDropItem) - stejná oprava jako u Lairu/Riftu výše.
       _tryDropHardcoreSetPiece(0.01, powerLevel: (floor / 5).ceil()); _tryDropPredpekliSetPiece(0.01, powerLevel: (floor / 5).ceil()); _tryDropPekloSetPiece(0.01, powerLevel: (floor / 5).ceil()); addRelicXp(1); _rollRelicDrop(0.01);
-      if (floor >= 20) _registerPost20BossKill();
+      // (Talentové body Runového Čaroděje se od téhle úpravy počítají jen z Lair bossů - viz
+      // _registerLairBoss15PlusKill - Tower boss killy do nich už nepřispívají.)
       // Suroviny za Tower bosse od patra 100+ (viz Lair boss reward výš) - fixní +1/kill.
       if (floor >= 100) {
         materials += 1;
@@ -15831,7 +15832,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         enemyEffects.add(StatusEffect(name:'Rozsudek',description:'Útoky proti cíli léčí hráče a oslabují jeho Armor.',duration:4,isBuff:false)); heal=(dmg*.12).round();hp=min(maxHp,hp+heal);break;
       case RelicMechanic.pet: dmg=(dmg*1.35).round(); huntersMarkStacks=min(5,huntersMarkStacks+1);break;
       case RelicMechanic.echo: dmg=(dmg*(1.05+currentSpecRelicLevel*.003)).round(); activeAbilityCooldown=max(0,activeAbilityCooldown-1);break;
-      case RelicMechanic.riposte: heroEffects.add(StatusEffect(name:'Krok mezi čepelemi',description:'Zvýšený Dodge a připravená Riposte.',duration:2,isBuff:true)); specRelicStacks=min(5,specRelicStacks+1);break;
+      case RelicMechanic.riposte: heroEffects.add(StatusEffect(name:'Ve tanci',description:'Zvýšený Dodge a připravená Riposte (dodge spustí _duelistDanceCounter - musí se jmenovat přesně takhle, jinak se Riposte nespustí, viz _resolveCombatRound).',duration:2,isBuff:true,dodgeMod:0.05)); specRelicStacks=min(5,specRelicStacks+1);break;
     }
     arenaOpponentHp-=max(1,dmg); message='${r.spell}: $dmg damage${heal>0?' • heal $heal':''}${shield>0?' • shield $shield':''}.$dkExtra Relic Lv $currentSpecRelicLevel.';
     if(arenaOpponentHp<=0)_handleArenaWin(); notifyListeners();
@@ -15865,7 +15866,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         enemyEffects.add(StatusEffect(name:'Rozsudek',description:'Útoky proti cíli léčí hráče a oslabují jeho Armor.',duration:4,isBuff:false)); heal=(dmg*.12).round();hp=min(maxHp,hp+heal);break;
       case RelicMechanic.pet: dmg=(dmg*1.35).round(); huntersMarkStacks=min(5,huntersMarkStacks+1);break;
       case RelicMechanic.echo: dmg=(dmg*(1.05+currentSpecRelicLevel*.003)).round(); activeAbilityCooldown=max(0,activeAbilityCooldown-1);break;
-      case RelicMechanic.riposte: heroEffects.add(StatusEffect(name:'Krok mezi čepelemi',description:'Zvýšený Dodge a připravená Riposte.',duration:2,isBuff:true)); specRelicStacks=min(5,specRelicStacks+1);break;
+      case RelicMechanic.riposte: heroEffects.add(StatusEffect(name:'Ve tanci',description:'Zvýšený Dodge a připravená Riposte (dodge spustí _duelistDanceCounter - musí se jmenovat přesně takhle, jinak se Riposte nespustí, viz _resolveCombatRound).',duration:2,isBuff:true,dodgeMod:0.05)); specRelicStacks=min(5,specRelicStacks+1);break;
     }
     final int mitigatedDmg = _mitigateEnemyDamage(max(1,dmg));
     currentEnemyHp-=mitigatedDmg; message='${r.spell}: $mitigatedDmg damage${heal>0?' • heal $heal':''}${shield>0?' • shield $shield':''}.$dkExtra Relic Lv $currentSpecRelicLevel.';
@@ -15899,7 +15900,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         enemyEffects.add(StatusEffect(name:'Rozsudek',description:'Útoky proti cíli léčí hráče a oslabují jeho Armor.',duration:4,isBuff:false)); heal=(dmg*.12).round();hp=min(maxHp,hp+heal);break;
       case RelicMechanic.pet: dmg=(dmg*1.35).round(); huntersMarkStacks=min(5,huntersMarkStacks+1);break;
       case RelicMechanic.echo: dmg=(dmg*(1.05+currentSpecRelicLevel*.003)).round(); activeAbilityCooldown=max(0,activeAbilityCooldown-1);break;
-      case RelicMechanic.riposte: heroEffects.add(StatusEffect(name:'Krok mezi čepelemi',description:'Zvýšený Dodge a připravená Riposte.',duration:2,isBuff:true)); specRelicStacks=min(5,specRelicStacks+1);break;
+      case RelicMechanic.riposte: heroEffects.add(StatusEffect(name:'Ve tanci',description:'Zvýšený Dodge a připravená Riposte (dodge spustí _duelistDanceCounter - musí se jmenovat přesně takhle, jinak se Riposte nespustí, viz _resolveCombatRound).',duration:2,isBuff:true,dodgeMod:0.05)); specRelicStacks=min(5,specRelicStacks+1);break;
     }
     currentLairBossHp-=max(1,dmg); message='${r.spell}: $dmg damage${heal>0?' • heal $heal':''}${shield>0?' • shield $shield':''}.$dkExtra Relic Lv $currentSpecRelicLevel.';
     if(currentLairBossHp<=0)_handleLairBossDeath(); notifyListeners();
@@ -15931,7 +15932,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         enemyEffects.add(StatusEffect(name:'Rozsudek',description:'Útoky proti cíli léčí hráče a oslabují jeho Armor.',duration:4,isBuff:false)); heal=(dmg*.12).round();hp=min(maxHp,hp+heal);break;
       case RelicMechanic.pet: dmg=(dmg*1.35).round(); huntersMarkStacks=min(5,huntersMarkStacks+1);break;
       case RelicMechanic.echo: dmg=(dmg*(1.05+currentSpecRelicLevel*.003)).round(); activeAbilityCooldown=max(0,activeAbilityCooldown-1);break;
-      case RelicMechanic.riposte: heroEffects.add(StatusEffect(name:'Krok mezi čepelemi',description:'Zvýšený Dodge a připravená Riposte.',duration:2,isBuff:true)); specRelicStacks=min(5,specRelicStacks+1);break;
+      case RelicMechanic.riposte: heroEffects.add(StatusEffect(name:'Ve tanci',description:'Zvýšený Dodge a připravená Riposte (dodge spustí _duelistDanceCounter - musí se jmenovat přesně takhle, jinak se Riposte nespustí, viz _resolveCombatRound).',duration:2,isBuff:true,dodgeMod:0.05)); specRelicStacks=min(5,specRelicStacks+1);break;
     }
     worldBossHp-=max(1,dmg); message='${r.spell}: $dmg damage${heal>0?' • heal $heal':''}${shield>0?' • shield $shield':''}.$dkExtra Relic Lv $currentSpecRelicLevel.';
     if(worldBossHp<=0)_handleWorldBossDeath(); notifyListeners();

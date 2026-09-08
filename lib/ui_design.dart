@@ -2416,6 +2416,96 @@ class _TeaseFogLightningPainter extends CustomPainter {
   bool shouldRepaint(covariant _TeaseFogLightningPainter old) => old.t != t;
 }
 
+/// Animovaná vrstva pro pozadí Kovárny (forge_bg.png) - dva efekty ušité na míru té konkrétní
+/// kompozici: pec vzadu "dýchá" žárem (pulzující záře, podobný trik jako u World Bosse) a
+/// kovadlina vpředu vlevo chrlí jiskry (jako by právě dopadlo kladivo). Pozice jsou fixní
+/// zlomky plátna, odpovídají tomu, kde přesně pec/kovadlina v obrázku jsou.
+class ForgeSceneOverlay extends StatefulWidget {
+  const ForgeSceneOverlay({super.key});
+
+  @override
+  State<ForgeSceneOverlay> createState() => _ForgeSceneOverlayState();
+}
+
+class _ForgeSceneOverlayState extends State<ForgeSceneOverlay> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) => CustomPaint(painter: _ForgeScenePainter(t: _c.value), size: Size.infinite),
+      ),
+    );
+  }
+}
+
+class _ForgeScenePainter extends CustomPainter {
+  final double t; // 0..1 smyčka (6s)
+  _ForgeScenePainter({required this.t});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Pec vzadu (uprostřed, mírně vpravo) - pomalý "dech" žáru, ne blikání - má to vypadat
+    // jako živý oheň v peci, ne jako maják.
+    final furnace = Offset(0.53 * size.width, 0.35 * size.height);
+    final furnaceBreath = 0.55 + 0.45 * sin(t * 2 * pi);
+    canvas.drawCircle(
+      furnace, size.width * (0.16 + 0.03 * furnaceBreath),
+      Paint()
+        ..color = const Color(0xFFFF6A1A).withOpacity(0.22 * furnaceBreath)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.12),
+    );
+    canvas.drawCircle(
+      furnace, size.width * 0.07,
+      Paint()
+        ..color = const Color(0xFFFFC069).withOpacity(0.28 * furnaceBreath)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.05),
+    );
+
+    // Kovadlina vpředu vlevo - sprška jisker, jako by dopadlo kladivo: krátký shluk částic,
+    // co vylétnou a spadnou/pohasnou, opakuje se přibližně jednou za smyčku (imituje ránu).
+    final anvil = Offset(0.32 * size.width, 0.455 * size.height);
+    final strikePhase = (t * 1.0) % 1.0; // jeden "úder" za 6s
+    if (strikePhase < 0.35) {
+      final burst = strikePhase / 0.35; // 0..1 progres jiskřiček od úderu
+      final rnd = Random((t * 37).floor());
+      for (int i = 0; i < 10; i++) {
+        final angle = -pi / 2 + (rnd.nextDouble() - 0.5) * pi * 0.9; // vějíř nahoru/do stran
+        final speed = 0.10 + rnd.nextDouble() * 0.08;
+        final dist = burst * speed * size.width;
+        final gravity = burst * burst * size.height * 0.05;
+        final p = anvil + Offset(cos(angle) * dist, sin(angle) * dist + gravity);
+        final fade = (1 - burst).clamp(0.0, 1.0);
+        canvas.drawCircle(p, 1.8 * fade, Paint()..color = const Color(0xFFFFB74D).withOpacity(fade * 0.85));
+      }
+      // Krátký jasný záblesk přímo na kovadlině v okamžiku úderu.
+      if (burst < 0.15) {
+        final flash = 1 - burst / 0.15;
+        canvas.drawCircle(anvil, size.width * 0.045 * (1 + flash * 0.3), Paint()..color = const Color(0xFFFFE0B2).withOpacity(flash * 0.5)..maskFilter = MaskFilter.blur(BlurStyle.normal, 8));
+      }
+    }
+    // Tichá základní záře žhavého kovu na kovadlině, i mezi údery.
+    canvas.drawCircle(anvil, size.width * 0.03, Paint()..color = const Color(0xFFFF7043).withOpacity(0.25)..maskFilter = MaskFilter.blur(BlurStyle.normal, 6));
+  }
+
+  @override
+  bool shouldRepaint(covariant _ForgeScenePainter old) => old.t != t;
+}
+
 /// Jedna dlaždice na domovské obrazovce (HubScreen): hex odznak + ikona +
 /// popisek + volitelný červený počítadlo-badge (např. počet nových questů).
 // ===== CELEBRATION OVERLAY — power fantasy flash pro level up / milestone momenty =====
@@ -3433,7 +3523,15 @@ class RiftBackdrop extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Positioned.fill(child: Image.asset('assets/images/scenes/rift_bg.png', fit: BoxFit.cover)),
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/scenes/rift_bg.png',
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stack) => const DecoratedBox(
+              decoration: BoxDecoration(gradient: RadialGradient(center: Alignment.topCenter, radius: 1.3, colors: [Color(0xFF3A1A5C), Color(0xFF120A1E)])),
+            ),
+          ),
+        ),
         Positioned.fill(child: Container(color: Colors.black.withOpacity(0.35))),
         child,
       ],
@@ -3723,7 +3821,7 @@ class _SceneLifePainter extends CustomPainter {
       // vytáhl žhavý kov z ohně - krátký jasný záblesk, dlouhá pauza mezi nimi (ne dýchání jako
       // jinde, tohle má být nečekaný "moment", ne pravidelný rytmus).
       {
-        final forgeP = Offset(0.48 * size.width, 0.665 * size.height);
+        final forgeP = Offset(0.435 * size.width, 0.665 * size.height);
         final forgePhase = (t * 0.22) % 1.0;
         final forgeFlare = forgePhase < 0.06 ? sin((forgePhase / 0.06) * pi) : 0.0;
         if (forgeFlare > 0) {
@@ -3986,7 +4084,7 @@ class CityScreen extends StatelessWidget {
           lockedHint: tr('Odemyká se na levelu ${GameState.blacksmithUnlockLevel}', 'Unlocks at level ${GameState.blacksmithUnlockLevel}'),
           description: tr('Kup si kus podle mého ranku, nebo si ho nech rovnou vykovat. Čím víc kovám, tím výš můj rank stoupá - zlepší se staty i ceny na Tržišti. Pojď blíž, ukážu ti, co mám na kovadlině.',
               'Buy a piece based on my current rank, or have one forged for you. The more I forge, the higher my rank climbs - better stats, better Market prices too. Come closer, let me show you what is on the anvil.'),
-          npcName: tr('Bram Ocelák', 'Bram Steelhand'),
+          npcName: tr('Kovář Theodor', 'Blacksmith Theodor'),
           npcPortrait: 'assets/images/npc/blacksmith.png',
           dx: 0.48, dy: 0.62, prominence: 1.15, tapWidth: 122, tapHeight: 170,
           onTap: () {
@@ -4172,7 +4270,7 @@ class _RuneWizardScreenState extends State<RuneWizardScreen> with SingleTickerPr
               Text(tr('Runový Čaroděj', 'Rune Wizard'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: FantasyColors2.runeText, letterSpacing: 1)),
               const SizedBox(height: 10),
               Text(
-                tr('Tato svatyně se probudí, až porazíš bosse na patře 20 nebo výše - ve Věži, nebo v Doupěti bosse.', 'This sanctum awakens once you defeat a boss on floor 20 or higher - in the Tower, or in the Boss Lair.'),
+                tr('Tato svatyně se probudí, až porazíš bosse v Doupěti bosse na patře 15 nebo výše.', 'This sanctum awakens once you defeat a boss in the Boss Lair on floor 15 or higher.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: FantasyColors2.runeMuted),
               ),
@@ -4186,35 +4284,34 @@ class _RuneWizardScreenState extends State<RuneWizardScreen> with SingleTickerPr
         ),
         child: Column(
           children: [
-            // Dekorativní hlavička svatyně - jemný "frost" pruh nad záložkami, ať obrazovka
-            // nezačíná rovnou technickým TabBarem.
-            Container(
-              width: double.infinity,
+            // Hlavička svatyně - portrét Ma-Túše (stejný jazyk jako Alchymie/Kovárna/Tržiště/
+            // Kronika/Banka), nahrazuje dřívější malý kroužek s ikonou.
+            Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [FantasyColors2.runeIce.withOpacity(.10), Colors.transparent]),
-                border: const Border(bottom: BorderSide(color: FantasyColors2.runeIce, width: 1)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(colors: [FantasyColors2.runeIce.withOpacity(.35), Colors.transparent]),
-                      border: Border.all(color: FantasyColors2.runeIce, width: 1.3),
-                      boxShadow: [BoxShadow(color: FantasyColors2.runeIce.withOpacity(.5), blurRadius: 10)],
-                    ),
-                    child: FantasyIconFrame(type: FantasyIconType.systemRuneWizard, rarity: FantasyRarity.epic, size: 24, interactive: false),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 130,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      LivingPortrait(assetPath: 'assets/images/npc/matus.png', accent: FantasyColors2.runeIce, mode: PortraitLifeMode.subtle),
+                      DecoratedBox(decoration: BoxDecoration(border: Border.all(color: FantasyColors2.runeIce.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
+                      Positioned(
+                        left: 0, right: 0, bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                          child: Text(
+                            state.metMaTus ? tr('Ma-Túš, Runová svatyně', "Ma-Túš's Rune Sanctum") : tr('Runová svatyně', "Rune Sanctum"),
+                            style: const TextStyle(color: FantasyColors2.runeIce, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: .5),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      state.metMaTus ? tr('Ma-Túš, Runová svatyně', "Ma-Túš's Rune Sanctum") : tr('Runová svatyně', "Rune Sanctum"),
-                      style: const TextStyle(color: FantasyColors2.runeText, fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: .5),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
             Material(
@@ -4574,7 +4671,7 @@ class _RuneWizardScreenState extends State<RuneWizardScreen> with SingleTickerPr
       );
 
   Widget _statusPanel(GameState state) {
-    final progressInCycle = state.post20BossKills % 5;
+    final progressInCycle = state.lairBoss15PlusKills % 5;
     return _panel(
       title: tr('RUNOVÝ ČARODĚJ', 'RUNE WIZARD'),
       icon: Icons.auto_awesome,
@@ -4969,20 +5066,35 @@ class RuneBlacksmithScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Center(
-              child: Column(
-                children: [
-                  FantasyIconFrame(type: FantasyIconType.systemForge, rarity: FantasyRarity.artifact, size: 72, interactive: false),
-                  const SizedBox(height: 10),
-                  Text(tr('Runový Kovář', 'Rune Blacksmith'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: FantasyColors2.runeText, letterSpacing: 1)),
-                  const SizedBox(height: 4),
-                  Text(
-                    tr('Vykove jedinou unikátní zbraň na úrovni artefaktu, spjatou s tvou zvolenou specializací.', 'Forges a single unique artifact-tier weapon, tied to your chosen specialization.'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: FantasyColors2.runeMuted, fontSize: 13),
-                  ),
-                ],
+            // Hlavička - portrét Grendela, stejný jazyk jako Alchymie/Kovárna/Tržiště/Kronika/
+            // Banka/Runový Čaroděj.
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: double.infinity,
+                height: 150,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    LivingPortrait(assetPath: 'assets/images/npc/rune_blacksmith.png', accent: FantasyColors2.runeIce, mode: PortraitLifeMode.subtle),
+                    DecoratedBox(decoration: BoxDecoration(border: Border.all(color: FantasyColors2.runeIce.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
+                    Positioned(
+                      left: 0, right: 0, bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                        child: Text(tr('Grendel, Runový Mistr', 'Grendel, Rune Master'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: FantasyColors2.runeText)),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              tr('Vykove jedinou unikátní zbraň na úrovni artefaktu, spjatou s tvou zvolenou specializací.', 'Forges a single unique artifact-tier weapon, tied to your chosen specialization.'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: FantasyColors2.runeMuted, fontSize: 13),
             ),
             const SizedBox(height: 20),
             if (def == null)

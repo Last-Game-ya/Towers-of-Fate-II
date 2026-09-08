@@ -1779,29 +1779,32 @@ class _MainMenuScreenState extends State<MainMenuScreen> with SingleTickerProvid
 
       return Scaffold(
         body: Container(
-          // Atmosférické pozadí - radiální vinětka + dýchající zlatý glow za erbem.
-          // TODO až bude hotový i horský background (backroud.png): přidat Positioned.fill
-          // s Image.asset('assets/images/scenes/adventure_bg.png', fit: BoxFit.cover) úplně
-          // dole ve Stacku (pod siluetou Věže i pod _SceneLifeOverlay), ať Věž stojí na skutečné
-          // krajině místo na gradientu.
-          decoration: const BoxDecoration(
-            gradient: RadialGradient(center: Alignment.topCenter, radius: 1.3, colors: [Color(0xFF241C10), FantasyColors.abyss]),
-          ),
+          // Základní tmavá barva jen jako fallback, kdyby se main_menu_bg.png z nějakého
+          // důvodu nenačetl (viz errorBuilder níž) - jinak je celá scéna vidět z obrázku.
+          color: FantasyColors.abyss,
           child: Stack(
             children: [
-              // Silueta Věže - kotví celou scénu vizuálně (stejná role jako v Dobrodružství mapě,
-              // jen zblízka a bez ostatních budov okolo). Umístěná nahoře uprostřed, za obsahem.
-              Positioned(
-                top: -20, left: 0, right: 0,
-                child: Center(
-                  child: Opacity(
-                    opacity: 0.85,
-                    child: Image.asset('assets/images/scenes/tower_silhouette.png', height: 420, fit: BoxFit.contain),
+              // Titulní ilustrace - Věž Osudu s rytířem na úpatí schodiště, bouřková obloha.
+              // Nahrazuje dřívější gradient + samostatnou plovoucí siluetu Věže (tower_silhouette.png)
+              // - ta by teď byla duplicitní, protože Věž je už detailně namalovaná přímo v obrázku.
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/scenes/main_menu_bg.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stack) => const DecoratedBox(
+                    decoration: BoxDecoration(gradient: RadialGradient(center: Alignment.topCenter, radius: 1.3, colors: [Color(0xFF241C10), FantasyColors.abyss])),
                   ),
                 ),
               ),
+              // Jemná vinětka dole, ať se obsah (jméno/tlačítka) čte i přes světlejší spodní část
+              // obrázku (žhnoucí láva/uhlíky kolem rytíře).
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withOpacity(.55)], stops: const [0.55, 1.0])),
+                ),
+              ),
               // Živá vrstva - poletující jiskry/embery (danger paleta, stejná jako
-              // Dobrodružství) + jemně blikající světlo poblíž arkánového okna Věže, ať vstupní
+              // Dobrodružství) + jemně blikající světlo poblíž vrcholu Věže, ať vstupní
               // obrazovka není jediné mrtvé místo ve hře.
               Positioned.fill(
                 child: _SceneLifeOverlay(danger: true, smokePoints: const [], glowPoints: const [Offset(0.5, 0.13)]),
@@ -3493,49 +3496,75 @@ class _RiftScreenState extends State<RiftScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Card(
-                      shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFF1E88E5), width: 1), borderRadius: BorderRadius.circular(8)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5))),
-                            const Divider(),
-                            BarWidget(value: state.hp.toDouble(), max: state.maxHp.toDouble(), color: Colors.green, label: "HP"),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Visibility(
-                                visible: state.bonusShield > 0,
-                                maintainSize: true, maintainAnimation: true, maintainState: true,
-                                child: BarWidget(value: state.bonusShield.toDouble(), max: max(1, state.bonusShield).toDouble(), color: const Color(0xFF1E88E5), label: tr("Štít", "Shield")),
-                              ),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF14314D), Color(0xFF1E1E24)]),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF1E88E5).withOpacity(.6)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            Container(
+                              width: 24, height: 24,
+                              decoration: BoxDecoration(shape: BoxShape.circle, gradient: const RadialGradient(colors: [Color(0x551E88E5), Color(0xFF14181C)]), border: Border.all(color: const Color(0xFF1E88E5))),
+                              child: CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(const Color(0xFF1E88E5))),
                             ),
-                            const SizedBox(height: 4),
-                            BarWidget(value: state.currentResourceValue.toDouble(), max: max(1, state.maxResourceValue).toDouble(), color: state.resourceColor, label: state.resourceName),
-                            const SizedBox(height: 6),
-                            Text(tr("P.Atk: ${formatCompactNumber(state.physAtk)}  M.Atk: ${formatCompactNumber(state.magAtk)}", "P.Atk: ${formatCompactNumber(state.physAtk)}  M.Atk: ${formatCompactNumber(state.magAtk)}"), style: const TextStyle(fontSize: 12)),
-                            Text(tr("Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Úhyb: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Blok: ${(state.blockChance * 100).toStringAsFixed(1)}%", "Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Dodge: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Block: ${(state.blockChance * 100).toStringAsFixed(1)}%"), style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
-                          ],
-                        ),
+                            const SizedBox(width: 7),
+                            Expanded(child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF64B5F6)))),
+                          ]),
+                          const Divider(height: 14),
+                          BarWidget(value: state.hp.toDouble(), max: state.maxHp.toDouble(), color: Colors.green, label: "HP"),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Visibility(
+                              visible: state.bonusShield > 0,
+                              maintainSize: true, maintainAnimation: true, maintainState: true,
+                              child: BarWidget(value: state.bonusShield.toDouble(), max: max(1, state.bonusShield).toDouble(), color: const Color(0xFF1E88E5), label: tr("Štít", "Shield")),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          BarWidget(value: state.currentResourceValue.toDouble(), max: max(1, state.maxResourceValue).toDouble(), color: state.resourceColor, label: state.resourceName),
+                          const SizedBox(height: 6),
+                          Text(tr("P.Atk: ${formatCompactNumber(state.physAtk)}  M.Atk: ${formatCompactNumber(state.magAtk)}", "P.Atk: ${formatCompactNumber(state.physAtk)}  M.Atk: ${formatCompactNumber(state.magAtk)}"), style: const TextStyle(fontSize: 12)),
+                          Text(tr("Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Úhyb: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Blok: ${(state.blockChance * 100).toStringAsFixed(1)}%", "Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Dodge: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Block: ${(state.blockChance * 100).toStringAsFixed(1)}%"), style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
+                        ],
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Card(
-                      shape: RoundedRectangleBorder(side: BorderSide(color: state.isTreasureGoblinFight ? const Color(0xFFFFD700) : const Color(0xFF8B5CF6), width: state.isTreasureGoblinFight ? 2 : 1), borderRadius: BorderRadius.circular(8)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
+                    child: Builder(builder: (context) {
+                      final guardianAccent = state.isTreasureGoblinFight ? const Color(0xFFFFD700) : const Color(0xFF8B5CF6);
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [guardianAccent.withOpacity(.18), const Color(0xFF1E1E24)]),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: guardianAccent.withOpacity(.7), width: state.isTreasureGoblinFight ? 2 : 1),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              state.isTreasureGoblinFight ? tr("💰 Poklad-skřet", "💰 Treasure Goblin") : tr("Strážce Trhliny", "Rift Guardian"),
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: state.isTreasureGoblinFight ? const Color(0xFFFFD700) : const Color(0xFF8B5CF6)),
-                            ),
+                            Row(children: [
+                              Container(
+                                width: 22, height: 22,
+                                decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [guardianAccent.withOpacity(.5), const Color(0xFF14181C)]), border: Border.all(color: guardianAccent)),
+                                child: Icon(state.isTreasureGoblinFight ? Icons.savings : Icons.shield_moon, size: 13, color: guardianAccent),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  state.isTreasureGoblinFight ? tr("💰 Poklad-skřet", "💰 Treasure Goblin") : tr("Strážce Trhliny", "Rift Guardian"),
+                                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: guardianAccent),
+                                ),
+                              ),
+                            ]),
                             const SizedBox(height: 8),
-                            BarWidget(value: state.currentRiftGuardianHp.toDouble(), max: state.currentRiftGuardianMaxHp.toDouble(), color: state.isTreasureGoblinFight ? const Color(0xFFFFD700) : const Color(0xFF8B5CF6), label: state.isTreasureGoblinFight ? tr("HP Skřeta", "Goblin HP") : tr("HP Strážce", "Guardian HP")),
+                            BarWidget(value: state.currentRiftGuardianHp.toDouble(), max: state.currentRiftGuardianMaxHp.toDouble(), color: guardianAccent, label: state.isTreasureGoblinFight ? tr("HP Skřeta", "Goblin HP") : tr("HP Strážce", "Guardian HP")),
                             const SizedBox(height: 6),
                             Text(tr("Atk: ${formatCompactNumber(state.currentRiftGuardianAtk)} | Def: ${formatCompactNumber(state.currentRiftGuardianDef)}", "Atk: ${formatCompactNumber(state.currentRiftGuardianAtk)} | Def: ${formatCompactNumber(state.currentRiftGuardianDef)}"), style: const TextStyle(fontSize: 11, color: Colors.grey)),
                             if (state.isTreasureGoblinFight) ...[
@@ -3544,8 +3573,8 @@ class _RiftScreenState extends State<RiftScreen> {
                             ],
                           ],
                         ),
-                      ),
-                    ),
+                      );
+                    }),
                   ),
                 ],
               ),
@@ -4278,37 +4307,51 @@ class _ClassSelectionScreenState extends State<_ClassSelectionScreen> {
           ),
         ),
         // ===== ZATMĚNÍ + PŘÍBĚH po potvrzení volby - obrazovka zčerná a odehrají se dvě krátké
-        // věty, než se skutečně zavolá state.selectClass (viz _confirmClass výš). =====
+        // věty, než se skutečně zavolá state.selectClass (viz _confirmClass výš). Pozadí
+        // (awakening_bg.png - kamenná podlaha/klenba viděná zezdola, jako by hráč právě ležel
+        // a probouzel se) je samo o sobě skoro černé, takže i s obrázkem zůstává text čitelný. =====
         Positioned.fill(
           child: IgnorePointer(
             ignoring: _phase == _ClassSelectPhase.browsing,
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 900),
               opacity: _phase == _ClassSelectPhase.browsing ? 0.0 : 1.0,
-              child: Container(
-                color: Colors.black,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 36),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 600),
-                  child: _phase == _ClassSelectPhase.story1
-                      ? Text(
-                          tr('Probouzíš se na studené kamenné podlaze Věže Osudu. Hlava třeští, vzpomínky mlhavé.',
-                              'You wake on the cold stone floor of the Tower of Fate. Your head throbs, memories hazy.'),
-                          key: const ValueKey('s1'),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Color(0xFFE8D9B0), fontSize: 17, height: 1.5, fontStyle: FontStyle.italic),
-                        )
-                      : _phase == _ClassSelectPhase.story2
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    'assets/images/scenes/awakening_bg.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stack) => const ColoredBox(color: Colors.black),
+                  ),
+                  // Jemná dodatečná vinětka - obrázek je sám skoro černý, tohle jen zajistí, že
+                  // text zůstane čitelný i kdyby byla nějaká část pozadí světlejší, než čekáme.
+                  const DecoratedBox(decoration: BoxDecoration(color: Colors.black26)),
+                  Container(
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 36),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 600),
+                      child: _phase == _ClassSelectPhase.story1
                           ? Text(
-                              tr('Vtom zaslechneš kroky blížící se ze tmy chodby - první z mnoha nepřátel, co na tebe uvnitř čekají.',
-                                  'Then you hear footsteps approaching from the dark corridor - the first of many enemies waiting inside.'),
-                              key: const ValueKey('s2'),
+                              tr('Probouzíš se na studené kamenné podlaze Věže Osudu. Hlava třeští, vzpomínky mlhavé.',
+                                  'You wake on the cold stone floor of the Tower of Fate. Your head throbs, memories hazy.'),
+                              key: const ValueKey('s1'),
                               textAlign: TextAlign.center,
                               style: const TextStyle(color: Color(0xFFE8D9B0), fontSize: 17, height: 1.5, fontStyle: FontStyle.italic),
                             )
-                          : const SizedBox.shrink(key: ValueKey('blank')),
-                ),
+                          : _phase == _ClassSelectPhase.story2
+                              ? Text(
+                                  tr('Vtom zaslechneš kroky blížící se ze tmy chodby - první z mnoha nepřátel, co na tebe uvnitř čekají.',
+                                      'Then you hear footsteps approaching from the dark corridor - the first of many enemies waiting inside.'),
+                                  key: const ValueKey('s2'),
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: Color(0xFFE8D9B0), fontSize: 17, height: 1.5, fontStyle: FontStyle.italic),
+                                )
+                              : const SizedBox.shrink(key: ValueKey('blank')),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -4892,7 +4935,7 @@ class _BattlePassBanner extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BattlePassScreen())),
+        onTap: () => openWorldScreen(context, tr('Battle Pass', 'Battle Pass'), const BattlePassScreen(), theme: const Color(0xFFFFB100)),
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -4949,6 +4992,24 @@ class _BattlePassBanner extends StatelessWidget {
 class BattlePassScreen extends StatelessWidget {
   const BattlePassScreen({super.key});
 
+  // Sdílený "chip" pro měnu - stejný vizuální jazyk jako horní resource bar (_ResourceBar):
+  // zářící kolečko s procedurální ikonou + barevné číslo se stínem. Nahrazuje dřívější holé
+  // emoji slepené s číslem (🪙40), co vypadalo nekonzistentně se zbytkem hry.
+  static Widget _currencyChip(FantasyIconType iconType, Color color, int value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: color.withOpacity(.5), blurRadius: 5, spreadRadius: .5)]),
+          child: SizedBox(width: 13, height: 13, child: CustomPaint(painter: FantasyIconRegistry.of(iconType).proceduralPainter(color))),
+        ),
+        const SizedBox(width: 3),
+        Text('$value', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<GameState>(builder: (context, state, _) {
@@ -4960,30 +5021,48 @@ class BattlePassScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFF3A2B12), Color(0xFF1E1E24)]),
-              borderRadius: BorderRadius.circular(14),
+              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF3A2B12), Color(0xFF1E1E24)]),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: const Color(0xFFFFB100).withOpacity(.6)),
+              boxShadow: [BoxShadow(color: const Color(0xFFFFB100).withOpacity(.15), blurRadius: 16, spreadRadius: 1)],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  const Icon(Icons.military_tech, color: Color(0xFFFFB100), size: 30),
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(shape: BoxShape.circle, gradient: const RadialGradient(colors: [Color(0x55FFB100), Colors.transparent]), border: Border.all(color: const Color(0xFFFFB100).withOpacity(.6))),
+                    child: const Icon(Icons.military_tech, color: Color(0xFFFFB100), size: 24),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       tr('Battle Pass - Úroveň ${state.battlePassLevel}/${GameState.battlePassMaxLevel}', 'Battle Pass - Level ${state.battlePassLevel}/${GameState.battlePassMaxLevel}'),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFFFFB100)),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFFFFB100)),
                     ),
                   ),
-                  Text(tr('${state.battlePassDaysLeft} dní', '${state.battlePassDaysLeft} days'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(20)),
+                    child: Text(tr('${state.battlePassDaysLeft} dní', '${state.battlePassDaysLeft} days'), style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600)),
+                  ),
                 ]),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
-                  child: LinearProgressIndicator(value: progress.clamp(0.0, 1.0), minHeight: 10, backgroundColor: Colors.black38, color: const Color(0xFFFFB100)),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Stack(children: [
+                    Container(height: 12, color: Colors.black45),
+                    FractionallySizedBox(
+                      widthFactor: progress.clamp(0.0, 1.0),
+                      child: Container(
+                        height: 12,
+                        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFFFD54F), Color(0xFFFFB100)])),
+                      ),
+                    ),
+                  ]),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
                   state.battlePassLevel >= GameState.battlePassMaxLevel
                       ? tr('Maximální úroveň dosažena!', 'Max level reached!')
@@ -4998,41 +5077,77 @@ class BattlePassScreen extends StatelessWidget {
           if (!state.battlePassPremium)
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF8B5CF6), padding: const EdgeInsets.symmetric(vertical: 12)),
-                icon: const Icon(Icons.workspace_premium),
-                onPressed: state.buyBattlePassPremium,
-                label: Text(tr('Odemknout Premium (${GameState.battlePassPremiumCost} 💎)', 'Unlock Premium (${GameState.battlePassPremiumCost} 💎)'), style: const TextStyle(fontWeight: FontWeight.bold)),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: const LinearGradient(colors: [Color(0xFF8B5CF6), Color(0xFF6C3FD1)]),
+                  boxShadow: [BoxShadow(color: const Color(0xFF8B5CF6).withOpacity(.4), blurRadius: 12, spreadRadius: 1)],
+                ),
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.transparent, shadowColor: Colors.transparent, padding: const EdgeInsets.symmetric(vertical: 13)),
+                  icon: const Icon(Icons.workspace_premium),
+                  onPressed: state.buyBattlePassPremium,
+                  label: Text(tr('Odemknout Premium (${GameState.battlePassPremiumCost} 💎)', 'Unlock Premium (${GameState.battlePassPremiumCost} 💎)'), style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
               ),
             )
           else
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(color: const Color(0xFF8B5CF6).withOpacity(.18), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF8B5CF6))),
-              child: Text(tr('✨ Premium aktivní pro tuto sezónu', '✨ Premium active for this season'), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [const Color(0xFF8B5CF6).withOpacity(.25), const Color(0xFF8B5CF6).withOpacity(.08)]),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF8B5CF6)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.auto_awesome, color: Color(0xFF8B5CF6), size: 18),
+                  const SizedBox(width: 8),
+                  Text(tr('Premium aktivní pro tuto sezónu', 'Premium active for this season'), style: const TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold)),
+                ],
+              ),
             ),
           const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              icon: const Icon(Icons.done_all, size: 18),
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 11), side: const BorderSide(color: Color(0xFFFFB100))),
+              icon: const Icon(Icons.done_all, size: 18, color: Color(0xFFFFB100)),
               onPressed: state.claimAllBattlePassRewards,
-              label: Text(tr('Vyzvednout vše', 'Claim all')),
+              label: Text(tr('Vyzvednout vše', 'Claim all'), style: const TextStyle(color: Color(0xFFFFB100), fontWeight: FontWeight.bold)),
             ),
           ),
-          const SizedBox(height: 16),
-          // ===== SLOUPCE FREE / PREMIUM =====
+          const SizedBox(height: 18),
+          // ===== SLOUPCE FREE / PREMIUM - pilulkové štítky místo prostého textu =====
           Row(children: [
-            const Expanded(child: SizedBox()),
-            Expanded(child: Text(tr('FREE', 'FREE'), textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12))),
-            Expanded(child: Text(tr('PREMIUM', 'PREMIUM'), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold, fontSize: 12))),
+            const SizedBox(width: 42),
+            Expanded(
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(20)),
+                  child: Text(tr('FREE', 'FREE'), style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: .5)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                  decoration: BoxDecoration(color: const Color(0xFF8B5CF6).withOpacity(.18), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(.5))),
+                  child: const Text('PREMIUM', style: TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: .5)),
+                ),
+              ),
+            ),
           ]),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           // ===== ŽEBŘÍK ÚROVNÍ - od 1 do battlePassMaxLevel, každá s free i premium buňkou =====
           for (int level = 1; level <= GameState.battlePassMaxLevel; level++) ...[
             _BattlePassLevelRow(state: state, level: level),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
           ],
         ],
       );
@@ -5052,18 +5167,34 @@ class _BattlePassLevelRow extends StatelessWidget {
     final freeReward = state.battlePassRewardFor(level, false);
     final premiumReward = state.battlePassRewardFor(level, true);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       decoration: BoxDecoration(
         color: isCurrent ? const Color(0xFFFFB100).withOpacity(.08) : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: isCurrent ? Border.all(color: const Color(0xFFFFB100).withOpacity(.5)) : null,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 34,
-            child: Text('$level', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, color: reached ? const Color(0xFFFFB100) : Colors.grey)),
+          // Medailonek s číslem levelu - kruh se zvýrazněným okrajem, místo dřívějšího
+          // obřího holého šedého čísla bez rámečku.
+          Container(
+            width: 34, height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: reached ? const RadialGradient(colors: [Color(0x55FFB100), Color(0xFF241A08)]) : const RadialGradient(colors: [Color(0x22FFFFFF), Color(0xFF1A1A1E)]),
+              border: Border.all(color: reached ? const Color(0xFFFFB100) : Colors.grey.withOpacity(.4), width: 1.6),
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Text('$level', maxLines: 1, softWrap: false, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: reached ? const Color(0xFFFFB100) : Colors.grey)),
+              ),
+            ),
           ),
+          const SizedBox(width: 8),
           Expanded(child: _rewardCell(context, freeReward, premium: false, reached: reached)),
           const SizedBox(width: 6),
           Expanded(child: _rewardCell(context, premiumReward, premium: true, reached: reached)),
@@ -5076,12 +5207,13 @@ class _BattlePassLevelRow extends StatelessWidget {
     final claimed = premium ? state.battlePassPremiumClaimed.contains(level) : state.battlePassFreeClaimed.contains(level);
     final bool locked = premium && !state.battlePassPremium;
     final accent = premium ? const Color(0xFF8B5CF6) : const Color(0xFFFFB100);
+    final bool highlight = reached && !locked;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E24),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: (reached && !locked ? accent : Colors.grey).withOpacity(.4)),
+        gradient: highlight ? LinearGradient(colors: [accent.withOpacity(.14), const Color(0xFF1E1E24)]) : const LinearGradient(colors: [Color(0xFF1E1E24), Color(0xFF1E1E24)]),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: (highlight ? accent : Colors.grey).withOpacity(.4)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -5092,17 +5224,18 @@ class _BattlePassLevelRow extends StatelessWidget {
             const Icon(Icons.auto_awesome, color: Color(0xFF8B5CF6), size: 18)
           else if (reward.isChest)
             Icon(Icons.card_giftcard, color: accent, size: 16),
-          if (reward.cosmeticFrameId != null || reward.cosmeticAttackSkinId != null || reward.isChest) const SizedBox(height: 3),
+          if (reward.cosmeticFrameId != null || reward.cosmeticAttackSkinId != null || reward.isChest) const SizedBox(height: 4),
           Wrap(
             alignment: WrapAlignment.center,
-            spacing: 6,
+            spacing: 8,
+            runSpacing: 2,
             children: [
-              if (reward.gold > 0) Text('🪙${reward.gold}', style: const TextStyle(fontSize: 11)),
-              if (reward.dust > 0) Text('✨${reward.dust}', style: const TextStyle(fontSize: 11)),
-              if (reward.crystals > 0) Text('💎${reward.crystals}', style: const TextStyle(fontSize: 11)),
+              if (reward.gold > 0) BattlePassScreen._currencyChip(FantasyIconType.currencyGold, FantasyColors2.emberGold, reward.gold),
+              if (reward.dust > 0) BattlePassScreen._currencyChip(FantasyIconType.materialMagicDust, FantasyColors2.teal, reward.dust),
+              if (reward.crystals > 0) BattlePassScreen._currencyChip(FantasyIconType.currencyCrystal, FantasyColors2.arcaneViolet, reward.crystals),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 7),
           if (locked)
             const Icon(Icons.lock, size: 16, color: Colors.grey)
           else if (!reached)
@@ -5386,38 +5519,52 @@ class _MarketFeaturedSection extends StatelessWidget {
 
 class MarketScreen extends StatelessWidget {
   const MarketScreen({super.key});
+  static const Color _accent = Color(0xFFFFB100); // zlatavá - stejná paleta jako stánky Tržiště na mapě
   @override
   Widget build(BuildContext context) {
     return Consumer<GameState>(builder: (context, state, _) {
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(tr("Tržiště", "Market"), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFFFB100), width: 1),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text("🪙", style: TextStyle(fontSize: 16)),
-                    const SizedBox(width: 6),
-                    Text(
-                      "${state.gold}",
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFFFB100)),
+          // ===== HLAVIČKA - portrét Kupce Dorina přes celou šířku (stejný jazyk jako Alchymie/
+          // Kovárna), jméno + stav zlata vypálené na gradientu dole. =====
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              width: double.infinity,
+              height: 150,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  LivingPortrait(assetPath: 'assets/images/npc/merchant.png', accent: _accent, mode: PortraitLifeMode.subtle),
+                  DecoratedBox(decoration: BoxDecoration(border: Border.all(color: _accent.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
+                  Positioned(
+                    left: 0, right: 0, bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(tr('Kupec Dorin', 'Merchant Dorin'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _accent)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: _accent.withOpacity(.25), borderRadius: BorderRadius.circular(20), border: Border.all(color: _accent)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              const Text("🪙", style: TextStyle(fontSize: 13)),
+                              const SizedBox(width: 4),
+                              Text("${state.gold}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
+                            ]),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           _MarketFeaturedSection(state: state),
           const Divider(),
           ListTile(
@@ -5497,21 +5644,68 @@ class MarketScreen extends StatelessWidget {
 class BlacksmithScreen extends StatelessWidget {
   const BlacksmithScreen({super.key});
 
+  static const Color _accent = Color(0xFFFF7A33); // ohnivá oranžová - stejná paleta jako výheň Kovárny na mapě
+
   Widget _header(GameState state) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(tr("Kovář Theodor (Rank ${state.blacksmithRank})", "Blacksmith Theodor (Rank ${state.blacksmithRank})"), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
-          const SizedBox(height: 4),
-          Text(
-            tr("Vyšší rank = silnější vykované vybavení a lepší staty featured nabídek na Tržišti.", "Higher rank = stronger forged gear and better stats on the Market's featured offers."),
-            style: const TextStyle(fontSize: 12, color: Colors.tealAccent),
+          // ===== HLAVIČKA - portrét Theodora přes celou šířku (stejný jazyk jako Alchymie:
+          // velký obdélník, jméno + rank vypálené na gradientu dole), místo dřívějšího holého
+          // textového nadpisu. =====
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              width: double.infinity,
+              height: 150,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  LivingPortrait(assetPath: 'assets/images/npc/blacksmith.png', accent: _accent, mode: PortraitLifeMode.subtle),
+                  DecoratedBox(decoration: BoxDecoration(border: Border.all(color: _accent.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
+                  Positioned(
+                    left: 0, right: 0, bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(tr('Kovář Theodor', 'Blacksmith Theodor'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _accent)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: _accent.withOpacity(.25), borderRadius: BorderRadius.circular(20), border: Border.all(color: _accent)),
+                            child: Text('Rank ${state.blacksmithRank}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFF1E6D0))),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(tr("✨ Dust: ${state.magicDust}", "✨ Dust: ${state.magicDust}"), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.tealAccent)),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.tealAccent.withOpacity(.4))),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tr("Vyšší rank = silnější vykované vybavení a lepší staty featured nabídek na Tržišti.", "Higher rank = stronger forged gear and better stats on the Market's featured offers."),
+                  style: const TextStyle(fontSize: 12, color: Colors.tealAccent),
+                ),
+                const SizedBox(height: 6),
+                Text(tr("✨ Dust: ${state.magicDust}", "✨ Dust: ${state.magicDust}"), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.tealAccent)),
+              ],
+            ),
+          ),
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _accent),
               onPressed: state.upgradeBlacksmith,
               child: Text(tr("Vylepšit kováře (Cena: ${state.blacksmithRank * 400} Dust)", "Upgrade blacksmith (Price: ${state.blacksmithRank * 400} Dust)")),
             ),
@@ -5727,36 +5921,58 @@ class BlacksmithScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Consumer<GameState>(builder: (context, state, _) {
-      if (state.blacksmithRank < 5) {
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [_header(state), const Divider(), Text(tr("Sběr surovin a crafting se odemknou při dosažení Ranku 5.", "Material gathering and crafting unlock at Rank 5."), style: const TextStyle(color: Colors.grey))],
-        );
-      }
-      return DefaultTabController(
-        length: 3,
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Column(children: [
-              _header(state),
-              const SizedBox(height: 10),
-              TabBar(
-                labelColor: const Color(0xFFFFB100),
-                unselectedLabelColor: Colors.grey,
-                indicatorColor: const Color(0xFFFFB100),
-                tabs: [const Tab(text: 'CRAFT'), Tab(text: tr('VYLEPŠIT', 'UPGRADE')), Tab(text: tr('ZNIČIT', 'DESTROY'))],
-              ),
-            ]),
+      // ===== POZADÍ - interiér kovárny (pec/kovadlina/zavěšené nástroje) + animovaná vrstva
+      // (dýchající žár pece + jiskry z kovadliny). Obsah obrazovky (hlavička/taby) jede nad tím
+      // ve Stacku, beze změny oproti dřívějšku. =====
+      final content = state.blacksmithRank < 5
+          ? ListView(
+              padding: const EdgeInsets.all(16),
+              children: [_header(state), const Divider(), Text(tr("Sběr surovin a crafting se odemknou při dosažení Ranku 5.", "Material gathering and crafting unlock at Rank 5."), style: const TextStyle(color: Colors.grey))],
+            )
+          : DefaultTabController(
+              length: 3,
+              child: Column(children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Column(children: [
+                    _header(state),
+                    const SizedBox(height: 10),
+                    TabBar(
+                      labelColor: const Color(0xFFFFB100),
+                      unselectedLabelColor: Colors.grey,
+                      indicatorColor: const Color(0xFFFFB100),
+                      tabs: [const Tab(text: 'CRAFT'), Tab(text: tr('VYLEPŠIT', 'UPGRADE')), Tab(text: tr('ZNIČIT', 'DESTROY'))],
+                    ),
+                  ]),
+                ),
+                Expanded(
+                  child: TabBarView(children: [
+                    _craftTab(context, state),
+                    _upgradeTab(context, state),
+                    _destroyTab(context, state),
+                  ]),
+                ),
+              ]),
+            );
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/scenes/forge_bg.png',
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stack) => const ColoredBox(color: Color(0xFF1A1410)),
+            ),
           ),
-          Expanded(
-            child: TabBarView(children: [
-              _craftTab(context, state),
-              _upgradeTab(context, state),
-              _destroyTab(context, state),
-            ]),
+          const Positioned.fill(child: ForgeSceneOverlay()),
+          // Jemná vinětka dole, ať je scrollovací obsah (hlavička/taby/karty) čitelný i přes
+          // světlejší horní část obrázku (pec/jiskry) - stejný princip jako main menu pozadí.
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withOpacity(.45)], stops: const [0.35, 0.75])),
+            ),
           ),
-        ]),
+          content,
+        ],
       );
     });
   }
@@ -6909,6 +7125,34 @@ class _KronikaScreenState extends State<KronikaScreen> with SingleTickerProvider
     return Consumer<GameState>(builder: (context, state, _) {
       return Column(
         children: [
+          // ===== HLAVIČKA - portrét Kronikáře Aldouse, stejný jazyk jako Alchymie/Kovárna/
+          // Tržiště, nad taby Kronika/Roll/Mince Osudu (platí pro všechny tři). =====
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: double.infinity,
+                height: 130,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    LivingPortrait(assetPath: 'assets/images/npc/chronicler.png', accent: const Color(0xFFFFB100), mode: PortraitLifeMode.subtle),
+                    DecoratedBox(decoration: BoxDecoration(border: Border.all(color: const Color(0xFFFFB100).withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
+                    Positioned(
+                      left: 0, right: 0, bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                        child: Text(tr('Kronikář Aldous', 'Chronicler Aldous'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Container(
             color: const Color(0xFF1A1424),
             child: TabBar(
@@ -7194,8 +7438,34 @@ class _BankScreenState extends State<BankScreen> {
   Widget build(BuildContext context) {
     return Consumer<GameState>(builder: (context, state, _) {
       return DefaultTabController(length: 3, child: Column(children: [
+        // ===== HLAVIČKA - portrét Mistra Zlaťáka, stejný jazyk jako Alchymie/Kovárna. =====
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              width: double.infinity,
+              height: 130,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  LivingPortrait(assetPath: 'assets/images/npc/banker.png', accent: FantasyColors.gold, mode: PortraitLifeMode.subtle),
+                  DecoratedBox(decoration: BoxDecoration(border: Border.all(color: FantasyColors.gold.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
+                  Positioned(
+                    left: 0, right: 0, bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
+                      child: Text(tr('Mistr Zlaťák', 'Master Goldstack'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: FantasyColors.gold)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
           child: Text(
             tr('Trvalé úložiště nezávislé na tvojí aktuální třídě/buildu - itemy i zlato.', 'Permanent storage independent of your current class/build - items and gold.'),
             style: const TextStyle(color: Colors.grey, fontSize: 12),

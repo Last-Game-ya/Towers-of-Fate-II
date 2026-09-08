@@ -98,6 +98,7 @@ const Map<String, String> kBossPortraitAssets = {
   'Morana, Královna Stínů': 'assets/images/bosses/boss_03_morana.png',
   'Gorath, Železný Pěstoun': 'assets/images/bosses/boss_04_gorath.png',
   'Malakor, Vládce Popela': 'assets/images/bosses/boss_05_malakor.png',
+  'Šeptající Stín': 'assets/images/bosses/boss_whispering_shadow.png',
 };
 
 // ===== PORTRÉTY BĚŽNÝCH NEPŘÁTEL (jiný pool než bossové - viz _regularEnemyPool v
@@ -106,6 +107,12 @@ const Map<String, String> kRegularEnemyPortraitAssets = {
   'Goblin Nájezdník': 'assets/images/monsters/enemy_goblin_raider.png',
   'Kostěný Bijec': 'assets/images/monsters/enemy_bone_basher.png',
   'Bažinný Slizoun': 'assets/images/monsters/enemy_swamp_ooze.png',
+  'Noční Přízrak': 'assets/images/monsters/enemy_night_specter.png',
+  'Krystalový Strážce': 'assets/images/monsters/enemy_crystal_guardian.png',
+  'Temný Kultista': 'assets/images/monsters/enemy_dark_cultist.png',
+  'Přízračný Lučištník': 'assets/images/monsters/enemy_phantom_archer.png',
+  'Plamenný Impling': 'assets/images/monsters/enemy_flame_impling.png',
+  'Železný Golem': 'assets/images/monsters/enemy_iron_golem.png',
 };
 
 // ===== RUNY OSUDOVÉ VOLBY (Ma-Túš, Runový Čaroděj - 2. záložka) =====
