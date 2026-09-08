@@ -2864,6 +2864,10 @@ class SceneBuildingSpot {
   final double dx; // 0..1 - horizontální pozice na scéně
   final double dy; // 0..1 - vertikální pozice (0 = v dálce/nahoře, 1 = vpředu/dole - blíž hráči)
   final double prominence; // relativní velikost budovy na mapě (1.0 = základ)
+  // Pokud true, tap na budovu přeskočí info bottom-sheet (_showSceneBuildingMenu) a rovnou
+  // zavolá onTap - pro Věž Osudu, kde je hlavní herní smyčka a mezikrok jen zdržuje. Ostatní
+  // budovy si drží info popis/odemykací stav v menu, tam skip nedává smysl.
+  final bool skipMenu;
   const SceneBuildingSpot({
     required this.iconType,
     required this.accent,
@@ -2879,6 +2883,7 @@ class SceneBuildingSpot {
     required this.dx,
     required this.dy,
     this.prominence = 1.0,
+    this.skipMenu = false,
   });
 }
 
@@ -3043,7 +3048,14 @@ class _SceneBuildingMarker extends StatelessWidget {
     // takže tady navrch nic dalšího nekreslíme - jen neviditelnou tap zónu (locked onTap je
     // stejně no-op). Label s levelem odemčení zůstává vidět pod mlhou stejně jako dřív.
     return GestureDetector(
-      onTap: () => _showSceneBuildingMenu(context, spot),
+      onTap: () {
+        if (spot.skipMenu && !spot.locked) {
+          HapticFeedback.mediumImpact();
+          spot.onTap();
+          return;
+        }
+        _showSceneBuildingMenu(context, spot);
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -3519,12 +3531,16 @@ class AdventureScreen extends StatelessWidget {
           // Věž Osudu - hlavní herní smyčka, dřív permanentní bottom-nav tab, teď nejvýraznější
           // (a vždy odemčená) budova hned vpředu uprostřed mapy Dobrodružství. Pozice
           // přepočítaná podle skutečného obrázku dobrodruzstvi.png - posunuto výš (dy 0.50 →
-          // 0.40), protože vstup/schody věže na obrázku leží výš, ne v půlce scény.
+          // 0.40), protože vstup/schody věže na obrázku leží výš, ne v půlce scény. Dál posunuto
+          // o dalších ~2cm nahoru (0.40 → 0.264; 2cm ≈ 76 logických px při 96px/palec, kontejner
+          // mapy je vysoký 560px → 76/560 ≈ 0.136).
           iconType: FantasyIconType.systemTower, accent: const Color(0xFF1E88E5), fill: const Color(0xFF0D2A42),
           label: tr('Věž Osudu', 'Tower of Fate'),
           description: tr('Hlavní věž - postupuj patro po patře, bojuj s nepřáteli a bossy, sbírej vybavení a levuj postavu. Tvůj hlavní zdroj postupu ve hře, dostupný od začátku.',
               'The main tower - climb floor by floor, fight enemies and bosses, collect gear and level up your character. Your main source of progress in the game, available from the start.'),
-          dx: 0.50, dy: 0.40, prominence: 1.4,
+          dx: 0.50, dy: 0.264, prominence: 1.4,
+          // Věž je hlavní herní smyčka - tap rovnou otevírá TowerScreen, bez info bottom-sheetu.
+          skipMenu: true,
           onTap: () => openWorldScreen(context, tr('Věž Osudu', 'Tower of Fate'), const TowerScreen(), theme: const Color(0xFF1E88E5)),
         ),
         if (state.isHubTileRevealed(GameState.lairUnlockLevel))
