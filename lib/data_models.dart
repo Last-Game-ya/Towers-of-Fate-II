@@ -921,6 +921,27 @@ enum AchievementId {
   hardcoreSetFull8pc,
   predpekliSetFull8pc,
   pekloSetFull8pc,
+  // ===== ROZŠÍŘENÍ 2 (Battle Pass, kosmetika, World Boss, ekonomika, relikvie...) =====
+  battlePassGraduate, // dosažena max úroveň Battle Passu
+  battlePassPatron, // koupeno Premium Battle Passu
+  worldBossHunter, // 10x poražen World Boss
+  worldBossNemesis, // 50x poražen World Boss
+  goldMillionaire, // 1 000 000 zlata najednou
+  crystalBaron, // 5 000 krystalů najednou
+  dustTycoon, // 1 000 000 Magic Dust najednou
+  cosmeticCollector, // 5+ vlastněných kosmetik (rámy/skiny/aury) z obchodu
+  cosmeticConnoisseur, // 15+ vlastněných kosmetik
+  questLegend, // 100 splněných questů celkem
+  companionElite, // libovolný společník na levelu 25+
+  bankVault, // všechny sloty Banky odemčené
+  relicAwakened, // specializační relikvie dosáhla levelu 1+
+  relicAscended, // specializační relikvie dosáhla levelu 90+
+  riftPusher200, // Trhlina Osudu tier 200
+  lairFloor50Elite, // poraženo patro 50 v Lairu
+  gearScoreElite, // Gear Score 3000+
+  gearScoreLegend, // Gear Score 6000+
+  survivor250, // 250 úmrtí
+  necromancerPioneer, // patro 5 s Nekromantem
 }
 
 class AchievementDef {
@@ -1981,3 +2002,57 @@ const Map<TutorialTipId, TutorialTipDef> kTutorialTips = {
     advancedEn: "Pro-tip: don't discard or sell strong weapons from your bag prematurely — they're future forge material. You always need a weapon stronger than your current artifact.",
   ),
 };
+
+// ===== OBCHOD S KOSMETIKOU (rámy portrétu, skiny útoku, aury) =====
+// Rámy a skiny sdílí sady s Battle Passem (kCosmeticShopCatalog jen PŘIDÁVÁ další cesty ke
+// koupi navíc k těm z BP - id 'battlepass_frame'/'battlepass_attack_skin' tu záměrně nejsou,
+// ty se dají získat jen skrz Battle Pass). Aury jsou nová kategorie, dostupná JEN tady.
+enum CosmeticCategory { frame, attackSkin, aura }
+
+class CosmeticShopItem {
+  final String id;
+  final CosmeticCategory category;
+  final String name;
+  final String description;
+  final Color accent;
+  final int goldPrice; // 0 = neprodává se za zlato (viz crystalPrice/isPremiumOnly)
+  final int crystalPrice; // 0 = neprodává se za krystaly
+  final bool isPremiumOnly; // true = zatím jen placeholder pro budoucí reálnou platbu, nejde koupit za herní měnu
+  const CosmeticShopItem({
+    required this.id,
+    required this.category,
+    required this.name,
+    required this.description,
+    required this.accent,
+    this.goldPrice = 0,
+    this.crystalPrice = 0,
+    this.isPremiumOnly = false,
+  });
+}
+
+const List<CosmeticShopItem> kCosmeticShopCatalog = [
+  // ----- RÁMY PORTRÉTU -----
+  CosmeticShopItem(id: 'frame_bronze', category: CosmeticCategory.frame, name: 'Bronzový rám', description: 'Prostý bronzový lem kolem portrétu.', accent: Color(0xFFCD7F32), goldPrice: 800),
+  CosmeticShopItem(id: 'frame_silver', category: CosmeticCategory.frame, name: 'Stříbrný rám', description: 'Leštěné stříbro s jemným leskem.', accent: Color(0xFFC0C0C0), goldPrice: 2000),
+  CosmeticShopItem(id: 'frame_emerald', category: CosmeticCategory.frame, name: 'Smaragdový rám', description: 'Zdobený rám s vsazenými smaragdy.', accent: Color(0xFF2ECC71), goldPrice: 5000, crystalPrice: 20),
+  CosmeticShopItem(id: 'frame_sapphire', category: CosmeticCategory.frame, name: 'Safírový rám', description: 'Chladně modrý, jako led co nikdy nepoleví.', accent: Color(0xFF3498DB), crystalPrice: 60),
+  CosmeticShopItem(id: 'frame_ember', category: CosmeticCategory.frame, name: 'Žhnoucí rám', description: 'Praskliny žhavé lávy pulzující pod povrchem.', accent: Color(0xFFFF5722), crystalPrice: 120),
+  CosmeticShopItem(id: 'frame_void', category: CosmeticCategory.frame, name: 'Rám Propasti', description: 'Temnota, co se dívá zpátky.', accent: Color(0xFF6A0DAD), crystalPrice: 250),
+  CosmeticShopItem(id: 'frame_celestial', category: CosmeticCategory.frame, name: 'Nebeský rám', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFFFFD700), isPremiumOnly: true),
+  // ----- SKINY ZÁKLADNÍHO ÚTOKU -----
+  CosmeticShopItem(id: 'skin_frost', category: CosmeticCategory.attackSkin, name: 'Mrazivý úder', description: 'Každý zásah zanechá jinovatku.', accent: Color(0xFF81D4FA), goldPrice: 1000),
+  CosmeticShopItem(id: 'skin_venom', category: CosmeticCategory.attackSkin, name: 'Jedovaté ostří', description: 'Zelený jed kane z každého úderu.', accent: Color(0xFF8BC34A), goldPrice: 2500),
+  CosmeticShopItem(id: 'skin_storm', category: CosmeticCategory.attackSkin, name: 'Bouřkový zásah', description: 'Blesky praskají při každém útoku.', accent: Color(0xFF00BCD4), crystalPrice: 50),
+  CosmeticShopItem(id: 'skin_shadow', category: CosmeticCategory.attackSkin, name: 'Stínový řez', description: 'Útok se na okamžik rozpustí ve stínu.', accent: Color(0xFF5E35B1), crystalPrice: 90),
+  CosmeticShopItem(id: 'skin_infernal', category: CosmeticCategory.attackSkin, name: 'Pekelný plamen', description: 'Ohnivá exploze při každém zásahu.', accent: Color(0xFFE64A19), crystalPrice: 150),
+  CosmeticShopItem(id: 'skin_radiant', category: CosmeticCategory.attackSkin, name: 'Zářný úder', description: 'Čisté zlaté světlo, oslepující nepřátele.', accent: Color(0xFFFFC107), crystalPrice: 280),
+  CosmeticShopItem(id: 'skin_cosmic', category: CosmeticCategory.attackSkin, name: 'Kosmický zásah', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFFE91E63), isPremiumOnly: true),
+  // ----- AURY (jen v obchodě, ne přes Battle Pass) -----
+  CosmeticShopItem(id: 'aura_ember', category: CosmeticCategory.aura, name: 'Aura žhavých uhlíků', description: 'Teplá oranžová záře kolem portrétu v boji.', accent: Color(0xFFFF7043), goldPrice: 1200),
+  CosmeticShopItem(id: 'aura_frost', category: CosmeticCategory.aura, name: 'Aura mrazu', description: 'Chladná modrá záře, jemně se chvěje.', accent: Color(0xFF4FC3F7), goldPrice: 1200),
+  CosmeticShopItem(id: 'aura_verdant', category: CosmeticCategory.aura, name: 'Aura divočiny', description: 'Zelenkavý přírodní odlesk.', accent: Color(0xFF66BB6A), goldPrice: 3000, crystalPrice: 15),
+  CosmeticShopItem(id: 'aura_arcane', category: CosmeticCategory.aura, name: 'Arkánová aura', description: 'Fialová záře plná potlačené magie.', accent: Color(0xFF9575CD), crystalPrice: 70),
+  CosmeticShopItem(id: 'aura_crimson', category: CosmeticCategory.aura, name: 'Karmínová aura', description: 'Sytě rudá, pulzuje jako tlukoucí srdce.', accent: Color(0xFFD32F2F), crystalPrice: 140),
+  CosmeticShopItem(id: 'aura_golden', category: CosmeticCategory.aura, name: 'Zlatá aura', description: 'Zářivě zlatá, viditelná z dálky.', accent: Color(0xFFFFD54F), crystalPrice: 260),
+  CosmeticShopItem(id: 'aura_void', category: CosmeticCategory.aura, name: 'Aura Propasti', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFF4A148C), isPremiumOnly: true),
+];
