@@ -381,7 +381,12 @@ class _SpellFxPainter extends CustomPainter {
   final SpellFxKind kind;
   final List<_BurstShard> shards; // sdíleno s RelicBurstPainter (jen úlomky letící ven)
   final List<Offset> wisps; // náhodné směrové "semínko" pro kouř/duše, -1..1 v obou osách
-  _SpellFxPainter({required this.t, required this.kind, required this.shards, required this.wisps});
+  // Nasazený skin základního útoku (viz kCosmeticShopCatalog/equippedAttackSkin) může
+  // přebarvit generický archetyp efekt na vlastní paletu - "reskin" existující animace místo
+  // druhého efektu navrch. Null = použije se výchozí primary/secondary dané specializace.
+  final Color? skinPrimary;
+  final Color? skinSecondary;
+  _SpellFxPainter({required this.t, required this.kind, required this.shards, required this.wisps, this.skinPrimary, this.skinSecondary});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -403,9 +408,10 @@ class _SpellFxPainter extends CustomPainter {
         break;
       default:
         // Zbylých ~30 specializací jede přes generický archetyp systém (viz _SpellFxSpec výš) -
-        // společný tvarový motiv přebarvený podle primary/secondary dané specializace.
+        // společný tvarový motiv přebarvený podle primary/secondary dané specializace (nebo
+        // podle nasazeného skinu útoku, pokud hráč nějaký má - viz skinPrimary/skinSecondary).
         if (spec?.archetype != null) {
-          _paintArchetype(canvas, size, spec!.archetype!, spec.primary, spec.secondary, epic);
+          _paintArchetype(canvas, size, spec!.archetype!, skinPrimary ?? spec.primary, skinSecondary ?? spec.secondary, epic);
         }
     }
     _paintFilmGrain(canvas, size, epic);
@@ -864,11 +870,17 @@ class _SpellFxPainter extends CustomPainter {
     if (fade <= 0.02) return;
     final impactT = (t / 0.22).clamp(0.0, 1.0);
     if (impactT < 1.0) {
-      canvas.drawCircle(ground, size.shortestSide * 0.3 * (1 - impactT), Paint()..color = secondary.withOpacity((1 - impactT) * 0.5));
+      canvas.drawCircle(ground, size.shortestSide * (epic ? 0.4 : 0.3) * (1 - impactT), Paint()..color = secondary.withOpacity((1 - impactT) * 0.5));
     }
-    final ringR = size.shortestSide * (0.06 + 0.55 * eased);
-    canvas.drawOval(Rect.fromCenter(center: ground, width: ringR * 2, height: ringR * 0.5), _glow(primary, fade * 0.5, 5, style: PaintingStyle.stroke, strokeWidth: 5));
-    canvas.drawOval(Rect.fromCenter(center: ground, width: ringR * 2, height: ringR * 0.5), Paint()..style = PaintingStyle.stroke..strokeWidth = 3 * (1 - eased * 0.5)..color = primary.withOpacity(fade * 0.85));
+    final ringR = size.shortestSide * ((epic ? 0.08 : 0.06) + (epic ? 0.72 : 0.55) * eased);
+    canvas.drawOval(Rect.fromCenter(center: ground, width: ringR * 2, height: ringR * 0.5), _glow(primary, fade * 0.5, epic ? 7 : 5, style: PaintingStyle.stroke, strokeWidth: epic ? 7 : 5));
+    canvas.drawOval(Rect.fromCenter(center: ground, width: ringR * 2, height: ringR * 0.5), Paint()..style = PaintingStyle.stroke..strokeWidth = (epic ? 4.5 : 3) * (1 - eased * 0.5)..color = primary.withOpacity(fade * 0.85));
+    // Druhý, zpožděný prstenec - jen epic, dojem dvojitého otřesu jako u epických DK/holy efektů.
+    if (epic) {
+      final ring2P = ((t - 0.15) / 0.85).clamp(0.0, 1.0);
+      final ring2R = size.shortestSide * 0.45 * Curves.easeOutCubic.transform(ring2P);
+      canvas.drawOval(Rect.fromCenter(center: ground, width: ring2R * 2, height: ring2R * 0.5), Paint()..style = PaintingStyle.stroke..strokeWidth = 2 * (1 - ring2P)..color = secondary.withOpacity((1 - ring2P) * 0.6));
+    }
     for (int i = 0; i < (epic ? 6 : 4); i++) {
       final rnd = Random(i * 71 + 5);
       final dir = rnd.nextBool() ? 1 : -1;
@@ -878,7 +890,7 @@ class _SpellFxPainter extends CustomPainter {
       canvas.drawLine(ground, Offset(endX, jagY), Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = secondary.withOpacity(fade * 0.6));
     }
     for (final s in shards) {
-      final dist = s.maxDist * 0.6 * eased;
+      final dist = s.maxDist * (epic ? 0.75 : 0.6) * eased;
       final pos = ground + Offset(cos(s.angle) * dist, sin(s.angle).abs() * -dist * 0.8);
       final opacity = (1 - eased).clamp(0.0, 1.0) * fade;
       if (opacity <= 0.02) continue;
@@ -897,23 +909,36 @@ class _SpellFxPainter extends CustomPainter {
     final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
     if (fade <= 0.02) return;
     final flicker = (sin(t * pi * (epic ? 14 : 10)).abs());
-    final boltPath = Path()..moveTo(center.dx, 0);
     final rnd = Random(kind.index);
-    double y = 0;
-    double x = center.dx;
-    while (y < center.dy) {
-      y += size.height * 0.12;
-      x += (rnd.nextDouble() - 0.5) * size.width * 0.12;
-      boltPath.lineTo(x, y);
+    Path buildBolt(double startX) {
+      final path = Path()..moveTo(startX, 0);
+      double y = 0;
+      double x = startX;
+      while (y < center.dy) {
+        y += size.height * 0.12;
+        x += (rnd.nextDouble() - 0.5) * size.width * 0.12;
+        path.lineTo(x, y);
+      }
+      return path;
     }
-    canvas.drawPath(boltPath, Paint()..style = PaintingStyle.stroke..strokeWidth = 6..color = primary.withOpacity(fade * flicker * 0.5)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
-    canvas.drawPath(boltPath, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = secondary.withOpacity(fade * flicker * 0.9));
+    final boltPath = buildBolt(center.dx);
+    // Epic verze (Valhala Válečník, Stormblade) - silnější hlavní paprsek + druhá VĚTVENÁ
+    // odbočka uprostřed dráhy, ať to vypadá jako skutečný epický blesk, ne jen víc jiskřiček
+    // kolem stejně tenkého paprsku.
+    canvas.drawPath(boltPath, Paint()..style = PaintingStyle.stroke..strokeWidth = (epic ? 9 : 6)..color = primary.withOpacity(fade * flicker * 0.5)..maskFilter = MaskFilter.blur(BlurStyle.normal, epic ? 6 : 4));
+    canvas.drawPath(boltPath, Paint()..style = PaintingStyle.stroke..strokeWidth = (epic ? 3 : 2)..color = secondary.withOpacity(fade * flicker * 0.9));
+    if (epic) {
+      final forkBolt = buildBolt(center.dx + size.width * 0.14);
+      canvas.drawPath(forkBolt, Paint()..style = PaintingStyle.stroke..strokeWidth = 5..color = primary.withOpacity(fade * flicker * 0.32)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
+      canvas.drawPath(forkBolt, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6..color = secondary.withOpacity(fade * flicker * 0.6));
+    }
     for (int i = 0; i < (epic ? 8 : 6); i++) {
       final a = (i / (epic ? 8 : 6)) * 2 * pi;
       final len = size.shortestSide * 0.22 * Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
       canvas.drawLine(center, center + Offset(cos(a), sin(a)) * len, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6..color = secondary.withOpacity(fade * flicker * 0.7));
     }
-    canvas.drawCircle(center, size.shortestSide * (0.05 + 0.05 * flicker), _glow(secondary, fade * flicker * 0.6, 6));
+    canvas.drawCircle(center, size.shortestSide * (0.05 + 0.05 * flicker) * (epic ? 1.4 : 1.0), _glow(secondary, fade * flicker * 0.6, epic ? 8 : 6));
+    if (epic) canvas.drawCircle(center, size.shortestSide * 0.03 * flicker, Paint()..color = Colors.white.withOpacity(fade * flicker * 0.8));
   }
 
   // Stínové vsátí: dušičky implodují do temného portálu (kruh s prstencem), krátký záblesk a
@@ -963,21 +988,39 @@ class _SpellFxPainter extends CustomPainter {
     final fade = (1 - ((t - 0.4) / 0.6).clamp(0.0, 1.0));
     if (fade <= 0.02) return;
     if (epic) {
-      final beamW = size.width * 0.1 * eased;
+      final beamW = size.width * 0.13 * eased;
       final beamRect = Rect.fromLTRB(center.dx - beamW / 2, 0, center.dx + beamW / 2, center.dy);
-      canvas.drawRect(beamRect, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [primary.withOpacity(0), secondary.withOpacity(fade * 0.5)]).createShader(beamRect));
+      canvas.drawRect(beamRect, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [primary.withOpacity(0), secondary.withOpacity(fade * 0.55)]).createShader(beamRect));
+      // Měkká křížová záře v momentu vrcholu - jen epické tiery (Boží soud/Retributor/Kruciáta/
+      // Lightbearer), ať se skutečně pozná rozdíl proti tier 15/40.
+      final crossLen = size.shortestSide * 0.32 * eased;
+      canvas.drawLine(center - Offset(crossLen, 0), center + Offset(crossLen, 0), Paint()..strokeWidth = 2.5..color = secondary.withOpacity(fade * 0.4)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
+      canvas.drawLine(center - Offset(0, crossLen), center + Offset(0, crossLen), Paint()..strokeWidth = 2.5..color = secondary.withOpacity(fade * 0.4)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
     }
-    final glowRadius = size.shortestSide * (0.10 + 0.22 * eased);
-    canvas.drawCircle(center, glowRadius, Paint()..shader = RadialGradient(colors: [primary.withOpacity(fade * 0.55), secondary.withOpacity(0)]).createShader(Rect.fromCircle(center: center, radius: glowRadius)));
+    final glowRadius = size.shortestSide * ((epic ? 0.13 : 0.10) + (epic ? 0.28 : 0.22) * eased);
+    canvas.drawCircle(center, glowRadius, Paint()..shader = RadialGradient(colors: [primary.withOpacity(fade * (epic ? 0.65 : 0.55)), secondary.withOpacity(0)]).createShader(Rect.fromCircle(center: center, radius: glowRadius)));
     canvas.save();
     canvas.translate(center.dx, center.dy);
     canvas.rotate(eased * pi * 0.8);
-    final haloR = size.shortestSide * 0.14;
+    final haloR = size.shortestSide * (epic ? 0.18 : 0.14);
     for (int i = 0; i < 6; i++) {
       final a0 = i * (pi / 3);
       canvas.drawArc(Rect.fromCircle(center: Offset.zero, radius: haloR), a0, pi / 5, false, Paint()..style = PaintingStyle.stroke..strokeWidth = 2.2..color = secondary.withOpacity(fade * 0.85));
     }
     canvas.restore();
+    // Druhé, vnější halo - opačný směr otáčení, jen epic - dává to hloubku, stejný trik jako
+    // vnější/vnitřní hexagram u DK efektů.
+    if (epic) {
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(-eased * pi * 0.5);
+      final outerR = size.shortestSide * 0.26;
+      for (int i = 0; i < 8; i++) {
+        final a0 = i * (pi / 4);
+        canvas.drawArc(Rect.fromCircle(center: Offset.zero, radius: outerR), a0, pi / 8, false, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.4..color = primary.withOpacity(fade * 0.5));
+      }
+      canvas.restore();
+    }
     for (final w in wisps) {
       final dy = -size.shortestSide * 0.3 * eased * (0.5 + w.dy.abs());
       final pos = center + Offset(w.dx * 18 * eased, dy);
@@ -1031,17 +1074,27 @@ class _SpellFxPainter extends CustomPainter {
       if (p <= 0) return;
       final eased = Curves.easeOutCubic.transform(p);
       final r = size.shortestSide * maxR * eased;
-      canvas.drawCircle(center, r, Paint()..style = PaintingStyle.stroke..strokeWidth = 3 * (1 - eased * 0.7)..color = primary.withOpacity((1 - eased) * 0.8 * opacityMul));
+      canvas.drawCircle(center, r, Paint()..style = PaintingStyle.stroke..strokeWidth = (epic ? 4 : 3) * (1 - eased * 0.7)..color = primary.withOpacity((1 - eased) * 0.8 * opacityMul));
     }
-    ring(0.0, 0.4, 1.0);
-    ring(0.12, 0.32, 0.7);
-    if (epic) ring(0.24, 0.5, 0.5);
-    canvas.drawCircle(center, size.shortestSide * 0.06 * (1 - (t / 0.3).clamp(0.0, 1.0)), _glow(secondary, fade * 0.6, 4));
+    ring(0.0, epic ? 0.48 : 0.4, 1.0);
+    ring(0.12, epic ? 0.38 : 0.32, 0.7);
+    if (epic) { ring(0.24, 0.58, 0.5); ring(0.34, 0.68, 0.3); }
+    canvas.drawCircle(center, size.shortestSide * (epic ? 0.09 : 0.06) * (1 - (t / 0.3).clamp(0.0, 1.0)), _glow(secondary, fade * 0.6, epic ? 6 : 4));
+    // Radiální paprsky vystřelující z jádra - jen epic (Velmistr/Osvícený), ať "chi exploze"
+    // vypadá jako skutečný vrchol síly, ne stejný úder jako na tier 15.
+    if (epic) {
+      for (int i = 0; i < 8; i++) {
+        final a = (i / 8) * 2 * pi;
+        final len = size.shortestSide * 0.24 * Curves.easeOutCubic.transform((t / 0.4).clamp(0.0, 1.0));
+        final fadeRay = (1 - ((t - 0.25) / 0.4).clamp(0.0, 1.0)).clamp(0.0, 1.0);
+        canvas.drawLine(center, center + Offset(cos(a), sin(a)) * len, Paint()..strokeWidth = 1.6..color = secondary.withOpacity(fadeRay * 0.6));
+      }
+    }
     for (final w in wisps) {
       final a = w.dx * pi;
-      final dist = size.shortestSide * 0.22 * t;
+      final dist = size.shortestSide * (epic ? 0.28 : 0.22) * t;
       final pos = center + Offset(cos(a), sin(a)) * dist;
-      canvas.drawCircle(pos, 2, Paint()..color = secondary.withOpacity(fade * 0.6));
+      canvas.drawCircle(pos, epic ? 2.6 : 2, Paint()..color = secondary.withOpacity(fade * 0.6));
     }
   }
 
@@ -1076,37 +1129,79 @@ class _SpellFxPainter extends CustomPainter {
   // s _paintCurseExplosion) - kompaktnější verze pro Necromancer/DeathReaper linii.
   void _paintBoneDecayGeneric(Canvas canvas, Size size, Color primary, Color secondary, bool epic) {
     final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
-    final stampT = (t / 0.3).clamp(0.0, 1.0);
+    final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
+    final stampT = (t / 0.32).clamp(0.0, 1.0);
     final scale = Curves.easeOutBack.transform(stampT);
     final fade = (1 - ((t - 0.45) / 0.55).clamp(0.0, 1.0));
     if (fade <= 0.02) return;
-    canvas.drawCircle(center, size.shortestSide * 0.14 * scale, _glow(primary, fade * 0.4, 5));
-    for (int i = 0; i < 3; i++) {
+    final r = size.shortestSide * (epic ? 0.19 : 0.14);
+
+    // Krátká rázová vlna při impactu - u epické verze (DK Death Reaper, Nekromant tier 75) je
+    // silnější a delší, ať se pozná rozdíl od nižších tierů.
+    final shockT = (t / (epic ? 0.34 : 0.26)).clamp(0.0, 1.0);
+    if (shockT < 1.0) {
+      final shockR = r * (0.6 + shockT * 1.6);
+      canvas.drawCircle(center, shockR, _glow(primary, (1 - shockT) * (epic ? 0.55 : 0.4), 6, style: PaintingStyle.stroke, strokeWidth: (epic ? 4 : 3) * (1 - shockT) + 1));
+    }
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.scale(scale <= 0 ? 0.01 : scale);
+    // Vnější prstenec - rotuje pomalu, tlumenější, dává vizuálu hloubku (stejný trik jako u
+    // Prokletého úderu).
+    canvas.save();
+    canvas.rotate(-eased * pi * 0.3);
+    canvas.drawCircle(Offset.zero, r * 1.3, _glow(primary, fade * 0.3, 4, style: PaintingStyle.stroke, strokeWidth: 1.5));
+    canvas.restore();
+    // Vnitřní jádro - ostřejší, se září.
+    canvas.rotate(eased * pi * 0.4);
+    canvas.drawCircle(Offset.zero, r, _glow(primary, fade * 0.4, 5));
+    canvas.drawCircle(Offset.zero, r, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = primary.withOpacity(fade * 0.85));
+    canvas.drawCircle(Offset.zero, r * 0.14, Paint()..color = Color.lerp(secondary, Colors.white, .3)!.withOpacity(fade * 0.9));
+    canvas.restore();
+
+    // 5 klikatých trhlin (dřív 3) s vedlejšími výhonky a září, stejný jazyk jako Prokletý úder.
+    final crackCount = epic ? 6 : 5;
+    for (int i = 0; i < crackCount; i++) {
       final rnd = Random(i * 61 + 9);
-      final a = (i / 3) * 2 * pi + 0.4;
-      final len = size.shortestSide * 0.22 * scale;
+      final a = (i / crackCount) * 2 * pi + 0.4;
+      final len = size.shortestSide * (epic ? 0.30 : 0.24) * eased;
       final jag = Offset((rnd.nextDouble() - 0.5) * 10, (rnd.nextDouble() - 0.5) * 10);
       final mid = center + Offset(cos(a), sin(a)) * len * 0.5 + jag;
       final end = center + Offset(cos(a), sin(a)) * len;
-      canvas.drawPath(Path()..moveTo(center.dx, center.dy)..lineTo(mid.dx, mid.dy)..lineTo(end.dx, end.dy), Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6..color = secondary.withOpacity(fade * 0.6));
+      final path = Path()..moveTo(center.dx, center.dy)..lineTo(mid.dx, mid.dy)..lineTo(end.dx, end.dy);
+      canvas.drawPath(path, _glow(primary, fade * 0.45, 3, style: PaintingStyle.stroke, strokeWidth: 2.5));
+      canvas.drawPath(path, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.4..color = secondary.withOpacity(fade * 0.75));
+      final branchA = a + (rnd.nextDouble() - 0.5) * 1.2;
+      final branchEnd = mid + Offset(cos(branchA), sin(branchA)) * len * 0.3;
+      canvas.drawLine(mid, branchEnd, Paint()..style = PaintingStyle.stroke..strokeWidth = 0.9..color = secondary.withOpacity(fade * 0.45));
     }
+
+    // Kostěné úlomky - teď se září a "duchem" (motion-blur stopa) o kousek pozadu, stejně jako
+    // v Explozi prokletí, místo jen ploché barvy bez efektu.
     for (final s in shards) {
-      final eased = Curves.easeOutCubic.transform(t.clamp(0.0, 1.0));
-      final dist = s.maxDist * 0.7 * eased;
+      final dist = s.maxDist * (epic ? 0.8 : 0.65) * eased;
       final pos = center + Offset(cos(s.angle), sin(s.angle)) * dist;
       final opacity = (1 - eased).clamp(0.0, 1.0);
       if (opacity <= 0.02) continue;
+      final ghostDist = dist * 0.85;
+      final ghostPos = center + Offset(cos(s.angle), sin(s.angle)) * ghostDist;
+      canvas.drawCircle(ghostPos, s.size * 0.35, Paint()..color = primary.withOpacity(opacity * 0.18));
       canvas.save();
       canvas.translate(pos.dx, pos.dy);
       canvas.rotate(s.spin * eased * pi * 2 * s.spinDir);
       final path = Path()..moveTo(0, -s.size * 0.8)..lineTo(s.size * 0.3, -s.size * 0.05)..lineTo(s.size * 0.45, s.size * 0.45)..lineTo(0, s.size * 0.25)..lineTo(-s.size * 0.45, s.size * 0.45)..lineTo(-s.size * 0.3, -s.size * 0.05)..close();
-      canvas.drawPath(path, Paint()..color = primary.withOpacity(opacity * 0.85));
+      canvas.drawPath(path, _glow(primary, opacity * 0.35, 2));
+      canvas.drawPath(path, Paint()..color = primary.withOpacity(opacity * 0.9));
       canvas.restore();
     }
+    // Stoupající zářivé smítko rozkladu - dvouvrstvé (glow + jádro), místo jedné ploché tečky.
     for (final w in wisps) {
-      final dy = -size.shortestSide * 0.22 * t * (0.6 + w.dx.abs());
-      final pos = center + Offset(w.dx * 16 * t, dy);
-      canvas.drawCircle(pos, 3, Paint()..color = primary.withOpacity(fade * 0.3));
+      final dy = -size.shortestSide * 0.24 * eased * (0.6 + w.dx.abs());
+      final dx = w.dx * 18 * eased;
+      final pos = center + Offset(dx, dy);
+      canvas.drawCircle(pos, 4.5 * (1 - eased * 0.3), _glow(primary, fade * 0.22, 4));
+      canvas.drawCircle(pos, 2.6 * (1 - eased * 0.4), Paint()..color = Color.lerp(primary, secondary, .4)!.withOpacity(fade * 0.5));
     }
   }
 
@@ -1120,7 +1215,11 @@ class _SpellFxPainter extends CustomPainter {
 class SpellFxOverlay extends StatefulWidget {
   final SpellFxKind kind;
   final VoidCallback onDone;
-  const SpellFxOverlay({super.key, required this.kind, required this.onDone});
+  // Barvy nasazeného skinu útoku (viz CombatFxOverlay) - null pokud hráč nemá žádný nasazený,
+  // pak se použije výchozí paleta dané specializace (viz kSpellFxSpec).
+  final Color? skinPrimary;
+  final Color? skinSecondary;
+  const SpellFxOverlay({super.key, required this.kind, required this.onDone, this.skinPrimary, this.skinSecondary});
 
   @override
   State<SpellFxOverlay> createState() => _SpellFxOverlayState();
@@ -1158,7 +1257,7 @@ class _SpellFxOverlayState extends State<SpellFxOverlay> with SingleTickerProvid
     return IgnorePointer(
       child: AnimatedBuilder(
         animation: _c,
-        builder: (_, __) => CustomPaint(size: Size.infinite, painter: _SpellFxPainter(t: _c.value, kind: widget.kind, shards: _shards, wisps: _wisps)),
+        builder: (_, __) => CustomPaint(size: Size.infinite, painter: _SpellFxPainter(t: _c.value, kind: widget.kind, shards: _shards, wisps: _wisps, skinPrimary: widget.skinPrimary, skinSecondary: widget.skinSecondary)),
       ),
     );
   }
@@ -1248,7 +1347,19 @@ class _CombatFxOverlayState extends State<CombatFxOverlay> {
         child: Stack(children: [
           _SlowMoDim(state: widget.state),
           ...events.map((e) => _CombatFxText(event: e, onDone: () => widget.state.removeFx(e.id))),
-          ...newSpellFxEvents.map((e) => SpellFxOverlay(key: ValueKey('spellfx_${e.id}'), kind: e.spellFxKind!, onDone: () { if (mounted) setState(() {}); })),
+          ...newSpellFxEvents.map((e) {
+            // Skin útoku smí přebarvit jen ODCHOZÍ útoky hrdiny (FxSide.enemy - viz konvence
+            // v _pushFx: side popisuje, na čí kartě se efekt zobrazuje, ne kdo ho způsobil).
+            // FxSide.hero jsou věci, co se DĚJÍ hrdinovi (schopnosti bosse) - ty skin nikdy
+            // nepřebarvuje, i kdyby náhodou sdílely stejný SpellFxKind zápis.
+            Color? skinPrimary, skinSecondary;
+            if (widget.side == FxSide.enemy && widget.state.equippedAttackSkin != 'default') {
+              final accent = attackSkinAccent(widget.state.equippedAttackSkin);
+              skinPrimary = accent;
+              skinSecondary = Color.lerp(accent, Colors.white, .45);
+            }
+            return SpellFxOverlay(key: ValueKey('spellfx_${e.id}'), kind: e.spellFxKind!, onDone: () { if (mounted) setState(() {}); }, skinPrimary: skinPrimary, skinSecondary: skinSecondary);
+          }),
           ...newBurstEvents.map((e) => RelicBurstOverlay(key: ValueKey('burst_${e.id}'), kind: e.burstKind!, onDone: () { if (mounted) setState(() {}); })),
         ]),
       ),
@@ -2480,7 +2591,9 @@ class LairScreen extends StatelessWidget {
                           children: [
                             if (state.portraitCombatMode) ...[
                               if (specializationPortraitFor(state.heroClass, state.specialization) != null)
-                                ClipRRect(
+                                AuraGlowWrapper(
+                                  color: state.equippedAuraColor,
+                                  child: ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
                                   child: SizedBox(
                                     width: double.infinity,
@@ -2501,6 +2614,7 @@ class LairScreen extends StatelessWidget {
                                       ],
                                     ),
                                   ),
+                                )
                                 )
                               else
                                 Center(
@@ -2661,6 +2775,7 @@ class LairScreen extends StatelessWidget {
                         disabled: state.lairAbilityUsed || state.currentResourceValue < state.ability1Cost,
                         overlayText: state.lairAbilityUsed ? tr('Použito', 'Used') : null,
                         onPressed: state.useLairActiveAbility,
+                        description: state.tier1NumericPreview(),
                       )
                     : lockedAbilitySlot(state, spellVisualTier1(state.heroClass), 15),
                 tier2: state.hasUltimateClass
@@ -2670,6 +2785,7 @@ class LairScreen extends StatelessWidget {
                         disabled: state.lairSecondAbilityUsed || state.currentResourceValue < state.ability2Cost,
                         overlayText: state.lairSecondAbilityUsed ? tr('Použito', 'Used') : null,
                         onPressed: state.useLairSecondAbility,
+                        description: state.tier2NumericPreview(),
                       )
                     : lockedAbilitySlot(state, spellVisualTier2(state.heroClass), 40),
                 tier3: state.hasGodClass
@@ -2679,6 +2795,7 @@ class LairScreen extends StatelessWidget {
                         disabled: state.lairThirdAbilityUsed || state.currentResourceValue < state.ability3Cost,
                         overlayText: state.lairThirdAbilityUsed ? tr('Použito', 'Used') : null,
                         onPressed: state.useLairThirdAbility,
+                        description: state.tier3NumericPreview(),
                       )
                     : lockedAbilitySlot(state, spellVisualTier3(state.heroClass), 75),
                 tier4: state.hasRank100Class
@@ -2924,6 +3041,7 @@ class EndlessScaleScreen extends StatelessWidget {
                         disabled: state.endlessScaleAbilityUsed || state.currentResourceValue < state.ability1Cost,
                         overlayText: state.endlessScaleAbilityUsed ? tr('Použito', 'Used') : null,
                         onPressed: state.useEndlessScaleActiveAbility,
+                        description: state.tier1NumericPreview(),
                       )
                     : lockedAbilitySlot(state, spellVisualTier1(state.heroClass), 15),
                 tier2: state.hasUltimateClass
@@ -2933,6 +3051,7 @@ class EndlessScaleScreen extends StatelessWidget {
                         disabled: state.endlessScaleSecondAbilityUsed || state.currentResourceValue < state.ability2Cost,
                         overlayText: state.endlessScaleSecondAbilityUsed ? tr('Použito', 'Used') : null,
                         onPressed: state.useEndlessScaleSecondAbility,
+                        description: state.tier2NumericPreview(),
                       )
                     : lockedAbilitySlot(state, spellVisualTier2(state.heroClass), 40),
                 tier3: state.hasGodClass
@@ -2942,6 +3061,7 @@ class EndlessScaleScreen extends StatelessWidget {
                         disabled: state.endlessScaleThirdAbilityUsed || state.currentResourceValue < state.ability3Cost,
                         overlayText: state.endlessScaleThirdAbilityUsed ? tr('Použito', 'Used') : null,
                         onPressed: state.useEndlessScaleThirdAbility,
+                        description: state.tier3NumericPreview(),
                       )
                     : lockedAbilitySlot(state, spellVisualTier3(state.heroClass), 75),
                 tier4: state.hasRank100Class
@@ -3157,6 +3277,7 @@ class WorldBossScreen extends StatelessWidget {
                         disabled: s.worldBossAbilityUsed || s.currentResourceValue < s.ability1Cost,
                         overlayText: s.worldBossAbilityUsed ? tr('Použito', 'Used') : null,
                         onPressed: s.useWorldBossActiveAbility,
+                        description: s.tier1NumericPreview(),
                       )
                     : lockedAbilitySlot(s, spellVisualTier1(s.heroClass), 15),
                 tier2: s.hasUltimateClass
@@ -3166,6 +3287,7 @@ class WorldBossScreen extends StatelessWidget {
                         disabled: s.worldBossSecondAbilityUsed || s.currentResourceValue < s.ability2Cost,
                         overlayText: s.worldBossSecondAbilityUsed ? tr('Použito', 'Used') : null,
                         onPressed: s.useWorldBossSecondAbility,
+                        description: s.tier2NumericPreview(),
                       )
                     : lockedAbilitySlot(s, spellVisualTier2(s.heroClass), 40),
                 tier3: s.hasGodClass
@@ -3175,6 +3297,7 @@ class WorldBossScreen extends StatelessWidget {
                         disabled: s.worldBossThirdAbilityUsed || s.currentResourceValue < s.ability3Cost,
                         overlayText: s.worldBossThirdAbilityUsed ? tr('Použito', 'Used') : null,
                         onPressed: s.useWorldBossThirdAbility,
+                        description: s.tier3NumericPreview(),
                       )
                     : lockedAbilitySlot(s, spellVisualTier3(s.heroClass), 75),
                 tier4: s.hasRank100Class
@@ -3395,33 +3518,26 @@ class _RiftShatterPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    // Celoplošný bílo-rudý záblesk.
-    canvas.drawRect(Offset.zero & size, Paint()..color = Color.lerp(const Color(0xFFFF3D3D), Colors.white, 0.3)!.withOpacity(fade * 0.35));
-    // Prasklinové paprsky vystřelující z centra ven, seedované, ať to nemrká náhodně.
-    final rnd = Random(7);
-    for (int i = 0; i < 10; i++) {
-      final angle = rnd.nextDouble() * 2 * pi;
-      final len = (size.shortestSide * 0.5) * (0.5 + rnd.nextDouble() * 0.5) * fade;
-      final path = Path()..moveTo(center.dx, center.dy);
-      double x = center.dx, y = center.dy;
-      final segCount = 4;
-      for (int s = 1; s <= segCount; s++) {
-        final segLen = len / segCount;
-        final jitter = (rnd.nextDouble() - 0.5) * 0.6;
-        x += cos(angle + jitter) * segLen;
-        y += sin(angle + jitter) * segLen;
-        path.lineTo(x, y);
-      }
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = Colors.white.withOpacity(fade * 0.8)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.6
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
-      );
-    }
+    final center = Offset(size.width / 2, size.height * 0.42); // sedí zhruba na prasklinu v rift_bg.png
+    // Pozadí (rift_bg.png) už má vlastní namalovanou prasklinu s bleskem - tenhle efekt ji dřív
+    // duplikoval vlastními bílými čarami přes celou obrazovku, což bylo rušivé a nesedělo to na
+    // sebe. Místo nové geometrie teď jen "rozezvučí" tu existující prasklinu - jeden měkký
+    // radiální pulz světla z jejího středu, žádné nové linky.
+    canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFFB9A6FF).withOpacity(fade * 0.14));
+    canvas.drawCircle(
+      center, size.shortestSide * (0.15 + 0.35 * (1 - fade)),
+      Paint()
+        ..color = Colors.white.withOpacity(fade * 0.5)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size.shortestSide * 0.12),
+    );
+    canvas.drawCircle(
+      center, size.shortestSide * (0.08 + 0.5 * (1 - fade)),
+      Paint()
+        ..color = const Color(0xFF8A6CFF).withOpacity(fade * 0.35)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2 + 3 * fade
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size.shortestSide * 0.03),
+    );
   }
 
   @override
@@ -3687,6 +3803,7 @@ class _RiftScreenState extends State<RiftScreen> {
                           disabled: state.isTreasureGoblinFight || state.riftAbilityUsed || state.currentResourceValue < state.ability1Cost,
                           overlayText: state.riftAbilityUsed ? tr('Použito', 'Used') : null,
                           onPressed: state.useRiftActiveAbility,
+                          description: state.tier1NumericPreview(),
                         )
                       : lockedAbilitySlot(state, spellVisualTier1(state.heroClass), 15),
                   tier2: state.hasUltimateClass
@@ -3696,6 +3813,7 @@ class _RiftScreenState extends State<RiftScreen> {
                           disabled: state.isTreasureGoblinFight || state.riftSecondAbilityUsed || state.currentResourceValue < state.ability2Cost,
                           overlayText: state.riftSecondAbilityUsed ? tr('Použito', 'Used') : null,
                           onPressed: state.useRiftSecondAbility,
+                          description: state.tier2NumericPreview(),
                         )
                       : lockedAbilitySlot(state, spellVisualTier2(state.heroClass), 40),
                   tier3: state.hasGodClass
@@ -3705,6 +3823,7 @@ class _RiftScreenState extends State<RiftScreen> {
                           disabled: state.isTreasureGoblinFight || state.riftThirdAbilityUsed || state.currentResourceValue < state.ability3Cost,
                           overlayText: state.riftThirdAbilityUsed ? tr('Použito', 'Used') : null,
                           onPressed: state.useRiftThirdAbility,
+                          description: state.tier3NumericPreview(),
                         )
                       : lockedAbilitySlot(state, spellVisualTier3(state.heroClass), 75),
                   tier4: state.hasRank100Class
@@ -4425,6 +4544,7 @@ class TowerScreen extends StatelessWidget {
               disabled: state.activeAbilityCooldown > 0 || state.currentResourceValue < state.ability1Cost,
               overlayText: state.activeAbilityCooldown > 0 ? '${state.activeAbilityCooldown}' : null,
               onPressed: state.useActiveAbility,
+              description: state.tier1NumericPreview(),
             )
           : lockedAbilitySlot(state, spellVisualTier1(state.heroClass), 15);
       final tier2Btn = state.hasUltimateClass
@@ -4434,6 +4554,7 @@ class TowerScreen extends StatelessWidget {
               disabled: state.secondAbilityCooldown > 0 || state.currentResourceValue < state.ability2Cost,
               overlayText: state.secondAbilityCooldown > 0 ? '${state.secondAbilityCooldown}' : null,
               onPressed: state.useSecondAbility,
+              description: state.tier2NumericPreview(),
             )
           : lockedAbilitySlot(state, spellVisualTier2(state.heroClass), 40);
       final tier3Btn = state.hasGodClass
@@ -4443,6 +4564,7 @@ class TowerScreen extends StatelessWidget {
               disabled: state.thirdAbilityCooldown > 0 || state.currentResourceValue < state.ability3Cost,
               overlayText: state.thirdAbilityCooldown > 0 ? '${state.thirdAbilityCooldown}' : null,
               onPressed: state.useThirdAbility,
+              description: state.tier3NumericPreview(),
             )
           : lockedAbilitySlot(state, spellVisualTier3(state.heroClass), 75);
       final tier4Btn = state.hasRank100Class
@@ -4579,7 +4701,9 @@ class TowerScreen extends StatelessWidget {
                               // portrét soutěží o pozornost s HP/dmg čísly, takže nic víc (žádný
                               // zoom navíc, žádné částice - na to je class picker/Profil, viz
                               // PortraitLifeMode.full tam).
-                              ClipRRect(
+                              AuraGlowWrapper(
+                                color: state.equippedAuraColor,
+                                child: ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
                                 child: SizedBox(
                                   width: double.infinity,
@@ -4604,6 +4728,7 @@ class TowerScreen extends StatelessWidget {
                                     ],
                                   ),
                                 ),
+                              )
                               )
                             else
                               Center(
@@ -5280,6 +5405,21 @@ class _BattlePassLevelRow extends StatelessWidget {
               if (reward.crystals > 0) BattlePassScreen._currencyChip(FantasyIconType.currencyCrystal, FantasyColors2.arcaneViolet, reward.crystals),
             ],
           ),
+          if (reward.questXpBonusPercent > 0) ...[
+            const SizedBox(height: 5),
+            Tooltip(
+              message: tr('Trvalý bonus, dokud máš Premium - nemusíš nic zvlášť sbírat.', 'Permanent bonus while you have Premium - nothing extra to collect.'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: accent.withOpacity(.18), borderRadius: BorderRadius.circular(20), border: Border.all(color: accent.withOpacity(.6))),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.bolt, size: 11, color: accent),
+                  const SizedBox(width: 2),
+                  Text('+${reward.questXpBonusPercent}% Quest XP', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: accent)),
+                ]),
+              ),
+            ),
+          ],
           const SizedBox(height: 7),
           if (locked)
             const Icon(Icons.lock, size: 16, color: Colors.grey)
@@ -5308,20 +5448,19 @@ class _BattlePassLevelRow extends StatelessWidget {
 class CustomizationScreen extends StatelessWidget {
   const CustomizationScreen({super.key});
 
-  static const List<(String, String, String)> _frames = [
-    ('default', 'Žádný', 'No frame'),
-    ('battlepass_frame', 'Zlatý rám', 'Golden frame'),
-  ];
-  static const List<(String, String, String)> _attackSkins = [
-    ('default', 'Žádný', 'No skin'),
-    ('battlepass_attack_skin', 'Sezónní čepel/aura', 'Season blade/aura'),
-  ];
+  // BP-exkluzivní položky (nedají se koupit, jen Battle Pass) - zvlášť od kCosmeticShopCatalog,
+  // který obsahuje jen to, co jde koupit za zlato/krystaly/reálné peníze.
+  static const List<(String, String, String)> _bpOnlyFrames = [('battlepass_frame', 'Zlatý rám (Battle Pass)', 'Golden frame (Battle Pass)')];
+  static const List<(String, String, String)> _bpOnlyAttackSkins = [('battlepass_attack_skin', 'Sezónní čepel/aura (Battle Pass)', 'Season blade/aura (Battle Pass)')];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(tr('Kosmetika', 'Cosmetics'))),
       body: Consumer<GameState>(builder: (context, state, _) {
+        final shopFrames = kCosmeticShopCatalog.where((c) => c.category == CosmeticCategory.frame).toList();
+        final shopSkins = kCosmeticShopCatalog.where((c) => c.category == CosmeticCategory.attackSkin).toList();
+        final shopAuras = kCosmeticShopCatalog.where((c) => c.category == CosmeticCategory.aura).toList();
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -5329,22 +5468,32 @@ class CustomizationScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Wrap(
               spacing: 12, runSpacing: 12,
-              children: _frames.map((f) {
-                final id = f.$1;
-                final unlocked = state.unlockedFrames.contains(id);
-                final equipped = state.equippedFrame == id;
-                return _cosmeticTile(
-                  label: tr(f.$2, f.$3),
-                  unlocked: unlocked,
-                  equipped: equipped,
-                  accent: const Color(0xFFFFD54F),
-                  preview: EquippedFrameOverlay(
-                    frameId: id,
-                    child: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [FantasyColors.gold.withOpacity(.25), FantasyColors2.obsidian]))),
+              children: [
+                _cosmeticTile(
+                  label: tr('Žádný', 'No frame'), unlocked: true, equipped: state.equippedFrame == 'default', accent: const Color(0xFFFFD54F),
+                  preview: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [FantasyColors.gold.withOpacity(.25), FantasyColors2.obsidian]))),
+                  onTap: () => state.equipFrame('default'),
+                ),
+                for (final f in _bpOnlyFrames)
+                  _cosmeticTile(
+                    label: tr(f.$2, f.$3), unlocked: state.unlockedFrames.contains(f.$1), equipped: state.equippedFrame == f.$1, accent: const Color(0xFFFFD54F), bpOnly: true,
+                    preview: EquippedFrameOverlay(frameId: f.$1, child: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [FantasyColors.gold.withOpacity(.25), FantasyColors2.obsidian])))),
+                    onTap: state.unlockedFrames.contains(f.$1) ? () => state.equipFrame(f.$1) : null,
                   ),
-                  onTap: unlocked ? () => state.equipFrame(id) : null,
-                );
-              }).toList(),
+                for (final c in shopFrames)
+                  _cosmeticTile(
+                    label: c.name, unlocked: state.unlockedFrames.contains(c.id), equipped: state.equippedFrame == c.id, accent: c.accent,
+                    price: c, state: state,
+                    preview: SizedBox(
+                      width: 64, height: 64,
+                      child: Stack(fit: StackFit.expand, children: [
+                        Container(decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [c.accent.withOpacity(.2), FantasyColors2.obsidian]))),
+                        CustomPaint(painter: BattlePassFramePainter(frameId: c.id)),
+                      ]),
+                    ),
+                    onTap: state.unlockedFrames.contains(c.id) ? () => state.equipFrame(c.id) : (c.isPremiumOnly ? null : () => state.buyCosmetic(c.id)),
+                  ),
+              ],
             ),
             const SizedBox(height: 24),
             Text(tr('SKIN ZÁKLADNÍHO ÚTOKU', 'BASIC ATTACK SKIN'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
@@ -5353,27 +5502,54 @@ class CustomizationScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Wrap(
               spacing: 12, runSpacing: 12,
-              children: _attackSkins.map((sDef) {
-                final id = sDef.$1;
-                final unlocked = state.unlockedAttackSkins.contains(id);
-                final equipped = state.equippedAttackSkin == id;
-                return _cosmeticTile(
-                  label: tr(sDef.$2, sDef.$3),
-                  unlocked: unlocked,
-                  equipped: equipped,
-                  accent: const Color(0xFF8B5CF6),
-                  preview: id == 'default'
-                      ? Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, color: FantasyColors2.obsidian))
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(width: 30, height: 60, child: CustomPaint(painter: const AttackSkinIconPainter(physical: true))),
-                            SizedBox(width: 30, height: 60, child: CustomPaint(painter: const AttackSkinIconPainter(physical: false))),
-                          ],
-                        ),
-                  onTap: unlocked ? () => state.equipAttackSkin(id) : null,
-                );
-              }).toList(),
+              children: [
+                _cosmeticTile(
+                  label: tr('Žádný', 'No skin'), unlocked: true, equipped: state.equippedAttackSkin == 'default', accent: const Color(0xFF8B5CF6),
+                  preview: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, color: FantasyColors2.obsidian)),
+                  onTap: () => state.equipAttackSkin('default'),
+                ),
+                for (final s in _bpOnlyAttackSkins)
+                  _cosmeticTile(
+                    label: tr(s.$2, s.$3), unlocked: state.unlockedAttackSkins.contains(s.$1), equipped: state.equippedAttackSkin == s.$1, accent: const Color(0xFF8B5CF6), bpOnly: true,
+                    preview: Row(mainAxisSize: MainAxisSize.min, children: [
+                      SizedBox(width: 30, height: 60, child: CustomPaint(painter: const AttackSkinIconPainter(physical: true))),
+                      SizedBox(width: 30, height: 60, child: CustomPaint(painter: const AttackSkinIconPainter(physical: false))),
+                    ]),
+                    onTap: state.unlockedAttackSkins.contains(s.$1) ? () => state.equipAttackSkin(s.$1) : null,
+                  ),
+                for (final c in shopSkins)
+                  _cosmeticTile(
+                    label: c.name, unlocked: state.unlockedAttackSkins.contains(c.id), equipped: state.equippedAttackSkin == c.id, accent: c.accent,
+                    price: c, state: state,
+                    preview: Row(mainAxisSize: MainAxisSize.min, children: [
+                      SizedBox(width: 30, height: 60, child: CustomPaint(painter: AttackSkinIconPainter(physical: true, skinId: c.id))),
+                      SizedBox(width: 30, height: 60, child: CustomPaint(painter: AttackSkinIconPainter(physical: false, skinId: c.id))),
+                    ]),
+                    onTap: state.unlockedAttackSkins.contains(c.id) ? () => state.equipAttackSkin(c.id) : (c.isPremiumOnly ? null : () => state.buyCosmetic(c.id)),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Text(tr('AURA', 'AURA'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+            const SizedBox(height: 4),
+            Text(tr('Jemná barevná záře kolem portrétu hrdiny v boji (Věž/Lair). Dostupná jen v obchodě.', 'A soft colored glow around the hero portrait in combat (Tower/Lair). Shop-exclusive.'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12, runSpacing: 12,
+              children: [
+                _cosmeticTile(
+                  label: tr('Žádná', 'None'), unlocked: true, equipped: state.equippedAura == 'default', accent: Colors.grey,
+                  preview: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, color: FantasyColors2.obsidian)),
+                  onTap: () => state.equipAura('default'),
+                ),
+                for (final c in shopAuras)
+                  _cosmeticTile(
+                    label: c.name, unlocked: state.unlockedAuras.contains(c.id), equipped: state.equippedAura == c.id, accent: c.accent,
+                    price: c, state: state,
+                    preview: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: c.accent.withOpacity(.7), blurRadius: 16, spreadRadius: 3)], color: c.accent.withOpacity(.35))),
+                    onTap: state.unlockedAuras.contains(c.id) ? () => state.equipAura(c.id) : (c.isPremiumOnly ? null : () => state.buyCosmetic(c.id)),
+                  ),
+              ],
             ),
           ],
         );
@@ -5381,7 +5557,17 @@ class CustomizationScreen extends StatelessWidget {
     );
   }
 
-  Widget _cosmeticTile({required String label, required bool unlocked, required bool equipped, required Color accent, required Widget preview, required VoidCallback? onTap}) {
+  Widget _cosmeticTile({
+    required String label,
+    required bool unlocked,
+    required bool equipped,
+    required Color accent,
+    required Widget preview,
+    required VoidCallback? onTap,
+    bool bpOnly = false,
+    CosmeticShopItem? price,
+    GameState? state,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -5401,7 +5587,17 @@ class CustomizationScreen extends StatelessWidget {
             const SizedBox(height: 4),
             if (equipped)
               const Icon(Icons.check_circle, size: 16, color: Colors.greenAccent)
-            else if (!unlocked)
+            else if (unlocked)
+              const SizedBox(height: 14)
+            else if (bpOnly)
+              Text(tr('Jen Battle Pass', 'Battle Pass only'), style: const TextStyle(fontSize: 9, color: Colors.grey), textAlign: TextAlign.center)
+            else if (price != null && price.isPremiumOnly)
+              Text(tr('Již brzy 💳', 'Coming soon 💳'), style: const TextStyle(fontSize: 9, color: Colors.grey), textAlign: TextAlign.center)
+            else if (price != null)
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(price.crystalPrice > 0 ? '${price.crystalPrice} 💎' : '${price.goldPrice} 🪙', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: accent)),
+              ])
+            else
               const Icon(Icons.lock, size: 14, color: Colors.grey),
           ],
         ),
@@ -8007,7 +8203,14 @@ class ProfileScreen extends StatelessWidget {
         )).toList(),
       ),
     ),
-    ...s.talents.entries.map((e)=>ListTile(title:Text('${statLabel(e.key)}  ${e.value}',style:const TextStyle(color:FantasyColors.parchment,fontWeight:FontWeight.bold)),trailing:FantasyButton(text:'+',icon:Icons.add,onPressed:s.talentPoints>0?()=>s.addTalent(e.key):null))).toList()
+    ...s.talents.entries.map((e)=>ListTile(
+      title:Text('${statLabel(e.key)}  ${e.value}',style:const TextStyle(color:FantasyColors.parchment,fontWeight:FontWeight.bold)),
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        FantasyButton(text:'+1',onPressed:s.talentPoints>0?()=>s.addTalent(e.key):null),
+        const SizedBox(width: 6),
+        FantasyButton(text:'+10',onPressed:s.talentPoints>0?()=>s.addTalentMulti(e.key, 10):null),
+      ]),
+    )).toList()
   ]));
 
   // ===== ODKAZ NA SPECIALIZAČNÍ RELIC (vlastní obrazovka - 2. tab Arény) =====
@@ -8064,7 +8267,7 @@ class ProfileScreen extends StatelessWidget {
             child: Container(
               width: 44, height: 44,
               decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [FantasyColors.gold.withOpacity(.3), FantasyColors2.obsidian])),
-              child: state.equippedAttackSkin != 'default' ? CustomPaint(painter: AttackSkinIconPainter(physical: state.physAtk >= state.magAtk)) : null,
+              child: state.equippedAttackSkin != 'default' ? CustomPaint(painter: AttackSkinIconPainter(physical: state.physAtk >= state.magAtk, skinId: state.equippedAttackSkin)) : null,
             ),
           ),
           title: Text(tr('Rám a skin útoku', 'Frame and attack skin'), style: const TextStyle(fontWeight: FontWeight.bold)),

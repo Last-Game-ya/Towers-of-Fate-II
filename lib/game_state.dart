@@ -710,6 +710,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         "equippedFrame": equippedFrame,
         "unlockedAttackSkins": unlockedAttackSkins.toList(),
         "equippedAttackSkin": equippedAttackSkin,
+        "unlockedAuras": unlockedAuras.toList(),
+        "equippedAura": equippedAura,
         "redeemedPromoCodes": redeemedPromoCodes.toList(),
         "introSeen": introSeen,
         "introTutorialDone": introTutorialDone,
@@ -899,6 +901,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     unlockedAttackSkins = Set<String>.from((json["unlockedAttackSkins"] as List?) ?? const ['default']);
     if (unlockedAttackSkins.isEmpty) unlockedAttackSkins.add('default');
     equippedAttackSkin = json["equippedAttackSkin"] as String? ?? 'default';
+    unlockedAuras = Set<String>.from((json["unlockedAuras"] as List?) ?? const ['default']);
+    if (unlockedAuras.isEmpty) unlockedAuras.add('default');
+    equippedAura = json["equippedAura"] as String? ?? 'default';
     redeemedPromoCodes = Set<String>.from((json["redeemedPromoCodes"] as List?) ?? const []);
     introSeen = json["introSeen"] as bool? ?? false;
     introTutorialDone = json["introTutorialDone"] as bool? ?? true;
@@ -1714,13 +1719,17 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   Set<int> battlePassFreeClaimed = {};
   Set<int> battlePassPremiumClaimed = {};
 
-  // ===== KOSMETIKA (rám portrétu + skin základního útoku) =====
-  // Odemyká se přes Battle Pass (viz battlePassRewardFor/claimBattlePassReward), trvalé -
+  // ===== KOSMETIKA (rám portrétu + skin základního útoku + aura) =====
+  // Odemyká se přes Battle Pass NEBO přes obchod (viz kCosmeticShopCatalog/buyCosmetic), trvalé -
   // nereseuje se sezónou ani smrtí. 'default' je vždycky odemčený a je to i výchozí nasazený.
   Set<String> unlockedFrames = {'default'};
   String equippedFrame = 'default';
   Set<String> unlockedAttackSkins = {'default'};
   String equippedAttackSkin = 'default';
+  // Aura - jemný barevný glow/částice kolem portrétu hrdiny v combat kartě (Věž/Lair) - nová
+  // kategorie kosmetiky, na rozdíl od rámů/skinů se dá koupit JEN v obchodě, ne přes Battle Pass.
+  Set<String> unlockedAuras = {'default'};
+  String equippedAura = 'default';
 
   void equipFrame(String id) {
     if (!unlockedFrames.contains(id)) return;
@@ -1731,6 +1740,59 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   void equipAttackSkin(String id) {
     if (!unlockedAttackSkins.contains(id)) return;
     equippedAttackSkin = id;
+    notifyListeners();
+  }
+
+  void equipAura(String id) {
+    if (!unlockedAuras.contains(id)) return;
+    equippedAura = id;
+    notifyListeners();
+  }
+
+  // Barva aktuálně nasazené aury (viz CustomizationScreen/kCosmeticShopCatalog), nebo null,
+  // pokud hráč nemá žádnou nasazenou - používá combat karta Věže/Lairu pro glow kolem portrétu.
+  Color? get equippedAuraColor {
+    if (equippedAura == 'default') return null;
+    for (final c in kCosmeticShopCatalog) {
+      if (c.id == equippedAura) return c.accent;
+    }
+    return null;
+  }
+
+  // Koupí kosmetický předmět z kCosmeticShopCatalog za zlato nebo krystaly (podle toho, co má
+  // item nastavené - viz CosmeticShopItem). Položky s isPremiumOnly (real-cash) se přes tuhle
+  // metodu koupit nedají - viz onTap v obchodě, který u nich místo nákupu jen ukáže zprávu.
+  void buyCosmetic(String id) {
+    final item = kCosmeticShopCatalog.firstWhere((c) => c.id == id, orElse: () => throw StateError('unknown cosmetic $id'));
+    if (item.isPremiumOnly) return;
+    final owned = switch (item.category) {
+      CosmeticCategory.frame => unlockedFrames.contains(id),
+      CosmeticCategory.attackSkin => unlockedAttackSkins.contains(id),
+      CosmeticCategory.aura => unlockedAuras.contains(id),
+    };
+    if (owned) return;
+    if (item.crystalPrice > 0) {
+      if (crystals < item.crystalPrice) {
+        message = tr("Nedostatek krystalů (potřeba: ${item.crystalPrice} 💎).", "Not enough crystals (need: ${item.crystalPrice} 💎).");
+        notifyListeners();
+        return;
+      }
+      crystals -= item.crystalPrice;
+    } else {
+      if (gold < item.goldPrice) {
+        message = tr("Nedostatek zlata (potřeba: ${item.goldPrice} 🪙).", "Not enough gold (need: ${item.goldPrice} 🪙).");
+        notifyListeners();
+        return;
+      }
+      gold -= item.goldPrice;
+    }
+    switch (item.category) {
+      case CosmeticCategory.frame: unlockedFrames.add(id);
+      case CosmeticCategory.attackSkin: unlockedAttackSkins.add(id);
+      case CosmeticCategory.aura: unlockedAuras.add(id);
+    }
+    message = tr("✨ Koupeno: ${item.name}!", "✨ Purchased: ${item.name}!");
+    _checkAchievements();
     notifyListeners();
   }
 
@@ -1769,6 +1831,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   void _addBattlePassRenown(int amount) {
     if (amount <= 0) return;
+    // Trvalý pasivní bonus Premium (viz battlePassRewardFor level 1) - +20 % Quest XP, dokud
+    // má hráč Premium aktivní. Není to jednorázová odměna, funguje automaticky pořád.
+    if (battlePassPremium) amount = (amount * 1.2).round();
     battlePassRenown = (battlePassRenown + amount).clamp(0, battlePassMaxLevel * battlePassRenownPerLevel);
   }
 
@@ -6686,6 +6751,150 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool get isBerserk => heroClass == HeroClass.warrior && (classRanks[HeroClass.warrior] ?? 0) >= 15;
+
+  // Živý číselný náhled Tier 1 schopnosti pro dlouhé podržení (viz SpellIconButton.description) -
+  // vzorce ověřené přímo z useActiveAbility()/useLairActiveAbility()/atd. (matematika je napříč
+  // Věží/Lairem/Arénou/World Bossem/Riftem stejná, liší se jen cíl útoku, ne čísla samotná).
+  // POZOR: pokrývá zatím jen Tier 1 - Tier 2-4 a Relikvie mají vlastní, zatím nezmapované vzorce.
+  String tier1NumericPreview() {
+    switch (heroClass) {
+      case HeroClass.warrior:
+        final dmg = (physAtk * 2.5 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (fyzické)', 'Damage: ~$dmg (physical)');
+      case HeroClass.hunter:
+        final dmg = (physAtk * 2.0).round();
+        final heal = (dmg * 0.5).round();
+        return tr('Poškození: ~$dmg (fyzické)\nLéčení: ~$heal HP (50 % dmg)', 'Damage: ~$dmg (physical)\nHeal: ~$heal HP (50% of dmg)');
+      case HeroClass.healer:
+        final heal = (maxHp * 0.5 * specAbilitySustainMod).round();
+        final shield = (maxHp * 0.10 * specAbilitySustainMod).round();
+        return tr('Léčení: ~$heal HP (50 % MaxHP)\nŠtít: +$shield (10 % MaxHP)', 'Heal: ~$heal HP (50% MaxHP)\nShield: +$shield (10% MaxHP)');
+      case HeroClass.deathknight:
+        final dmg = (physAtk * 1.5).round();
+        final dotPerRound = (magAtk * 0.5).round();
+        return tr('Poškození: ~$dmg (fyzické)\nProkletí: ~$dotPerRound/kolo po 4 kola', 'Damage: ~$dmg (physical)\nCurse: ~$dotPerRound/round for 4 rounds');
+      case HeroClass.mage:
+        final dmg = (magAtk * 2.5 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (magické)', 'Damage: ~$dmg (magic)');
+      case HeroClass.duelist:
+        final dmg = (physAtk * 2.2 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (fyzické)', 'Damage: ~$dmg (physical)');
+      case HeroClass.monk:
+        final dmg = (physAtk * 2.2 * specAbilityDamageMod).round();
+        if (monkCalmHealFromDamage > 0) {
+          final heal = (dmg * monkCalmHealFromDamage * specAbilitySustainMod).round();
+          return tr('Poškození: ~$dmg (fyzické)\nLéčení: ~$heal HP', 'Damage: ~$dmg (physical)\nHeal: ~$heal HP');
+        }
+        return tr('Poškození: ~$dmg (fyzické)', 'Damage: ~$dmg (physical)');
+      case HeroClass.druid:
+        final dmg = (magAtk * 2.3 * specAbilityDamageMod).round();
+        final dot = (dmg * 0.18 / 3).round();
+        return tr('Poškození: ~$dmg (magické)\nUvadnutí: ~$dot/kolo po 3 kola', 'Damage: ~$dmg (magic)\nWither: ~$dot/round for 3 rounds');
+      case HeroClass.paladin:
+        final dmg = (physAtk * 2.2 * specAbilityDamageMod).round();
+        final shieldMult = specialization == 1 ? 0.18 : 0.12;
+        final shield = (maxHp * shieldMult * specAbilitySustainMod).round();
+        return tr('Poškození: ~$dmg (fyzické)\nŠtít: +$shield', 'Damage: ~$dmg (physical)\nShield: +$shield');
+      case HeroClass.demonhunter:
+        final dmg = (physAtk * 2.4 * specAbilityDamageMod).round();
+        final dot = (dmg * 0.15 / 3).round();
+        return tr('Poškození: ~$dmg (fyzické)\nFel oheň: ~$dot/kolo po 3 kola', 'Damage: ~$dmg (physical)\nFel Fire: ~$dot/round for 3 rounds');
+      case HeroClass.necromancer:
+        final dmg = (magAtk * 2.3 * specAbilityDamageMod).round();
+        final petDmg = (magAtk * 0.6 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (magické)\nSluha: +$petDmg navíc', 'Damage: ~$dmg (magic)\nServant: +$petDmg extra');
+    }
+  }
+
+  // Stejné jako tier1NumericPreview(), pro Tier 2 (useSecondAbility()/useSecondLairAbility()/atd,
+  // Rank 40+). Rytíř Smrti má proměnlivý vzorec (odpaluje zbývající poškození Prokletí, které se
+  // liší podle toho, kdy ho použiješ) - u něj je popis kvalitativní, ne jedno pevné číslo.
+  String tier2NumericPreview() {
+    switch (heroClass) {
+      case HeroClass.warrior:
+        final dmg = (physAtk * 4.0 * specAbilityDamageMod).round();
+        final shield = (maxHp * 0.25 * specAbilitySustainMod).round();
+        return tr('Poškození: ~$dmg (fyzické)\nŠtít: +$shield (25 % MaxHP)', 'Damage: ~$dmg (physical)\nShield: +$shield (25% MaxHP)');
+      case HeroClass.hunter:
+        final dmg = (physAtk * 5.0).round();
+        return tr('Poškození: ~$dmg (fyzické)', 'Damage: ~$dmg (physical)');
+      case HeroClass.healer:
+        final dmg = (magAtk * 3.5 * specAbilityDamageMod).round();
+        return tr('Plné vyléčení HP (100 %)\nPoškození: ~$dmg (svaté)', 'Full HP heal (100%)\nDamage: ~$dmg (holy)');
+      case HeroClass.deathknight:
+        return tr('Odpálí ZBÝVAJÍCÍ poškození aktivního Prokletí najednou + štít 25-75 % MaxHP (víc, čím dřív ho použiješ po Prokletém úderu). Bez aktivního Prokletí jen štít.', 'Detonates the REMAINING damage of your active Curse at once + a 25-75% MaxHP shield (more, the sooner you use it after Cursed Strike). With no active Curse, shield only.');
+      case HeroClass.mage:
+        final dmg = (magAtk * 4.5 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (magické)\nVrátí část many', 'Damage: ~$dmg (magic)\nRefunds some mana');
+      case HeroClass.duelist:
+        final dmg = (physAtk * 5.0 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (fyzické)', 'Damage: ~$dmg (physical)');
+      case HeroClass.monk:
+        final dmg = (physAtk * 4.5 * specAbilityDamageMod).round();
+        final shield = (maxHp * 0.20 * specAbilitySustainMod).round();
+        return tr('Poškození: ~$dmg (fyzické)\nŠtít: +$shield (20 % MaxHP)', 'Damage: ~$dmg (physical)\nShield: +$shield (20% MaxHP)');
+      case HeroClass.druid:
+        final dmg = (magAtk * 3.2 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (magické)', 'Damage: ~$dmg (magic)');
+      case HeroClass.paladin:
+        final dmg = (physAtk * 4.5 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (fyzické)', 'Damage: ~$dmg (physical)');
+      case HeroClass.demonhunter:
+        final dmg = (physAtk * 4.8 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (fyzické)', 'Damage: ~$dmg (physical)');
+      case HeroClass.necromancer:
+        final dmg = (magAtk * 4.5 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (magické)', 'Damage: ~$dmg (magic)');
+    }
+  }
+
+  // Stejné jako tier1/tier2NumericPreview(), pro Tier 3 (useThirdAbility()/atd, Rank 75). Rytíř
+  // Smrti má opět proměnlivý vzorec (magická složka se mění v heal, nebo při plném HP v absorb
+  // štít) - popsáno kvalitativně, ne jedno pevné číslo.
+  String tier3NumericPreview() {
+    switch (heroClass) {
+      case HeroClass.warrior:
+        final dmg = (physAtk * 7.5 * specAbilityDamageMod).round();
+        final shield = (maxHp * 0.50 * specAbilitySustainMod).round();
+        return tr('Poškození: ~$dmg (fyzické)\nŠtít: +$shield (50 % MaxHP)', 'Damage: ~$dmg (physical)\nShield: +$shield (50% MaxHP)');
+      case HeroClass.hunter:
+        final dmg = (physAtk * 8.0).round();
+        return tr('Poškození: ~$dmg (fyzické)\nPlné vyléčení HP (100 %)', 'Damage: ~$dmg (physical)\nFull HP heal (100%)');
+      case HeroClass.healer:
+        final dmg = (magAtk * 7.0 * specAbilityDamageMod).round();
+        final shield = (maxHp * 0.50 * specAbilitySustainMod).round();
+        return tr('Poškození: ~$dmg (svaté)\nPlné HP + štít: +$shield (50 % MaxHP)', 'Damage: ~$dmg (holy)\nFull HP + shield: +$shield (50% MaxHP)');
+      case HeroClass.deathknight:
+        final physDmg = (physAtk * 2.0).round();
+        final magPart = (magAtk * 2.0).round();
+        return tr('Poškození: ~$physDmg (fyzické)\nMagická složka (~$magPart) se mění na LÉČENÍ, pokud nemáš plné HP, nebo na ABSORB ŠTÍT, pokud plné HP máš.', 'Damage: ~$physDmg (physical)\nThe magic portion (~$magPart) becomes HEALING if you\'re not at full HP, or an ABSORB SHIELD if you are.');
+      case HeroClass.mage:
+        final dmg = (magAtk * 8.0 * specAbilityDamageMod).round();
+        final shield = (maxHp * 0.40 * specAbilitySustainMod).round();
+        return tr('Poškození: ~$dmg (magické)\nŠtít: +$shield (40 % MaxHP)', 'Damage: ~$dmg (magic)\nShield: +$shield (40% MaxHP)');
+      case HeroClass.duelist:
+        final dmg = (physAtk * 8.5 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (fyzické)\nPlné vyléčení HP (100 %)', 'Damage: ~$dmg (physical)\nFull HP heal (100%)');
+      case HeroClass.monk:
+        final dmg = (physAtk * 7.5 * specAbilityDamageMod).round();
+        final shield = (maxHp * 0.40 * specAbilitySustainMod).round();
+        return tr('Poškození: ~$dmg (fyzické)\nPlné HP + štít: +$shield (40 % MaxHP)', 'Damage: ~$dmg (physical)\nFull HP + shield: +$shield (40% MaxHP)');
+      case HeroClass.druid:
+        final dmg = (magAtk * 3.6 * specAbilityDamageMod).round();
+        final shield = (maxHp * 0.35 * specAbilitySustainMod).round();
+        return tr('Poškození: ~$dmg (magické)\nPlné HP + štít: +$shield (35 % MaxHP)', 'Damage: ~$dmg (magic)\nFull HP + shield: +$shield (35% MaxHP)');
+      case HeroClass.paladin:
+        final dmg = (physAtk * 3.6 * specAbilityDamageMod).round();
+        final shield = (maxHp * 0.40 * specAbilitySustainMod).round();
+        return tr('Poškození: ~$dmg (fyzické)\nPlné HP + štít: +$shield (40 % MaxHP)', 'Damage: ~$dmg (physical)\nFull HP + shield: +$shield (40% MaxHP)');
+      case HeroClass.demonhunter:
+        final dmg = (physAtk * 3.2 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (fyzické)\nSilný lifesteal na 10 kol', 'Damage: ~$dmg (physical)\nStrong lifesteal for 10 rounds');
+      case HeroClass.necromancer:
+        final dmg = (magAtk * 3.2 * specAbilityDamageMod).round();
+        return tr('Poškození: ~$dmg (magické)\nPlné HP + lifesteal na 8 kol', 'Damage: ~$dmg (magic)\nFull HP + lifesteal for 8 rounds');
+    }
+  }
   bool get isAssassin => heroClass == HeroClass.hunter && (classRanks[HeroClass.hunter] ?? 0) >= 15;
   bool get isPriest => heroClass == HeroClass.healer && (classRanks[HeroClass.healer] ?? 0) >= 15;
   bool get isDarkKnight => heroClass == HeroClass.deathknight && (classRanks[HeroClass.deathknight] ?? 0) >= 15;
@@ -7761,6 +7970,27 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     AchievementId.hardcoreSetFull8pc: AchievementDef(id: AchievementId.hardcoreSetFull8pc, name: tr("Plná Hardcore sada", "Full Hardcore Set"), description: tr("Nasaď plný 8-kusový Hardcore set najednou.", "Equip a full 8-piece Hardcore set at once."), title: tr("Nositel Hardcore sady", "Hardcore Set Bearer"), rewardGold: 2500, rewardDust: 2500),
     AchievementId.predpekliSetFull8pc: AchievementDef(id: AchievementId.predpekliSetFull8pc, name: tr("Plná Předpeklí sada", "Full Netherworld Set"), description: tr("Nasaď plný 8-kusový Předpeklí set najednou.", "Equip a full 8-piece Netherworld set at once."), title: tr("Nositel Předpeklí sady", "Netherworld Set Bearer"), rewardGold: 4000, rewardDust: 4000),
     AchievementId.pekloSetFull8pc: AchievementDef(id: AchievementId.pekloSetFull8pc, name: tr("Plná Peklo sada", "Full Hell Set"), description: tr("Nasaď plný 8-kusový Peklo set najednou.", "Equip a full 8-piece Hell set at once."), title: tr("Nositel Peklo sady", "Hell Set Bearer"), rewardGold: 6000, rewardDust: 6000),
+    // ===== ROZŠÍŘENÍ 2 =====
+    AchievementId.battlePassGraduate: AchievementDef(id: AchievementId.battlePassGraduate, name: tr("Mistr Sezóny", "Season Master"), description: tr("Dosáhni maximální úrovně Battle Passu.", "Reach the maximum Battle Pass level."), title: tr("Mistr Sezóny", "Season Master"), rewardGold: 2000, rewardDust: 2000),
+    AchievementId.battlePassPatron: AchievementDef(id: AchievementId.battlePassPatron, name: tr("Mecenáš", "Patron"), description: tr("Odemkni Premium Battle Passu.", "Unlock Battle Pass Premium."), title: tr("Mecenáš", "Patron"), rewardGold: 500),
+    AchievementId.worldBossHunter: AchievementDef(id: AchievementId.worldBossHunter, name: tr("Lovec Světů", "World Hunter"), description: tr("Poraz World Bosse 10×.", "Defeat the World Boss 10 times."), title: tr("Lovec Světů", "World Hunter"), rewardGold: 1500, rewardDust: 1500),
+    AchievementId.worldBossNemesis: AchievementDef(id: AchievementId.worldBossNemesis, name: tr("Nemesis Světa", "World's Nemesis"), description: tr("Poraz World Bosse 50×.", "Defeat the World Boss 50 times."), title: tr("Nemesis Světa", "World's Nemesis"), rewardGold: 5000, rewardDust: 5000),
+    AchievementId.goldMillionaire: AchievementDef(id: AchievementId.goldMillionaire, name: tr("Boháč", "Rich"), description: tr("Měj najednou 1 000 000 zlata.", "Have 1,000,000 gold at once."), title: tr("Boháč", "The Wealthy")),
+    AchievementId.crystalBaron: AchievementDef(id: AchievementId.crystalBaron, name: tr("Krystalový Baron", "Crystal Baron"), description: tr("Měj najednou 5 000 krystalů.", "Have 5,000 crystals at once."), title: tr("Krystalový Baron", "Crystal Baron")),
+    AchievementId.dustTycoon: AchievementDef(id: AchievementId.dustTycoon, name: tr("Alchymistický Magnát", "Alchemy Tycoon"), description: tr("Měj najednou 1 000 000 Magic Dust.", "Have 1,000,000 Magic Dust at once."), title: tr("Alchymistický Magnát", "Alchemy Tycoon")),
+    AchievementId.cosmeticCollector: AchievementDef(id: AchievementId.cosmeticCollector, name: tr("Sběratel Stylu", "Style Collector"), description: tr("Vlastni 5 kosmetických předmětů z obchodu.", "Own 5 cosmetic items from the shop."), title: tr("Sběratel Stylu", "Style Collector")),
+    AchievementId.cosmeticConnoisseur: AchievementDef(id: AchievementId.cosmeticConnoisseur, name: tr("Ikona Módy", "Fashion Icon"), description: tr("Vlastni 15 kosmetických předmětů z obchodu.", "Own 15 cosmetic items from the shop."), title: tr("Ikona Módy", "Fashion Icon"), rewardGold: 1000),
+    AchievementId.questLegend: AchievementDef(id: AchievementId.questLegend, name: tr("Legenda Questů", "Quest Legend"), description: tr("Splň 100 questů celkem.", "Complete 100 quests in total."), title: tr("Legenda Questů", "Quest Legend"), rewardGold: 1500, rewardDust: 1500),
+    AchievementId.companionElite: AchievementDef(id: AchievementId.companionElite, name: tr("Velitel Družiny", "Party Commander"), description: tr("Vyleveluj libovolného společníka na level 25.", "Level any companion to level 25."), title: tr("Velitel Družiny", "Party Commander"), rewardGold: 800),
+    AchievementId.bankVault: AchievementDef(id: AchievementId.bankVault, name: tr("Strážce Trezoru", "Vault Keeper"), description: tr("Odemkni všechny sloty Banky.", "Unlock all Bank slots."), title: tr("Strážce Trezoru", "Vault Keeper"), rewardGold: 2000),
+    AchievementId.relicAwakened: AchievementDef(id: AchievementId.relicAwakened, name: tr("Probuzená Relikvie", "Awakened Relic"), description: tr("Dosáhni levelu 1 na specializační relikvii.", "Reach level 1 on your specialization relic."), title: tr("Probuzená Relikvie", "Awakened Relic")),
+    AchievementId.relicAscended: AchievementDef(id: AchievementId.relicAscended, name: tr("Vládce Relikvie", "Relic Sovereign"), description: tr("Dosáhni levelu 90 na specializační relikvii.", "Reach level 90 on your specialization relic."), title: tr("Vládce Relikvie", "Relic Sovereign"), rewardGold: 4000, rewardDust: 4000),
+    AchievementId.riftPusher200: AchievementDef(id: AchievementId.riftPusher200, name: tr("Pán Trhlin", "Master of Rifts"), description: tr("Dosáhni Tier 200 v Trhlině Osudu.", "Reach Tier 200 in the Rift of Fate."), title: tr("Pán Trhlin", "Master of Rifts"), rewardGold: 3000, rewardDust: 3000),
+    AchievementId.lairFloor50Elite: AchievementDef(id: AchievementId.lairFloor50Elite, name: tr("Půlka Cesty", "Halfway There"), description: tr("Poraz bosse na patře 50 v Doupěti bosse.", "Defeat the boss on floor 50 in the Boss Lair."), title: tr("Půlka Cesty", "Halfway There"), rewardGold: 1000, rewardDust: 1000),
+    AchievementId.gearScoreElite: AchievementDef(id: AchievementId.gearScoreElite, name: tr("Ozbrojenec", "Well-Armed"), description: tr("Dosáhni Gear Score 3000.", "Reach Gear Score 3000."), title: tr("Ozbrojenec", "Well-Armed")),
+    AchievementId.gearScoreLegend: AchievementDef(id: AchievementId.gearScoreLegend, name: tr("Chodící Arzenál", "Walking Arsenal"), description: tr("Dosáhni Gear Score 6000.", "Reach Gear Score 6000."), title: tr("Chodící Arzenál", "Walking Arsenal"), rewardGold: 3000, rewardDust: 3000),
+    AchievementId.survivor250: AchievementDef(id: AchievementId.survivor250, name: tr("Nesmrtelný", "The Undying"), description: tr("Zemři 250×. Osud tě nezastaví.", "Die 250 times. Fate won't stop you."), title: tr("Nesmrtelný", "The Undying"), rewardGold: 2000),
+    AchievementId.necromancerPioneer: AchievementDef(id: AchievementId.necromancerPioneer, name: tr("Vzkřísitel", "The Reanimator"), description: tr("Dosáhni patra 5 jako Nekromant.", "Reach floor 5 as a Necromancer."), title: tr("Vzkřísitel", "The Reanimator")),
   };
 
   Set<CurseOfFate> triedCurses = {};
@@ -8023,6 +8253,28 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (equippedHardcoreSetCounts.values.any((c) => c >= 8)) _unlockAchievement(AchievementId.hardcoreSetFull8pc);
     if (equippedPredpekliSetCounts.values.any((c) => c >= 8)) _unlockAchievement(AchievementId.predpekliSetFull8pc);
     if (equippedPekloSetCounts.values.any((c) => c >= 8)) _unlockAchievement(AchievementId.pekloSetFull8pc);
+    // ===== ROZŠÍŘENÍ 2 =====
+    if (battlePassLevel >= battlePassMaxLevel) _unlockAchievement(AchievementId.battlePassGraduate);
+    if (battlePassPremium) _unlockAchievement(AchievementId.battlePassPatron);
+    if (worldBossKills >= 10) _unlockAchievement(AchievementId.worldBossHunter);
+    if (worldBossKills >= 50) _unlockAchievement(AchievementId.worldBossNemesis);
+    if (gold >= 1000000) _unlockAchievement(AchievementId.goldMillionaire);
+    if (crystals >= 5000) _unlockAchievement(AchievementId.crystalBaron);
+    if (magicDust >= 1000000) _unlockAchievement(AchievementId.dustTycoon);
+    if (totalQuestsCompleted >= 100) _unlockAchievement(AchievementId.questLegend);
+    if (companions.any((c) => c.level >= 25)) _unlockAchievement(AchievementId.companionElite);
+    if (bankUnlockedSlots >= bankMaxSize) _unlockAchievement(AchievementId.bankVault);
+    if (currentSpecRelicLevel >= 1) _unlockAchievement(AchievementId.relicAwakened);
+    if (currentSpecRelicLevel >= 90) _unlockAchievement(AchievementId.relicAscended);
+    if (riftTier >= 200) _unlockAchievement(AchievementId.riftPusher200);
+    if (defeatedLairFloors.contains(50)) _unlockAchievement(AchievementId.lairFloor50Elite);
+    if (gearScore >= 3000) _unlockAchievement(AchievementId.gearScoreElite);
+    if (gearScore >= 6000) _unlockAchievement(AchievementId.gearScoreLegend);
+    if (totalDeaths >= 250) _unlockAchievement(AchievementId.survivor250);
+    if (heroClass == HeroClass.necromancer && floor >= 5) _unlockAchievement(AchievementId.necromancerPioneer);
+    final ownedCosmetics = (unlockedFrames.length - 1) + (unlockedAttackSkins.length - 1) + (unlockedAuras.length - 1);
+    if (ownedCosmetics >= 5) _unlockAchievement(AchievementId.cosmeticCollector);
+    if (ownedCosmetics >= 15) _unlockAchievement(AchievementId.cosmeticConnoisseur);
   }
 
   void _checkQuestResets() {
@@ -13302,6 +13554,17 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  // Stejné jako addTalent(), jen najednou utratí až `count` bodů (oříznuto na to, co hráč
+  // reálně má) - pro tlačítko "+10" v UI, ať se nemusí ťukat desetkrát po jednom.
+  void addTalentMulti(String name, int count) {
+    final spend = min(count, talentPoints);
+    if (spend <= 0) return;
+    talents[name] = talents[name]! + spend;
+    talentPoints -= spend;
+    message = tr("Talent $name vylepšen (+$spend)!", "Talent $name upgraded (+$spend)!");
+    notifyListeners();
+  }
+
   // Zastaví hru a vyžádá potvrzení od hráče, než se smaže postup (aby ho neztratil jedním
   // nešťastným zásahem bez varování). Skutečné smazání proběhne až v confirmDeath().
   // Vybavené a zamčené itemy přežijí smrt - spočítá jen to, co se skutečně zničí (do Magic Dust).
@@ -15703,122 +15966,32 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     } else if(r.kind==SpecRelicKind.hunterMarksmanQuiver||r.kind==SpecRelicKind.hunterBeastQuiver||r.kind==SpecRelicKind.hunterGhostQuiver){
       final res=_castHunterSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.hunterMarksmanQuiver||r.kind==SpecRelicKind.hunterBeastQuiver||r.kind==SpecRelicKind.hunterGhostQuiver){
-      final res=_castHunterSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.hunterMarksmanQuiver||r.kind==SpecRelicKind.hunterBeastQuiver||r.kind==SpecRelicKind.hunterGhostQuiver){
-      final res=_castHunterSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.hunterMarksmanQuiver||r.kind==SpecRelicKind.hunterBeastQuiver||r.kind==SpecRelicKind.hunterGhostQuiver){
-      final res=_castHunterSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else if(r.kind==SpecRelicKind.warriorBerserkBanner||r.kind==SpecRelicKind.warriorGuardianBanner||r.kind==SpecRelicKind.warriorWarlordBanner){
       final res=_castWarriorSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.warriorBerserkBanner||r.kind==SpecRelicKind.warriorGuardianBanner||r.kind==SpecRelicKind.warriorWarlordBanner){
-      final res=_castWarriorSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.warriorBerserkBanner||r.kind==SpecRelicKind.warriorGuardianBanner||r.kind==SpecRelicKind.warriorWarlordBanner){
-      final res=_castWarriorSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.warriorBerserkBanner||r.kind==SpecRelicKind.warriorGuardianBanner||r.kind==SpecRelicKind.warriorWarlordBanner){
-      final res=_castWarriorSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else if(r.kind==SpecRelicKind.healerDawnSymbol||r.kind==SpecRelicKind.healerJudgementSymbol||r.kind==SpecRelicKind.healerBattleSymbol){
       final res=_castHealerSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.healerDawnSymbol||r.kind==SpecRelicKind.healerJudgementSymbol||r.kind==SpecRelicKind.healerBattleSymbol){
-      final res=_castHealerSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.healerDawnSymbol||r.kind==SpecRelicKind.healerJudgementSymbol||r.kind==SpecRelicKind.healerBattleSymbol){
-      final res=_castHealerSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.healerDawnSymbol||r.kind==SpecRelicKind.healerJudgementSymbol||r.kind==SpecRelicKind.healerBattleSymbol){
-      final res=_castHealerSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else if(r.kind==SpecRelicKind.mageFireTome||r.kind==SpecRelicKind.mageFrostTome||r.kind==SpecRelicKind.mageArcaneTome){
       final res=_castMageSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.mageFireTome||r.kind==SpecRelicKind.mageFrostTome||r.kind==SpecRelicKind.mageArcaneTome){
-      final res=_castMageSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.mageFireTome||r.kind==SpecRelicKind.mageFrostTome||r.kind==SpecRelicKind.mageArcaneTome){
-      final res=_castMageSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.mageFireTome||r.kind==SpecRelicKind.mageFrostTome||r.kind==SpecRelicKind.mageArcaneTome){
-      final res=_castMageSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else if(r.kind==SpecRelicKind.monkStormMala||r.kind==SpecRelicKind.monkStoneMala||r.kind==SpecRelicKind.monkHarmonyMala){
       final res=_castMonkSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.monkStormMala||r.kind==SpecRelicKind.monkStoneMala||r.kind==SpecRelicKind.monkHarmonyMala){
-      final res=_castMonkSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.monkStormMala||r.kind==SpecRelicKind.monkStoneMala||r.kind==SpecRelicKind.monkHarmonyMala){
-      final res=_castMonkSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.monkStormMala||r.kind==SpecRelicKind.monkStoneMala||r.kind==SpecRelicKind.monkHarmonyMala){
-      final res=_castMonkSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else if(r.kind==SpecRelicKind.druidBalanceTotem||r.kind==SpecRelicKind.druidWildTotem||r.kind==SpecRelicKind.druidRestoTotem){
       final res=_castDruidSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.druidBalanceTotem||r.kind==SpecRelicKind.druidWildTotem||r.kind==SpecRelicKind.druidRestoTotem){
-      final res=_castDruidSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.druidBalanceTotem||r.kind==SpecRelicKind.druidWildTotem||r.kind==SpecRelicKind.druidRestoTotem){
-      final res=_castDruidSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.druidBalanceTotem||r.kind==SpecRelicKind.druidWildTotem||r.kind==SpecRelicKind.druidRestoTotem){
-      final res=_castDruidSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else if(r.kind==SpecRelicKind.necromancerBoneTome||r.kind==SpecRelicKind.necromancerPlagueTome||r.kind==SpecRelicKind.necromancerBloodTome){
       final res=_castNecromancerSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.necromancerBoneTome||r.kind==SpecRelicKind.necromancerPlagueTome||r.kind==SpecRelicKind.necromancerBloodTome){
-      final res=_castNecromancerSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.necromancerBoneTome||r.kind==SpecRelicKind.necromancerPlagueTome||r.kind==SpecRelicKind.necromancerBloodTome){
-      final res=_castNecromancerSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.necromancerBoneTome||r.kind==SpecRelicKind.necromancerPlagueTome||r.kind==SpecRelicKind.necromancerBloodTome){
-      final res=_castNecromancerSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else if(r.kind==SpecRelicKind.duelistNemesisCrest||r.kind==SpecRelicKind.duelistDanceCrest||r.kind==SpecRelicKind.duelistLightningCrest){
       final res=_castDuelistSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.duelistNemesisCrest||r.kind==SpecRelicKind.duelistDanceCrest||r.kind==SpecRelicKind.duelistLightningCrest){
-      final res=_castDuelistSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.duelistNemesisCrest||r.kind==SpecRelicKind.duelistDanceCrest||r.kind==SpecRelicKind.duelistLightningCrest){
-      final res=_castDuelistSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.duelistNemesisCrest||r.kind==SpecRelicKind.duelistDanceCrest||r.kind==SpecRelicKind.duelistLightningCrest){
-      final res=_castDuelistSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else if(r.kind==SpecRelicKind.paladinGuardianSeal||r.kind==SpecRelicKind.paladinJudgementSeal||r.kind==SpecRelicKind.paladinDawnSeal){
       final res=_castPaladinSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.paladinGuardianSeal||r.kind==SpecRelicKind.paladinJudgementSeal||r.kind==SpecRelicKind.paladinDawnSeal){
-      final res=_castPaladinSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.paladinGuardianSeal||r.kind==SpecRelicKind.paladinJudgementSeal||r.kind==SpecRelicKind.paladinDawnSeal){
-      final res=_castPaladinSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.paladinGuardianSeal||r.kind==SpecRelicKind.paladinJudgementSeal||r.kind==SpecRelicKind.paladinDawnSeal){
-      final res=_castPaladinSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else if(r.kind==SpecRelicKind.demonHunterHavocGlaive||r.kind==SpecRelicKind.demonHunterVengeanceGlaive||r.kind==SpecRelicKind.demonHunterShadowGlaive){
       final res=_castDemonHunterSigil(r,dmg,targetHpRatio:arenaOpponentHp/(arenaOpponentMaxHp==0?1:arenaOpponentMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.demonHunterHavocGlaive||r.kind==SpecRelicKind.demonHunterVengeanceGlaive||r.kind==SpecRelicKind.demonHunterShadowGlaive){
-      final res=_castDemonHunterSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.demonHunterHavocGlaive||r.kind==SpecRelicKind.demonHunterVengeanceGlaive||r.kind==SpecRelicKind.demonHunterShadowGlaive){
-      final res=_castDemonHunterSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
-      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
-    } else if(r.kind==SpecRelicKind.demonHunterHavocGlaive||r.kind==SpecRelicKind.demonHunterVengeanceGlaive||r.kind==SpecRelicKind.demonHunterShadowGlaive){
-      final res=_castDemonHunterSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else switch(r.mechanic){
       case RelicMechanic.guard: case RelicMechanic.iceWard: case RelicMechanic.stone:
@@ -15854,6 +16027,36 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if(r.kind==SpecRelicKind.deathKnightBloodSigil||r.kind==SpecRelicKind.deathKnightFrostSigil||r.kind==SpecRelicKind.deathKnightPlagueSigil){
       final res=_castDkSigil(r,dmg,isBossTarget:isBoss);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.hunterMarksmanQuiver||r.kind==SpecRelicKind.hunterBeastQuiver||r.kind==SpecRelicKind.hunterGhostQuiver){
+      final res=_castHunterSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.warriorBerserkBanner||r.kind==SpecRelicKind.warriorGuardianBanner||r.kind==SpecRelicKind.warriorWarlordBanner){
+      final res=_castWarriorSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.healerDawnSymbol||r.kind==SpecRelicKind.healerJudgementSymbol||r.kind==SpecRelicKind.healerBattleSymbol){
+      final res=_castHealerSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.mageFireTome||r.kind==SpecRelicKind.mageFrostTome||r.kind==SpecRelicKind.mageArcaneTome){
+      final res=_castMageSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.monkStormMala||r.kind==SpecRelicKind.monkStoneMala||r.kind==SpecRelicKind.monkHarmonyMala){
+      final res=_castMonkSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.druidBalanceTotem||r.kind==SpecRelicKind.druidWildTotem||r.kind==SpecRelicKind.druidRestoTotem){
+      final res=_castDruidSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.necromancerBoneTome||r.kind==SpecRelicKind.necromancerPlagueTome||r.kind==SpecRelicKind.necromancerBloodTome){
+      final res=_castNecromancerSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.duelistNemesisCrest||r.kind==SpecRelicKind.duelistDanceCrest||r.kind==SpecRelicKind.duelistLightningCrest){
+      final res=_castDuelistSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.paladinGuardianSeal||r.kind==SpecRelicKind.paladinJudgementSeal||r.kind==SpecRelicKind.paladinDawnSeal){
+      final res=_castPaladinSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.demonHunterHavocGlaive||r.kind==SpecRelicKind.demonHunterVengeanceGlaive||r.kind==SpecRelicKind.demonHunterShadowGlaive){
+      final res=_castDemonHunterSigil(r,dmg,targetHpRatio:currentEnemyHp/(currentEnemyMaxHp==0?1:currentEnemyMaxHp),isBossTarget:isBoss);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else switch(r.mechanic){
       case RelicMechanic.guard: case RelicMechanic.iceWard: case RelicMechanic.stone:
         shield=(armor*.35+maxHp*.12+currentSpecRelicLevel*level).round(); bonusShield+=shield; dmg=(dmg*.55).round(); break;
@@ -15888,6 +16091,36 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if(r.kind==SpecRelicKind.deathKnightBloodSigil||r.kind==SpecRelicKind.deathKnightFrostSigil||r.kind==SpecRelicKind.deathKnightPlagueSigil){
       final res=_castDkSigil(r,dmg,isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.hunterMarksmanQuiver||r.kind==SpecRelicKind.hunterBeastQuiver||r.kind==SpecRelicKind.hunterGhostQuiver){
+      final res=_castHunterSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.warriorBerserkBanner||r.kind==SpecRelicKind.warriorGuardianBanner||r.kind==SpecRelicKind.warriorWarlordBanner){
+      final res=_castWarriorSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.healerDawnSymbol||r.kind==SpecRelicKind.healerJudgementSymbol||r.kind==SpecRelicKind.healerBattleSymbol){
+      final res=_castHealerSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.mageFireTome||r.kind==SpecRelicKind.mageFrostTome||r.kind==SpecRelicKind.mageArcaneTome){
+      final res=_castMageSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.monkStormMala||r.kind==SpecRelicKind.monkStoneMala||r.kind==SpecRelicKind.monkHarmonyMala){
+      final res=_castMonkSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.druidBalanceTotem||r.kind==SpecRelicKind.druidWildTotem||r.kind==SpecRelicKind.druidRestoTotem){
+      final res=_castDruidSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.necromancerBoneTome||r.kind==SpecRelicKind.necromancerPlagueTome||r.kind==SpecRelicKind.necromancerBloodTome){
+      final res=_castNecromancerSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.duelistNemesisCrest||r.kind==SpecRelicKind.duelistDanceCrest||r.kind==SpecRelicKind.duelistLightningCrest){
+      final res=_castDuelistSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.paladinGuardianSeal||r.kind==SpecRelicKind.paladinJudgementSeal||r.kind==SpecRelicKind.paladinDawnSeal){
+      final res=_castPaladinSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.demonHunterHavocGlaive||r.kind==SpecRelicKind.demonHunterVengeanceGlaive||r.kind==SpecRelicKind.demonHunterShadowGlaive){
+      final res=_castDemonHunterSigil(r,dmg,targetHpRatio:currentLairBossHp/(currentLairBossMaxHp==0?1:currentLairBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else switch(r.mechanic){
       case RelicMechanic.guard: case RelicMechanic.iceWard: case RelicMechanic.stone:
         shield=(armor*.35+maxHp*.12+currentSpecRelicLevel*level).round(); bonusShield+=shield; dmg=(dmg*.55).round(); break;
@@ -15919,6 +16152,36 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     int dmg=(atk*(1.25+currentSpecRelicLevel*.025)).round(); int heal=0; int shield=0; String dkExtra='';
     if(r.kind==SpecRelicKind.deathKnightBloodSigil||r.kind==SpecRelicKind.deathKnightFrostSigil||r.kind==SpecRelicKind.deathKnightPlagueSigil){
       final res=_castDkSigil(r,dmg,isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.hunterMarksmanQuiver||r.kind==SpecRelicKind.hunterBeastQuiver||r.kind==SpecRelicKind.hunterGhostQuiver){
+      final res=_castHunterSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.warriorBerserkBanner||r.kind==SpecRelicKind.warriorGuardianBanner||r.kind==SpecRelicKind.warriorWarlordBanner){
+      final res=_castWarriorSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.healerDawnSymbol||r.kind==SpecRelicKind.healerJudgementSymbol||r.kind==SpecRelicKind.healerBattleSymbol){
+      final res=_castHealerSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.mageFireTome||r.kind==SpecRelicKind.mageFrostTome||r.kind==SpecRelicKind.mageArcaneTome){
+      final res=_castMageSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.monkStormMala||r.kind==SpecRelicKind.monkStoneMala||r.kind==SpecRelicKind.monkHarmonyMala){
+      final res=_castMonkSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.druidBalanceTotem||r.kind==SpecRelicKind.druidWildTotem||r.kind==SpecRelicKind.druidRestoTotem){
+      final res=_castDruidSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.necromancerBoneTome||r.kind==SpecRelicKind.necromancerPlagueTome||r.kind==SpecRelicKind.necromancerBloodTome){
+      final res=_castNecromancerSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.duelistNemesisCrest||r.kind==SpecRelicKind.duelistDanceCrest||r.kind==SpecRelicKind.duelistLightningCrest){
+      final res=_castDuelistSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.paladinGuardianSeal||r.kind==SpecRelicKind.paladinJudgementSeal||r.kind==SpecRelicKind.paladinDawnSeal){
+      final res=_castPaladinSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
+      dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
+    } else if(r.kind==SpecRelicKind.demonHunterHavocGlaive||r.kind==SpecRelicKind.demonHunterVengeanceGlaive||r.kind==SpecRelicKind.demonHunterShadowGlaive){
+      final res=_castDemonHunterSigil(r,dmg,targetHpRatio:worldBossHp/(worldBossMaxHp==0?1:worldBossMaxHp),isBossTarget:true);
       dmg=res.dmg; heal=res.heal; shield=res.shield; dkExtra=res.extra;
     } else switch(r.mechanic){
       case RelicMechanic.guard: case RelicMechanic.iceWard: case RelicMechanic.stone:
