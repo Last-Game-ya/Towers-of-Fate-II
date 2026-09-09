@@ -27,3 +27,5 @@ flutter:
     - assets/images/bosses/
     - assets/images/monsters/
     - assets/images/scenes/
+    - assets/images/npc/
+    - assets/images/specializations/
