@@ -6803,6 +6803,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         final dmg = (magAtk * 2.3 * specAbilityDamageMod).round();
         final petDmg = (magAtk * 0.6 * specAbilityDamageMod).round();
         return tr('Poškození: ~$dmg (magické)\nSluha: +$petDmg navíc', 'Damage: ~$dmg (magic)\nServant: +$petDmg extra');
+      case HeroClass.none:
+        return '';
     }
   }
 
@@ -6845,6 +6847,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       case HeroClass.necromancer:
         final dmg = (magAtk * 4.5 * specAbilityDamageMod).round();
         return tr('Poškození: ~$dmg (magické)', 'Damage: ~$dmg (magic)');
+      case HeroClass.none:
+        return '';
     }
   }
 
@@ -6893,6 +6897,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       case HeroClass.necromancer:
         final dmg = (magAtk * 3.2 * specAbilityDamageMod).round();
         return tr('Poškození: ~$dmg (magické)\nPlné HP + lifesteal na 8 kol', 'Damage: ~$dmg (magic)\nFull HP + lifesteal for 8 rounds');
+      case HeroClass.none:
+        return '';
     }
   }
   bool get isAssassin => heroClass == HeroClass.hunter && (classRanks[HeroClass.hunter] ?? 0) >= 15;

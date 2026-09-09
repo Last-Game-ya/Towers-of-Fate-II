@@ -1600,7 +1600,7 @@ class _BeltSlotPainter extends CustomPainter {
     canvas.drawPath(strap, _fillMetal(const Color(0xFF4A2E1C)));
     canvas.drawPath(strap, _rim(FantasyPalette.oldGold));
     // Nýty podél pásu místo holé kůže.
-    for (final x in [4.5, 7, 17, 19.5]) {
+    for (final x in [4.5, 7.0, 17.0, 19.5]) {
       canvas.drawCircle(Offset(x, 12.5), 0.5, _fillMetal(FantasyPalette.oldGold));
     }
     final buckle = Path()..moveTo(9.3, 8)..lineTo(14.7, 8)..lineTo(14.7, 17)..lineTo(9.3, 17)..close();
@@ -2591,7 +2591,7 @@ class AttackSkinIconPainter extends CustomPainter {
       for (int i = 0; i < 8; i++) {
         final a = rnd.nextDouble() * 2 * pi;
         final d = r * (0.75 + rnd.nextDouble() * 0.2);
-        canvas.drawCircle(center + Offset(cos(a), sin(a)) * d, 1.6, Paint()..color = Color.lerp(accent, Colors.white, .5));
+        canvas.drawCircle(center + Offset(cos(a), sin(a)) * d, 1.6, Paint()..color = Color.lerp(accent, Colors.white, .5)!);
       }
       canvas.drawCircle(center, r * 0.16, Paint()..color = Colors.white.withOpacity(.85));
       // Skin-specifický akcent uprostřed prstence, ať shadow/cosmic/storm nejsou jen "fialová
