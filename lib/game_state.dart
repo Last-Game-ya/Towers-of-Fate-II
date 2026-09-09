@@ -16,7 +16,11 @@ class BattlePassReward {
   // Kosmetický skin základního útoku (premium větev, level 40) - odemkne OBĚ varianty
   // (fyzickou i magickou), hra sama vybere podle typu útoku aktuální třídy.
   final String? cosmeticAttackSkinId;
-  const BattlePassReward({this.gold = 0, this.dust = 0, this.crystals = 0, required this.premium, required this.level, this.isChest = false, this.cosmeticFrameId, this.cosmeticAttackSkinId});
+  // Permanentní pasivní bonus vlastnictví Premium (ne jednorázová odměna k vyzvednutí) - zatím
+  // jen level 1 Premium: +20 % Quest XP. Zobrazuje se jako trvalý štítek na dlaždici, funguje
+  // bez ohledu na to, jestli hráč level 1 fyzicky "vyzvedl" (viz _addBattlePassRenown).
+  final int questXpBonusPercent;
+  const BattlePassReward({this.gold = 0, this.dust = 0, this.crystals = 0, required this.premium, required this.level, this.isChest = false, this.cosmeticFrameId, this.cosmeticAttackSkinId, this.questXpBonusPercent = 0});
 }
 
 class GameState extends ChangeNotifier with WidgetsBindingObserver {
@@ -491,7 +495,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   int autoCombatSpeedLevel = 0; // 0-10; každý level = -0.1s intervalu auto-boje (1.5s základ -> 0.5s strop), koupeno za 10g/level
   bool combatLogEnabled = true; // globální přepínač zobrazení combat logu (Věž/Aréna/Lair/World Boss/Rift/Endless Scale)
   bool combatStatsVisible = true; // globální přepínač zobrazení stat chipů (Fyz.útok/Mag.útok/Armor/Crit/Dodge/Block) u Hrdiny i Nepřítele ve Věži
-  bool portraitCombatMode = false; // false = detailní panel (jak dřív), true = velký portrét class/spec + nepřítele místo stat chipů
+  bool portraitCombatMode = true; // false = detailní panel (jak dřív), true = velký portrét class/spec + nepřítele místo stat chipů
   bool vibrationEnabled = true; // globální přepínač haptické odezvy (vibrací)
   bool autoBuyPotionsEnabled = false;
   int blacksmithRank = 1;
@@ -1809,6 +1813,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       gold: gold, dust: dust, crystals: crystals, premium: true, level: level,
       isChest: isChestLevel,
       cosmeticAttackSkinId: isMaxLevel ? 'battlepass_attack_skin' : null,
+      questXpBonusPercent: level == 1 ? 20 : 0,
     );
   }
 

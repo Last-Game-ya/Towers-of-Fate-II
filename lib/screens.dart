@@ -1809,6 +1809,26 @@ class _MainMenuScreenState extends State<MainMenuScreen> with SingleTickerProvid
               Positioned.fill(
                 child: _SceneLifeOverlay(danger: true, smokePoints: const [], glowPoints: const [Offset(0.5, 0.13)]),
               ),
+              Positioned(
+                top: 8, right: 8,
+                child: SafeArea(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: state.vibrationEnabled ? s.vibrationOn : s.vibrationOff,
+                        icon: Icon(state.vibrationEnabled ? Icons.vibration : Icons.mobile_off, color: const Color(0xFFC69214)),
+                        onPressed: state.toggleVibration,
+                      ),
+                      IconButton(
+                        tooltip: state.language == "cs" ? "CZ 🇨🇿" : "EN 🇬🇧",
+                        icon: const Icon(Icons.language, color: Color(0xFFC69214)),
+                        onPressed: state.toggleLanguage,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -1817,29 +1837,22 @@ class _MainMenuScreenState extends State<MainMenuScreen> with SingleTickerProvid
                   constraints: const BoxConstraints(maxWidth: 420),
                   child: Column(
                     children: [
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 36),
                       AnimatedBuilder(
                         animation: _glowPulse,
-                        builder: (context, child) => Container(
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [BoxShadow(color: const Color(0xFFC69214).withOpacity(0.15 + _glowPulse.value * 0.25), blurRadius: 24 + _glowPulse.value * 16, spreadRadius: 2 + _glowPulse.value * 4)],
+                        builder: (context, child) => Text(
+                          s.gameTitle,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.cinzel(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFFF1E6D0),
+                            letterSpacing: 1.8,
+                            shadows: [
+                              Shadow(color: const Color(0xFFC69214).withOpacity(0.55 + _glowPulse.value * 0.35), blurRadius: 18 + _glowPulse.value * 14),
+                              const Shadow(color: Colors.black, blurRadius: 6, offset: Offset(0, 2)),
+                            ],
                           ),
-                          child: child,
-                        ),
-                        child: const Icon(Icons.castle, size: 64, color: Color(0xFFC69214)),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        s.gameTitle,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.cinzel(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFFF1E6D0),
-                          letterSpacing: 1.6,
-                          shadows: [Shadow(color: const Color(0xFFC69214).withOpacity(0.7), blurRadius: 16)],
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -1848,27 +1861,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> with SingleTickerProvid
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: Color(0xFF9C8B6B), fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.6),
                       ),
-                      const SizedBox(height: 28),
-
-                    // Jazyk CZ/EN + Vibrace
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 4,
-                      children: [
-                        TextButton.icon(
-                          onPressed: state.toggleVibration,
-                          icon: Icon(state.vibrationEnabled ? Icons.vibration : Icons.mobile_off, color: const Color(0xFFC69214)),
-                          label: Text(state.vibrationEnabled ? s.vibrationOn : s.vibrationOff, style: const TextStyle(color: Color(0xFFC69214), fontWeight: FontWeight.bold)),
-                        ),
-                        TextButton.icon(
-                          onPressed: state.toggleLanguage,
-                          icon: const Icon(Icons.language, color: Color(0xFFC69214)),
-                          label: Text(state.language == "cs" ? "CZ 🇨🇿" : "EN 🇬🇧", style: const TextStyle(color: Color(0xFFC69214), fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 22),
 
                     // Jméno hrdiny
                     Container(
@@ -1885,13 +1878,18 @@ class _MainMenuScreenState extends State<MainMenuScreen> with SingleTickerProvid
                             TextField(
                               controller: _nameController,
                               maxLength: 20,
-                              style: const TextStyle(color: Color(0xFFF1E6D0)),
+                              style: const TextStyle(color: Color(0xFFF1E6D0), fontSize: 16),
+                              cursorColor: const Color(0xFFC69214),
                               decoration: InputDecoration(
                                 hintText: s.heroNameHint,
                                 hintStyle: const TextStyle(color: Colors.grey),
-                                counterStyle: const TextStyle(color: Colors.grey),
-                                enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
-                                focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFC69214))),
+                                counterStyle: const TextStyle(color: Colors.grey, fontSize: 11),
+                                filled: true,
+                                fillColor: Colors.black.withOpacity(.25),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Colors.grey.withOpacity(.3))),
+                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFFC69214), width: 1.5)),
                               ),
                               onSubmitted: (v) => state.setHeroName(v),
                             ),
@@ -1921,19 +1919,19 @@ class _MainMenuScreenState extends State<MainMenuScreen> with SingleTickerProvid
                         },
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
 
-                    // Nová hra
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.redAccent), padding: const EdgeInsets.symmetric(vertical: 12)),
-                        icon: const Icon(Icons.refresh, color: Colors.redAccent),
-                        label: Text(s.newGame, style: const TextStyle(color: Colors.redAccent)),
+                    // Nová hra - záměrně nenápadné (je to reset postupu, ne primární akce -
+                    // nemá soutěžit vizuálně s "Začít hru" výš).
+                    Center(
+                      child: TextButton.icon(
+                        style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6)),
+                        icon: const Icon(Icons.refresh, color: Colors.redAccent, size: 16),
+                        label: Text(s.newGame, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
                         onPressed: () => _onNewGame(state),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 14),
                     const Divider(color: Colors.grey),
                     const SizedBox(height: 10),
 
@@ -2481,7 +2479,7 @@ class LairScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (state.portraitCombatMode) ...[
-                              if (kClassPortraitAssets[state.heroClass] != null)
+                              if (specializationPortraitFor(state.heroClass, state.specialization) != null)
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
                                   child: SizedBox(
@@ -2490,7 +2488,7 @@ class LairScreen extends StatelessWidget {
                                     child: Stack(
                                       fit: StackFit.expand,
                                       children: [
-                                        LivingPortrait(assetPath: kClassPortraitAssets[state.heroClass]!, accent: heroAccent, mode: PortraitLifeMode.subtle),
+                                        LivingPortrait(assetPath: specializationPortraitFor(state.heroClass, state.specialization)!, accent: heroAccent, mode: PortraitLifeMode.subtle),
                                         DecoratedBox(decoration: BoxDecoration(border: Border.all(color: heroAccent.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(12))),
                                         Positioned(
                                           left: 0, right: 0, bottom: 0,
@@ -2523,7 +2521,7 @@ class LairScreen extends StatelessWidget {
                                   width: 26, height: 26, padding: const EdgeInsets.all(5),
                                   decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [heroAccent.withOpacity(.45), const Color(0xFF14181C)]), boxShadow: [BoxShadow(color: heroAccent.withOpacity(.6), blurRadius: 8)]),
                                   child: kClassPortraitAssets[state.heroClass] != null
-                                      ? ClipOval(child: Image.asset(kClassPortraitAssets[state.heroClass]!, width: 16, height: 16, fit: BoxFit.cover))
+                                      ? ClipOval(child: Image.asset(specializationPortraitFor(state.heroClass, state.specialization)!, width: 16, height: 16, fit: BoxFit.cover))
                                       : CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent)),
                                 ),
                                 const SizedBox(width: 7),
@@ -3052,7 +3050,17 @@ class WorldBossScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(s.heroName.isNotEmpty ? s.heroName : tr("Hrdina", "Hero"), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5))),
+                          Row(children: [
+                            Container(
+                              width: 26, height: 26, padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(shape: BoxShape.circle, gradient: const RadialGradient(colors: [Color(0x551E88E5), Color(0xFF14181C)]), boxShadow: [BoxShadow(color: const Color(0xFF1E88E5).withOpacity(.6), blurRadius: 8)]),
+                              child: kClassPortraitAssets[s.heroClass] != null
+                                  ? ClipOval(child: Image.asset(specializationPortraitFor(s.heroClass, s.specialization)!, width: 16, height: 16, fit: BoxFit.cover))
+                                  : CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(s.heroClass)).proceduralPainter(const Color(0xFF1E88E5))),
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(child: Text(s.heroName.isNotEmpty ? s.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5)))),
+                          ]),
                           const Divider(),
                           BarWidget(value: s.hp.toDouble(), max: s.maxHp.toDouble(), color: Colors.green, label: "HP"),
                           Padding(
@@ -3088,7 +3096,27 @@ class WorldBossScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(s.worldBossName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFFF5A36))),
+                          Builder(builder: (context) {
+                            // World Boss se losuje ze stejné sady jmen jako patra Věže (viz
+                            // getBossDetails) - jméno má navíc přilepené " • World Boss", takže
+                            // se musí useknout, než se hledá v kBossPortraitAssets. Většina
+                            // těch ~100 jmen zatím portrét nemá - graceful fallback na
+                            // procedurální ikonu, ne na nic (jako dřív).
+                            final baseName = s.worldBossName.split(' • ').first;
+                            final portrait = kBossPortraitAssets[baseName];
+                            final (bossIcon, bossColor) = s.bossThemeIconFor({'name': baseName, 'ability': s.worldBossAbility});
+                            return Row(children: [
+                              Container(
+                                width: 32, height: 32, padding: portrait != null ? EdgeInsets.zero : const EdgeInsets.all(6),
+                                decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [bossColor.withOpacity(.5), const Color(0xFF1E1613)]), border: Border.all(color: bossColor.withOpacity(.7), width: 1.5), boxShadow: [BoxShadow(color: bossColor.withOpacity(.6), blurRadius: 10)]),
+                                child: portrait != null
+                                    ? ClipOval(child: LivingPortrait(assetPath: portrait, accent: bossColor, mode: PortraitLifeMode.subtle))
+                                    : Icon(bossIcon, size: 16, color: bossColor),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(child: Text(s.worldBossName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFFF5A36)))),
+                            ]);
+                          }),
                           const SizedBox(height: 4),
                           Text(tr("Schopnost: ${s.worldBossAbility}", "Ability: ${s.worldBossAbility}"), style: const TextStyle(fontSize: 10, color: Colors.amberAccent)),
                           const SizedBox(height: 8),
@@ -4559,7 +4587,7 @@ class TowerScreen extends StatelessWidget {
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [
-                                      LivingPortrait(assetPath: kClassPortraitAssets[state.heroClass]!, accent: heroAccent, mode: PortraitLifeMode.subtle),
+                                      LivingPortrait(assetPath: specializationPortraitFor(state.heroClass, state.specialization)!, accent: heroAccent, mode: PortraitLifeMode.subtle),
                                       DecoratedBox(
                                         decoration: BoxDecoration(border: Border.all(color: heroAccent.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(12)),
                                       ),
@@ -4598,7 +4626,7 @@ class TowerScreen extends StatelessWidget {
                               child: kClassPortraitAssets[state.heroClass] != null
                                   ? ClipOval(
                                       child: Image.asset(
-                                        kClassPortraitAssets[state.heroClass]!,
+                                        specializationPortraitFor(state.heroClass, state.specialization)!,
                                         width: 16, height: 16, fit: BoxFit.cover,
                                       ),
                                     )
@@ -5063,11 +5091,28 @@ class BattlePassScreen extends StatelessWidget {
                   ]),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  state.battlePassLevel >= GameState.battlePassMaxLevel
-                      ? tr('Maximální úroveň dosažena!', 'Max level reached!')
-                      : tr('${state.battlePassRenownIntoLevel}/${state.battlePassRenownForNextLevel} renown do další úrovně', '${state.battlePassRenownIntoLevel}/${state.battlePassRenownForNextLevel} renown to next level'),
-                  style: const TextStyle(color: Colors.grey, fontSize: 11),
+                GestureDetector(
+                  onLongPress: () => showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      backgroundColor: const Color(0xFF1E1E24),
+                      title: Text(tr('Co je Quest XP?', 'What is Quest XP?'), style: const TextStyle(color: Color(0xFFFFB100), fontWeight: FontWeight.bold)),
+                      content: Text(
+                        tr(
+                          'Quest XP je "zkušenost" Battle Passu - plní tenhle progress bar a posouvá tě mezi jeho úrovněmi (1-40).\n\nZískáváš ho automaticky za splněné questy, nic se nekupuje ani nesbírá zvlášť:\n• Denní quest → +10 Quest XP\n• Týdenní quest → +30 Quest XP\n• Měsíční quest → +100 Quest XP\n\nNa jednu úroveň potřebuješ 45 Quest XP.',
+                          'Quest XP is the Battle Pass\'s "experience" - it fills this progress bar and moves you between its levels (1-40).\n\nYou earn it automatically from completed quests, nothing to buy or collect separately:\n• Daily quest → +10 Quest XP\n• Weekly quest → +30 Quest XP\n• Monthly quest → +100 Quest XP\n\nOne level costs 45 Quest XP.',
+                        ),
+                        style: const TextStyle(color: Color(0xFFE6DCF0), height: 1.4),
+                      ),
+                      actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Rozumím', 'Got it')))],
+                    ),
+                  ),
+                  child: Text(
+                    state.battlePassLevel >= GameState.battlePassMaxLevel
+                        ? tr('Maximální úroveň dosažena!', 'Max level reached!')
+                        : tr('${state.battlePassRenownIntoLevel}/${state.battlePassRenownForNextLevel} Quest XP do další úrovně', '${state.battlePassRenownIntoLevel}/${state.battlePassRenownForNextLevel} Quest XP to next level'),
+                    style: const TextStyle(color: Colors.grey, fontSize: 11, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dotted),
+                  ),
                 ),
               ],
             ),
@@ -6260,7 +6305,7 @@ class _SoulsScreenState extends State<SoulsScreen> {
                         boxShadow: [BoxShadow(color: accent.withOpacity(.6), blurRadius: 20, spreadRadius: 2)],
                       ),
                       child: kClassPortraitAssets[selected] != null
-                          ? ClipOval(child: LivingPortrait(assetPath: kClassPortraitAssets[selected]!, accent: accent, mode: PortraitLifeMode.full))
+                          ? ClipOval(child: LivingPortrait(assetPath: (selected == state.heroClass ? specializationPortraitFor(selected, state.specialization) : kClassPortraitAssets[selected])!, accent: accent, mode: PortraitLifeMode.full))
                           : CustomPaint(painter: FantasyIconRegistry.of(_soulsClassIcon[selected]!).proceduralPainter(accent)),
                     ),
                   ),
@@ -8081,7 +8126,13 @@ class ProfileScreen extends StatelessWidget {
                 initiallyExpanded: s.specialization == spec,
                 leading: CircleAvatar(
                   backgroundColor: s.specialization == spec ? const Color(0xFFFF8000) : Colors.grey.shade800,
-                  child: Text('$spec', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: ClipOval(
+                    child: Image.asset(
+                      specializationPortraitFor(s.heroClass, spec) ?? '',
+                      width: 40, height: 40, fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) => Text('$spec', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
                 ),
                 title: Text(s.specializationNameFor(spec), style: const TextStyle(fontWeight: FontWeight.bold, color: FantasyColors.parchment)),
                 subtitle: Padding(

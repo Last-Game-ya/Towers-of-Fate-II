@@ -2056,7 +2056,7 @@ class _LivingPortraitState extends State<LivingPortrait> with SingleTickerProvid
             children: [
               Transform.translate(
                 offset: pan,
-                child: Transform.scale(scale: scale, child: Image.asset(widget.assetPath, fit: BoxFit.cover)),
+                child: Transform.scale(scale: scale, child: Image.asset(widget.assetPath, fit: BoxFit.cover, alignment: Alignment.topCenter)),
               ),
               for (final m in _motes) _mote(m, t),
             ],
@@ -3403,21 +3403,22 @@ class EquipSceneSlot {
 /// klidně přeskupte, pokud bude sedět jinak vizuálně (např. helma nahoře by dávala smysl blíž
 /// hlavě postavy).
 const List<EquipSceneSlot> equipSceneSlots = [
-  // Levý sloupec (dx ~0.171), shora dolů
-  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.171, dy: 0.181),
-  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.171, dy: 0.301),
-  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.171, dy: 0.421),
-  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.171, dy: 0.542),
-  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.171, dy: 0.665),
-  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.171, dy: 0.783),
-  // Pravý sloupec (dx ~0.793), shora dolů
-  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.793, dy: 0.234),
-  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.793, dy: 0.352),
-  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.793, dy: 0.469),
-  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.793, dy: 0.586),
+  // Levý sloupec (dx 0.171), shora dolů - přeměřeno přímo z inventory_bg.png (detekce jasných
+  // barevných okrajů rámů proti tmavému pozadí).
+  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.171, dy: 0.195),
+  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.171, dy: 0.313),
+  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.171, dy: 0.432),
+  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.171, dy: 0.549),
+  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.171, dy: 0.667),
+  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.171, dy: 0.786),
+  // Pravý sloupec (dx 0.803), shora dolů.
+  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.803, dy: 0.252),
+  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.803, dy: 0.368),
+  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.803, dy: 0.485),
+  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.803, dy: 0.603),
   // Pár malých rámů dole vpravo - dva sloty Přívěsku vedle sebe.
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.686, dy: 0.715, accessoryIndex: 0),
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.881, dy: 0.715, accessoryIndex: 1),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.729, dy: 0.723, accessoryIndex: 0),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.872, dy: 0.723, accessoryIndex: 1),
 ];
 
 /// Malovaná scéna "Nasazené vybavení" v Batohu - stejný jazyk jako SceneMapView níž
@@ -3476,16 +3477,47 @@ class _EquipSceneSlotMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Prázdný slot nekreslí nic navrch - ozdobný rám je už namalovaný v pozadí. Jen obsazený
-    // slot dostane ikonu předmětu (stejný FantasyIconFrame jako jinde v Batohu), ať je vidět,
-    // co má hráč nasazené, a lze na to ťuknout pro detail.
+    // slot dostane ikonu předmětu.
+    //
+    // NEPOUŽÍVÁ FantasyIconFrame (kulatý prstenec) - ty rámy v inventory_bg.png jsou čtvercové
+    // ornamentální rámy, ne kruhové, takže kulatá ikona uprostřed vypadala jako vznášející se
+    // kolečko vedle/přes rám, ne jako věc, co ho vyplňuje. Tohle je vlastní čtvercová verze:
+    // ikona vyplní skoro celý slot, jemný čtvercový obrys + záře podle vzácnosti (doplňuje
+    // malovaný rám, nekřičí přes něj vlastním tlustým prstencem).
     if (item == null) return const SizedBox(width: 60, height: 60);
+    final style = kRarityStyles[item!.rarityVisual]!;
+    final asset = FantasyIconRegistry.of(item!.iconType);
     return GestureDetector(
       onTap: () => onTap(context, item!),
       onLongPress: () => onTap(context, item!),
       child: SizedBox(
         width: 60,
         height: 60,
-        child: FantasyIconFrame(type: item!.iconType, rarity: item!.rarityVisual, size: 60, interactive: false),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                gradient: RadialGradient(colors: [style.glowColor.withOpacity(style.glowAlpha * 0.55), Colors.transparent], radius: 0.85),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(11),
+              child: asset.svgAssetPath != null
+                  ? SvgPicture.asset(asset.svgAssetPath!)
+                  : CustomPaint(painter: asset.proceduralPainter(style.borderColor)),
+            ),
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: style.borderColor.withOpacity(.55), width: 1.5),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3554,7 +3586,10 @@ class SceneMapView extends StatelessWidget {
   // je zadaná, nahradí procedurální _SceneBackdropPainter. Zůstává null, dokud daná scéna nemá
   // hotový obrázek - pak se použije starý procedurální fallback, nic dalšího se měnit nemusí.
   final String? backgroundImage;
-  const SceneMapView({super.key, required this.title, required this.titleIcon, required this.titleAccent, required this.danger, required this.buildings, this.smokePoints = const [], this.glowPoints = const [], this.backgroundImage});
+  // Většina scén chce nadpis + ikonu nad malovanou mapou (viz Row níž), ale Dobrodružství ho
+  // nechce vůbec - nastavuje false na svém volání.
+  final bool showTitle;
+  const SceneMapView({super.key, required this.title, required this.titleIcon, required this.titleAccent, required this.danger, required this.buildings, this.smokePoints = const [], this.glowPoints = const [], this.backgroundImage, this.showTitle = true});
 
   @override
   Widget build(BuildContext context) {
@@ -3567,16 +3602,17 @@ class SceneMapView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
-              child: Row(children: [
-                Icon(titleIcon, color: titleAccent, size: 20),
-                const SizedBox(width: 8),
-                Text(title, style: GoogleFonts.cinzel(color: titleAccent, fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 1.2)),
-                const SizedBox(width: 12),
-                Expanded(child: Container(height: 1, color: titleAccent.withOpacity(.35))),
-              ]),
-            ),
+            if (showTitle)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+                child: Row(children: [
+                  Icon(titleIcon, color: titleAccent, size: 20),
+                  const SizedBox(width: 8),
+                  Text(title, style: GoogleFonts.cinzel(color: titleAccent, fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 1.2)),
+                  const SizedBox(width: 12),
+                  Expanded(child: Container(height: 1, color: titleAccent.withOpacity(.35))),
+                ]),
+              ),
             ClipRRect(
               borderRadius: BorderRadius.circular(18),
               child: Container(
@@ -3829,11 +3865,11 @@ class _SceneLifePainter extends CustomPainter {
           canvas.drawCircle(forgeP, size.width * 0.06 * forgeFlare, Paint()..color = const Color(0xFFFFE0B2).withOpacity(0.20 * forgeFlare)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.05));
         }
       }
-      // Runový Čaroděj (0.145, 0.86) - modré runy na věži se rozsvěcí jedna po druhé odspoda
+      // Runový Čaroděj (0.165, 0.94) - modré runy na věži se rozsvěcí jedna po druhé odspoda
       // nahoru (ne všechny najednou) - 5 run podél výšky věže, v každém okamžiku svítí jen
       // jedna, ostatní jsou tlumené.
       {
-        final towerBase = Offset(0.145 * size.width, 0.94 * size.height);
+        final towerBase = Offset(0.165 * size.width, 0.94 * size.height);
         const runeCount = 5;
         final activeIndex = ((t * 1.6) % runeCount).floor();
         for (int i = 0; i < runeCount; i++) {
@@ -3845,6 +3881,27 @@ class _SceneLifePainter extends CustomPainter {
             Offset(towerBase.dx, ry), 4 + 3 * glow,
             Paint()
               ..color = const Color(0xFF64B5F6).withOpacity(0.10 + 0.55 * glow)
+              ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + 5 * glow),
+          );
+        }
+      }
+      // Runový Kovář (0.79, 0.90) - stejný princip jako Runový Čaroděj výš, jen červené/oranžové
+      // runy (ladí s rudou září téhle budovy) - jiná fáze (offset 0.5), ať nesvítí obě věže
+      // synchronně.
+      {
+        final forgeBase = Offset(0.79 * size.width, 0.90 * size.height);
+        const runeCount = 4;
+        final tOffset = (t + 0.5) % 1.0;
+        final activeIndex = ((tOffset * 1.6) % runeCount).floor();
+        for (int i = 0; i < runeCount; i++) {
+          final ry = forgeBase.dy - size.height * (0.05 + i * 0.04);
+          final isActive = i == activeIndex;
+          final localPhase = (tOffset * 1.6) % 1.0;
+          final glow = isActive ? sin(localPhase * pi) : 0.0;
+          canvas.drawCircle(
+            Offset(forgeBase.dx, ry), 4 + 3 * glow,
+            Paint()
+              ..color = const Color(0xFFFF7043).withOpacity(0.10 + 0.55 * glow)
               ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + 5 * glow),
           );
         }
@@ -4025,6 +4082,7 @@ class AdventureScreen extends StatelessWidget {
         title: tr('DOBRODRUŽSTVÍ', 'ADVENTURE'),
         titleIcon: Icons.terrain,
         titleAccent: const Color(0xFFFF8000),
+        showTitle: false,
         danger: true,
         buildings: buildings,
         backgroundImage: 'assets/images/scenes/adventure_bg.png',
@@ -4210,6 +4268,7 @@ class CityScreen extends StatelessWidget {
         title: tr('MĚSTO', 'TOWN'),
         titleIcon: Icons.location_city,
         titleAccent: const Color(0xFFC9A96E),
+        showTitle: false,
         danger: false,
         buildings: buildings,
         backgroundImage: 'assets/images/scenes/town_bg.png',

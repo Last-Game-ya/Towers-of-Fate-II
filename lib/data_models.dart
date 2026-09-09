@@ -84,7 +84,38 @@ const Map<HeroClass, String> kClassPortraitAssets = {
   HeroClass.warrior: 'assets/images/portraits/class_warrior.png',
   HeroClass.paladin: 'assets/images/portraits/class_paladin.png',
   HeroClass.demonhunter: 'assets/images/portraits/class_demonhunter.png',
+  HeroClass.necromancer: 'assets/images/portraits/class_necromancer.png',
 };
+
+// ===== PORTRÉTY SPECIALIZACÍ (assets/images/specializations/<třída>_<1/2/3>.png) =====
+// Konkrétnější než kClassPortraitAssets výš - jeden obrázek na každou ze 3 specializací dané
+// třídy. Používá se přes specializationPortraitFor() níž, NIKDY přímo - ta funkce sama řeší
+// fallback na obecný portrét třídy, dokud hráč specializaci ještě nezvolil (spec == 0) nebo
+// konkrétní obrázek chybí.
+const Map<HeroClass, List<String>> kSpecializationPortraitAssets = {
+  HeroClass.warrior: ['assets/images/specializations/warrior_1.png', 'assets/images/specializations/warrior_2.png', 'assets/images/specializations/warrior_3.png'],
+  HeroClass.hunter: ['assets/images/specializations/hunter_1.png', 'assets/images/specializations/hunter_2.png', 'assets/images/specializations/hunter_3.png'],
+  HeroClass.healer: ['assets/images/specializations/healer_1.png', 'assets/images/specializations/healer_2.png', 'assets/images/specializations/healer_3.png'],
+  HeroClass.deathknight: ['assets/images/specializations/deathknight_1.png', 'assets/images/specializations/deathknight_2.png', 'assets/images/specializations/deathknight_3.png'],
+  HeroClass.mage: ['assets/images/specializations/mage_1.png', 'assets/images/specializations/mage_2.png', 'assets/images/specializations/mage_3.png'],
+  HeroClass.duelist: ['assets/images/specializations/duelist_1.png', 'assets/images/specializations/duelist_2.png', 'assets/images/specializations/duelist_3.png'],
+  HeroClass.monk: ['assets/images/specializations/monk_1.png', 'assets/images/specializations/monk_2.png', 'assets/images/specializations/monk_3.png'],
+  HeroClass.druid: ['assets/images/specializations/druid_1.png', 'assets/images/specializations/druid_2.png', 'assets/images/specializations/druid_3.png'],
+  HeroClass.paladin: ['assets/images/specializations/paladin_1.png', 'assets/images/specializations/paladin_2.png', 'assets/images/specializations/paladin_3.png'],
+  HeroClass.demonhunter: ['assets/images/specializations/demonhunter_1.png', 'assets/images/specializations/demonhunter_2.png', 'assets/images/specializations/demonhunter_3.png'],
+  HeroClass.necromancer: ['assets/images/specializations/necromancer_1.png', 'assets/images/specializations/necromancer_2.png', 'assets/images/specializations/necromancer_3.png'],
+};
+
+// Portrét pro danou třídu + zvolenou specializaci (1/2/3). Padá zpátky na obecný portrét třídy
+// (kClassPortraitAssets), pokud specializace ještě není zvolená (spec == 0/mimo rozsah) nebo
+// pro tu kombinaci chybí obrázek - takže volající nemusí nikdy sám řešit null.
+String? specializationPortraitFor(HeroClass cls, int spec) {
+  if (spec >= 1 && spec <= 3) {
+    final list = kSpecializationPortraitAssets[cls];
+    if (list != null && list.length >= spec) return list[spec - 1];
+  }
+  return kClassPortraitAssets[cls];
+}
 
 // ===== PORTRÉTY BOSSŮ (AI-generovaná ilustrace, stejný princip jako kClassPortraitAssets výš) =====
 // Klíč je jméno bosse (currentEnemyName ve Věži / currentLairBossName v Doupěti) - Doupě i Věž
