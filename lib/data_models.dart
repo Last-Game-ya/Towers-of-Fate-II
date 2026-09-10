@@ -2003,11 +2003,12 @@ const Map<TutorialTipId, TutorialTipDef> kTutorialTips = {
   ),
 };
 
-// ===== OBCHOD S KOSMETIKOU (rámy portrétu, skiny útoku, aury) =====
+// ===== OBCHOD S KOSMETIKOU (rámy portrétu, skiny útoku, aury, skiny tlačítek spellů) =====
 // Rámy a skiny sdílí sady s Battle Passem (kCosmeticShopCatalog jen PŘIDÁVÁ další cesty ke
 // koupi navíc k těm z BP - id 'battlepass_frame'/'battlepass_attack_skin' tu záměrně nejsou,
-// ty se dají získat jen skrz Battle Pass). Aury jsou nová kategorie, dostupná JEN tady.
-enum CosmeticCategory { frame, attackSkin, aura }
+// ty se dají získat jen skrz Battle Pass). Aury a skiny tlačítek jsou nové kategorie, dostupné
+// JEN tady.
+enum CosmeticCategory { frame, attackSkin, aura, buttonSkin }
 
 class CosmeticShopItem {
   final String id;
@@ -2055,4 +2056,33 @@ const List<CosmeticShopItem> kCosmeticShopCatalog = [
   CosmeticShopItem(id: 'aura_crimson', category: CosmeticCategory.aura, name: 'Karmínová aura', description: 'Sytě rudá, pulzuje jako tlukoucí srdce.', accent: Color(0xFFD32F2F), crystalPrice: 140),
   CosmeticShopItem(id: 'aura_golden', category: CosmeticCategory.aura, name: 'Zlatá aura', description: 'Zářivě zlatá, viditelná z dálky.', accent: Color(0xFFFFD54F), crystalPrice: 260),
   CosmeticShopItem(id: 'aura_void', category: CosmeticCategory.aura, name: 'Aura Propasti', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFF4A148C), isPremiumOnly: true),
+  // ----- SKINY TLAČÍTEK SPELLŮ (barva tlačítka + barva záře + ikona - viz kButtonSkinStyles,
+  // aplikuje se na VŠECHNA ability tlačítka najednou, ne na jeden konkrétní spell) -----
+  CosmeticShopItem(id: 'btn_crimson', category: CosmeticCategory.buttonSkin, name: 'Krvavé runy', description: 'Tmavě rudá tlačítka se žhnoucí oranžovou září.', accent: Color(0xFFB71C1C), goldPrice: 1500),
+  CosmeticShopItem(id: 'btn_frost', category: CosmeticCategory.buttonSkin, name: 'Ledový plamen', description: 'Ledově modrá tlačítka s tyrkysovou září.', accent: Color(0xFF0288D1), goldPrice: 1500),
+  CosmeticShopItem(id: 'btn_nature', category: CosmeticCategory.buttonSkin, name: 'Přírodní síla', description: 'Lesní zelená tlačítka se šťavnatě limetkovou září.', accent: Color(0xFF2E7D32), goldPrice: 3200, crystalPrice: 18),
+  CosmeticShopItem(id: 'btn_gold', category: CosmeticCategory.buttonSkin, name: 'Zlatý majestát', description: 'Tmavě zlatá tlačítka se zářivě žlutou svatozáří.', accent: Color(0xFFB8860B), crystalPrice: 80),
+  CosmeticShopItem(id: 'btn_shadow', category: CosmeticCategory.buttonSkin, name: 'Stínový symbol', description: 'Téměř černá tlačítka s fialovou přízračnou září.', accent: Color(0xFF311B4D), crystalPrice: 160),
+  CosmeticShopItem(id: 'btn_cosmic', category: CosmeticCategory.buttonSkin, name: 'Kosmický vzor', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFF1A237E), isPremiumOnly: true),
 ];
+
+// Vzhled skinu tlačítek spellů - barva pozadí/okraje tlačítka, barva záře (glow) a ikona, co
+// nahradí ikonu konkrétního spellu ve VŠECH ability tlačítkách najednou (viz SpellIconButton).
+// Samostatná definice od CosmeticShopItem výš, protože obchodní karta (název/cena/accent pro
+// náhled) a skutečný vykreslovací styl (3 nezávislé barvy/ikona) jsou different concerns - stejný
+// vzor jako _frameStyleFor/attackSkinAccent u ostatních dvou kosmetických kategorií.
+class ButtonSkinStyle {
+  final Color buttonColor;
+  final Color glowColor;
+  final IconData icon;
+  const ButtonSkinStyle({required this.buttonColor, required this.glowColor, required this.icon});
+}
+
+const Map<String, ButtonSkinStyle> kButtonSkinStyles = {
+  'btn_crimson': ButtonSkinStyle(buttonColor: Color(0xFFB71C1C), glowColor: Color(0xFFFF5252), icon: Icons.whatshot),
+  'btn_frost': ButtonSkinStyle(buttonColor: Color(0xFF0288D1), glowColor: Color(0xFF80DEEA), icon: Icons.ac_unit),
+  'btn_nature': ButtonSkinStyle(buttonColor: Color(0xFF2E7D32), glowColor: Color(0xFFAEEA00), icon: Icons.eco),
+  'btn_gold': ButtonSkinStyle(buttonColor: Color(0xFFB8860B), glowColor: Color(0xFFFFD700), icon: Icons.auto_awesome),
+  'btn_shadow': ButtonSkinStyle(buttonColor: Color(0xFF311B4D), glowColor: Color(0xFF9C27B0), icon: Icons.nights_stay),
+  'btn_cosmic': ButtonSkinStyle(buttonColor: Color(0xFF1A237E), glowColor: Color(0xFFE91E63), icon: Icons.auto_awesome_mosaic),
+};
