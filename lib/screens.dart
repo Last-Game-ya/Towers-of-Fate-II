@@ -1325,6 +1325,77 @@ class CombatFxOverlay extends StatefulWidget {
   State<CombatFxOverlay> createState() => _CombatFxOverlayState();
 }
 
+// Krátký záblesk skinu ZÁKLADNÍHO útoku (viz kCosmeticShopCatalog/equippedAttackSkin) -
+// na rozdíl od SpellFx výš (tier1-4 schopnosti) základní útok dřív vůbec nepouštěl žádnou
+// vizuální událost, takže nasazený skin neměl na co "sáhnout" a v boji se nikdy neprojevil,
+// i když ho hráč měl v Kosmetice zvolený a vidět na ikonce tlačítka. Poslouchá přímo na
+// state.basicAttackFxSeq (viz GameState.fight()), ne přes Provider rebuild, ať chytí i
+// rychlé auto-boj tiky. Vykresluje stejný X+prstenec motiv jako AttackSkinIconPainter
+// v obchodě, jen animovaný (rychlý scale+fade burst přes enemy kartu).
+class BasicAttackSkinOverlay extends StatefulWidget {
+  final GameState state;
+  const BasicAttackSkinOverlay({super.key, required this.state});
+  @override
+  State<BasicAttackSkinOverlay> createState() => _BasicAttackSkinOverlayState();
+}
+
+class _BasicAttackSkinOverlayState extends State<BasicAttackSkinOverlay> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+  int _lastSeen = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastSeen = widget.state.basicAttackFxSeq;
+    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 450));
+    widget.state.addListener(_onStateChanged);
+  }
+
+  void _onStateChanged() {
+    final seq = widget.state.basicAttackFxSeq;
+    if (seq != _lastSeen) {
+      _lastSeen = seq;
+      if (widget.state.equippedAttackSkin != 'default' && mounted) {
+        _c.forward(from: 0);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.state.removeListener(_onStateChanged);
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) {
+          if (_c.isDismissed) return const SizedBox.shrink();
+          final t = _c.value;
+          final scale = 0.55 + t * 0.85;
+          final opacity = (1 - t).clamp(0.0, 1.0);
+          return Center(
+            child: Opacity(
+              opacity: opacity,
+              child: Transform.scale(
+                scale: scale,
+                child: SizedBox(
+                  width: 60, height: 60,
+                  child: CustomPaint(painter: AttackSkinIconPainter(physical: widget.state.physAtk >= widget.state.magAtk, skinId: widget.state.equippedAttackSkin)),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _CombatFxOverlayState extends State<CombatFxOverlay> {
   final Set<int> _shownBurstIds = {};
   final Set<int> _shownSpellFxIds = {};
@@ -2582,7 +2653,11 @@ class LairScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Card(
+                    child: Stack(children: [
+                    AuraGlowWrapper(
+                      color: state.equippedAuraColor,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Card(
                       shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFF1E88E5), width: 1), borderRadius: BorderRadius.circular(8)),
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
@@ -2591,9 +2666,7 @@ class LairScreen extends StatelessWidget {
                           children: [
                             if (state.portraitCombatMode) ...[
                               if (specializationPortraitFor(state.heroClass, state.specialization) != null)
-                                AuraGlowWrapper(
-                                  color: state.equippedAuraColor,
-                                  child: ClipRRect(
+                                ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
                                   child: SizedBox(
                                     width: double.infinity,
@@ -2615,7 +2688,6 @@ class LairScreen extends StatelessWidget {
                                     ),
                                   ),
                                 )
-                                )
                               else
                                 Center(
                                   child: Column(children: [
@@ -2625,7 +2697,11 @@ class LairScreen extends StatelessWidget {
                                       child: CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent)),
                                     ),
                                     const SizedBox(height: 6),
-                                    Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: heroAccent)),
+                                    Row(children: [
+                                      Expanded(child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: heroAccent))),
+                                      const SizedBox(width: 6),
+                                      Text('Lv. ${state.level}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: heroAccent.withOpacity(.85))),
+                                    ]),
                                   ]),
                                 ),
                               const SizedBox(height: 8),
@@ -2640,6 +2716,8 @@ class LairScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 7),
                                 Expanded(child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: heroAccent))),
+                                const SizedBox(width: 6),
+                                Text('Lv. ${state.level}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: heroAccent.withOpacity(.85))),
                               ]),
                               const Divider(),
                             ],
@@ -2669,7 +2747,11 @@ class LairScreen extends StatelessWidget {
                           ],
                         ),
                       ),
+                      ),
                     ),
+                    // Rám kosmetiky obepíná celou kartu (portrét+HP+Štít+resource), ne jen portrét.
+                    if (state.equippedFrame != 'default') Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: BattlePassFramePainter(frameId: state.equippedFrame, rectangular: true, cornerRadius: 8)))),
+                    ]),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -2810,7 +2892,7 @@ class LairScreen extends StatelessWidget {
                     : lockedTier4Slot(state),
                 relic: state.currentSpecRelicUnlocked
                     ? SpellIconButton(
-                        visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz)),
+                        visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz), slotKey: 'relic'),
                         costLabel: tr('Relic Lv ${state.currentSpecRelicLevel}', 'Relic Lv ${state.currentSpecRelicLevel}'),
                         disabled: !state.isSpecRelicEquipped || state.specRelicUsedLair,
                         overlayText: !state.isSpecRelicEquipped ? tr('Nenasazen', 'Not equipped') : (state.specRelicUsedLair ? tr('Použito', 'Used') : null),
@@ -2968,14 +3050,21 @@ class EndlessScaleScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Card(
+                  child: Stack(children: [
+                  AuraGlowWrapper(
+                    color: state.equippedAuraColor,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Card(
                     shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFF1E88E5), width: 1), borderRadius: BorderRadius.circular(8)),
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5))),
+                          Row(children: [
+                            Expanded(child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5)))),
+                            Text('Lv. ${state.level}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5))),
+                          ]),
                           const Divider(),
                           BarWidget(value: state.hp.toDouble(), max: state.maxHp.toDouble(), color: Colors.green, label: "HP"),
                           const SizedBox(height: 6),
@@ -2989,11 +3078,15 @@ class EndlessScaleScreen extends StatelessWidget {
                         ],
                       ),
                     ),
+                    ),
                   ),
+                  if (state.equippedFrame != 'default') Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: BattlePassFramePainter(frameId: state.equippedFrame, rectangular: true, cornerRadius: 8)))),
+                  ]),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Card(
+                  child: Stack(children: [
+                  Card(
                     shape: RoundedRectangleBorder(side: const BorderSide(color: Colors.deepPurpleAccent, width: 1), borderRadius: BorderRadius.circular(8)),
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
@@ -3016,6 +3109,8 @@ class EndlessScaleScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+                  BasicAttackSkinOverlay(state: state),
+                  ]),
                 ),
               ],
             ),
@@ -3078,7 +3173,7 @@ class EndlessScaleScreen extends StatelessWidget {
                 // Endless Scale zatím nemá vlastní Relic spell backend - slot se zobrazuje
                 // konzistentně s ostatními obrazovkami, ale natrvalo uzamčený.
                 relic: SpellIconButton(
-                  visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz)),
+                  visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz), slotKey: 'relic'),
                   disabled: true,
                   costLabel: tr('Nedostupné v Endless Scale', 'Unavailable in Endless Scale'),
                   onPressed: null,
@@ -3165,7 +3260,11 @@ class WorldBossScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Card(
+                  child: Stack(children: [
+                  AuraGlowWrapper(
+                    color: s.equippedAuraColor,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Card(
                     shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFF1E88E5), width: 1), borderRadius: BorderRadius.circular(8)),
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
@@ -3182,6 +3281,8 @@ class WorldBossScreen extends StatelessWidget {
                             ),
                             const SizedBox(width: 7),
                             Expanded(child: Text(s.heroName.isNotEmpty ? s.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5)))),
+                            const SizedBox(width: 6),
+                            Text('Lv. ${s.level}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5))),
                           ]),
                           const Divider(),
                           BarWidget(value: s.hp.toDouble(), max: s.maxHp.toDouble(), color: Colors.green, label: "HP"),
@@ -3207,11 +3308,15 @@ class WorldBossScreen extends StatelessWidget {
                         ],
                       ),
                     ),
+                    ),
                   ),
+                  if (s.equippedFrame != 'default') Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: BattlePassFramePainter(frameId: s.equippedFrame, rectangular: true, cornerRadius: 8)))),
+                  ]),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Card(
+                  child: Stack(children: [
+                  Card(
                     shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFFFF5A36), width: 1), borderRadius: BorderRadius.circular(8)),
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
@@ -3253,6 +3358,8 @@ class WorldBossScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+                  BasicAttackSkinOverlay(state: s),
+                  ]),
                 ),
               ],
             ),
@@ -3314,7 +3421,7 @@ class WorldBossScreen extends StatelessWidget {
                     : lockedTier4Slot(s),
                 relic: s.currentSpecRelicUnlocked
                     ? SpellIconButton(
-                        visual: SpellVisual('Relic: ${s.currentSpecRelic.spell}', s.currentSpecRelic.icon, s.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(s.currentSpecRelic.kind, c, size: sz)),
+                        visual: SpellVisual('Relic: ${s.currentSpecRelic.spell}', s.currentSpecRelic.icon, s.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(s.currentSpecRelic.kind, c, size: sz), slotKey: 'relic'),
                         costLabel: tr('Relic Lv ${s.currentSpecRelicLevel}', 'Relic Lv ${s.currentSpecRelicLevel}'),
                         disabled: !s.isSpecRelicEquipped || s.specRelicUsedWorldBoss,
                         overlayText: !s.isSpecRelicEquipped ? tr('Nenasazen', 'Not equipped') : (s.specRelicUsedWorldBoss ? tr('Použito', 'Used') : null),
@@ -3643,7 +3750,11 @@ class _RiftScreenState extends State<RiftScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Container(
+                    child: Stack(children: [
+                    AuraGlowWrapper(
+                      color: state.equippedAuraColor,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF14314D), Color(0xFF1E1E24)]),
@@ -3661,6 +3772,8 @@ class _RiftScreenState extends State<RiftScreen> {
                             ),
                             const SizedBox(width: 7),
                             Expanded(child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF64B5F6)))),
+                            const SizedBox(width: 6),
+                            Text('Lv. ${state.level}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64B5F6))),
                           ]),
                           const Divider(height: 14),
                           BarWidget(value: state.hp.toDouble(), max: state.maxHp.toDouble(), color: Colors.green, label: "HP"),
@@ -3679,11 +3792,15 @@ class _RiftScreenState extends State<RiftScreen> {
                           Text(tr("Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Úhyb: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Blok: ${(state.blockChance * 100).toStringAsFixed(1)}%", "Crit: ${(state.critChance * 100).toStringAsFixed(1)}% | Dodge: ${(state.dodgeChance * 100).toStringAsFixed(1)}% | Block: ${(state.blockChance * 100).toStringAsFixed(1)}%"), style: const TextStyle(fontSize: 11, color: Colors.tealAccent)),
                         ],
                       ),
+                      ),
                     ),
+                    if (state.equippedFrame != 'default') Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: BattlePassFramePainter(frameId: state.equippedFrame, rectangular: true, cornerRadius: 10)))),
+                    ]),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Builder(builder: (context) {
+                    child: Stack(children: [
+                    Builder(builder: (context) {
                       final guardianAccent = state.isTreasureGoblinFight ? const Color(0xFFFFD700) : const Color(0xFF8B5CF6);
                       return Container(
                         padding: const EdgeInsets.all(12),
@@ -3722,6 +3839,8 @@ class _RiftScreenState extends State<RiftScreen> {
                         ),
                       );
                     }),
+                    BasicAttackSkinOverlay(state: state),
+                    ]),
                   ),
                 ],
               ),
@@ -3842,7 +3961,7 @@ class _RiftScreenState extends State<RiftScreen> {
                   // Trhlina zatím nemá vlastní Relic spell backend (na rozdíl od ostatních módů) -
                   // slot se zobrazuje konzistentně s ostatními obrazovkami, ale natrvalo uzamčený.
                   relic: SpellIconButton(
-                    visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz)),
+                    visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz), slotKey: 'relic'),
                     disabled: true,
                     costLabel: tr('Nedostupné v Trhlině', 'Unavailable in the Rift'),
                     onPressed: null,
@@ -4331,7 +4450,52 @@ class _ClassSelectionScreenState extends State<_ClassSelectionScreen> {
         _ClassOption(iconType: FantasyIconType.classNecromancer, heroClass: HeroClass.necromancer, name: tr("Nekromant", "Necromancer"), description: tr("Vládce mrtvých - vyvolává poskoky a oslabuje nepřátele, místo aby bojoval čistě vlastníma rukama.", "A master of the dead - summons minions and weakens foes instead of fighting purely with its own hands.")),
       ];
 
+  // Po smrti hrdiny confirmDeath() vynuluje heroName na "" ("Nový hrdina po smrti dostane
+  // nové jméno" - viz komentář v GameState), ale hráč se z Věže po smrti vrací rovnou sem na
+  // výběr třídy, ne na hlavní menu, kde jediné existovalo pole pro zadání jména. Bez tohohle
+  // dialogu by heroName zůstalo prázdné navždy a všude by se místo jména ukazovalo "Hrdina".
+  Future<bool> _promptNameIfNeeded() async {
+    if (widget.state.heroName.isNotEmpty) return true;
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E24),
+        title: Text(tr("Jak se jmenuje tvůj nový hrdina?", "What is your new hero's name?"), style: const TextStyle(color: Color(0xFFFFB100), fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          style: const TextStyle(color: Color(0xFFF1E6D0)),
+          cursorColor: const Color(0xFFC69214),
+          decoration: InputDecoration(
+            hintText: tr("Jméno hrdiny", "Hero name"),
+            hintStyle: const TextStyle(color: Colors.grey),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Colors.grey.withOpacity(.3))),
+            focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6)), borderSide: BorderSide(color: Color(0xFFC69214), width: 1.5)),
+          ),
+          onSubmitted: (v) => Navigator.of(dialogContext).pop(v),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC69214)),
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: Text(tr("Potvrdit", "Confirm"), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty) return _promptNameIfNeeded(); // prázdné jméno nepustíme dál, zeptáme se znovu
+    widget.state.setHeroName(trimmed);
+    return true;
+  }
+
   Future<void> _confirmClass(HeroClass cls) async {
+    if (!await _promptNameIfNeeded()) return;
+    if (!mounted) return;
     setState(() => _phase = _ClassSelectPhase.fadingOut);
     await Future.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
@@ -4583,7 +4747,7 @@ class TowerScreen extends StatelessWidget {
           : lockedTier4Slot(state);
       final relicBtn = state.currentSpecRelicUnlocked
           ? SpellIconButton(
-              visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz)),
+              visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz), slotKey: 'relic'),
               costLabel: state.isSpecRelicEquipped
                   ? (state.heroClass == HeroClass.deathknight ? tr('Uvolnit duše', 'Release Souls') : 'Relic spell')
                   : tr('Nutno nasadit v Inventáři!', 'Must be equipped in Inventory!'),
@@ -4673,7 +4837,10 @@ class TowerScreen extends StatelessWidget {
                     state: state,
                     side: FxSide.hero,
                     child: Stack(children: [
-                  Container(
+                  AuraGlowWrapper(
+                    color: state.equippedAuraColor,
+                    borderRadius: BorderRadius.circular(13),
+                    child: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       gradient: RadialGradient(center: Alignment.topLeft, radius: 1.3, colors: [heroAccent.withOpacity(.16), const Color(0xFF141019)]),
@@ -4698,15 +4865,15 @@ class TowerScreen extends StatelessWidget {
                                           decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [state.currentSpecRelic.color.withOpacity(.5), const Color(0xFF14181C)]), border: Border.all(color: state.currentSpecRelic.color.withOpacity(.7), width: 2), boxShadow: [BoxShadow(color: state.currentSpecRelic.color.withOpacity(.6), blurRadius: 14)]),
                                           child: specRelicIconWidget(state.currentSpecRelic.kind, state.currentSpecRelic.color, size: 32),
                                         ),
-                                        // Kosmetický rám z Battle Passu - stejný jazyk jako u velkého
-                                        // obdélníkového portrétu níž, jen na kulatém avataru.
-                                        if (state.equippedFrame != 'default') CustomPaint(painter: BattlePassFramePainter(frameId: state.equippedFrame)),
                                       ],
                                     ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: heroAccent)),
-                                  Text(state.currentSpecRelic.form, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: heroAccent.withOpacity(.75))),
+                                  Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: heroAccent)),
+                                    const SizedBox(width: 5),
+                                    Text('Lv. ${state.level}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: heroAccent.withOpacity(.85))),
+                                  ]),
                                 ]),
                               )
                             else if (kClassPortraitAssets[state.heroClass] != null)
@@ -4717,9 +4884,12 @@ class TowerScreen extends StatelessWidget {
                               // portrét soutěží o pozornost s HP/dmg čísly, takže nic víc (žádný
                               // zoom navíc, žádné částice - na to je class picker/Profil, viz
                               // PortraitLifeMode.full tam).
-                              AuraGlowWrapper(
-                                color: state.equippedAuraColor,
-                                child: ClipRRect(
+                              //
+                              // Rám a aura kosmetiky se dřív kreslily jen kolem tohohle portrétu
+                              // (kruh, protože BattlePassFramePainter vždy kreslil kruh) - teď
+                              // obepínají celou kartu (portrét+HP+Štít+resource), viz AuraGlowWrapper
+                              // a rectangular CustomPaint níž u konce Column.
+                              ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
                                 child: SizedBox(
                                   width: double.infinity,
@@ -4736,15 +4906,19 @@ class TowerScreen extends StatelessWidget {
                                         child: Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                           decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
-                                          child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: heroAccent)),
+                                          child: Row(
+                                            children: [
+                                              Expanded(child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: heroAccent))),
+                                              const SizedBox(width: 6),
+                                              // Level vpravo dole na stejném řádku jako jméno.
+                                              Text('Lv. ${state.level}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: heroAccent.withOpacity(.85))),
+                                            ],
+                                          ),
                                         ),
                                       ),
-                                      // Kosmetický rám z Battle Passu (viz CustomizationScreen) - 'default' nekreslí nic.
-                                      if (state.equippedFrame != 'default') Positioned.fill(child: CustomPaint(painter: BattlePassFramePainter(frameId: state.equippedFrame))),
                                     ],
                                   ),
                                 ),
-                              )
                               )
                             else
                               Center(
@@ -4759,12 +4933,15 @@ class TowerScreen extends StatelessWidget {
                                           decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [heroAccent.withOpacity(.5), const Color(0xFF14181C)]), border: Border.all(color: heroAccent.withOpacity(.7), width: 2), boxShadow: [BoxShadow(color: heroAccent.withOpacity(.6), blurRadius: 14)]),
                                           child: CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent)),
                                         ),
-                                        if (state.equippedFrame != 'default') CustomPaint(painter: BattlePassFramePainter(frameId: state.equippedFrame)),
                                       ],
                                     ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: heroAccent)),
+                                  Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: heroAccent)),
+                                    const SizedBox(width: 5),
+                                    Text('Lv. ${state.level}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: heroAccent.withOpacity(.85))),
+                                  ]),
                                 ]),
                               ),
                             const SizedBox(height: 8),
@@ -4787,15 +4964,13 @@ class TowerScreen extends StatelessWidget {
                                           )
                                         : CustomPaint(painter: FantasyIconRegistry.of(heroClassIconType(state.heroClass)).proceduralPainter(heroAccent)),
                                   ),
-                                  // I malý kompaktní avatar dostane rám - BattlePassFramePainter
-                                  // teď škáluje tloušťku prstenu i klenoty podle rozměru plátna
-                                  // (viz úprava v ui_design.dart), takže na 26px nepůsobí předimenzovaně.
-                                  if (state.equippedFrame != 'default') CustomPaint(painter: BattlePassFramePainter(frameId: state.equippedFrame)),
                                 ],
                               ),
                             ),
                             const SizedBox(width: 7),
                             Expanded(child: Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: heroAccent))),
+                            const SizedBox(width: 6),
+                            Text('Lv. ${state.level}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: heroAccent.withOpacity(.85))),
                           ]),
                           const SizedBox(height: 8),
                           BarWidget(value: state.hp.toDouble(), max: state.maxHp.toDouble(), color: Colors.green, label: "HP"),
@@ -4845,6 +5020,10 @@ class TowerScreen extends StatelessWidget {
                         ],
                     ),
                   ),
+                  ),
+                      // Rám kosmetiky teď obepíná CELOU kartu (portrét+HP+Štít+resource), ne jen
+                      // portrét - obdélníková varianta BattlePassFramePainter (viz konverzace).
+                      if (state.equippedFrame != 'default') Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: BattlePassFramePainter(frameId: state.equippedFrame, rectangular: true, cornerRadius: 13)))),
                       CombatFxOverlay(state: state, side: FxSide.hero),
                     ]),
                   ),
@@ -4996,6 +5175,7 @@ class TowerScreen extends StatelessWidget {
                   ),
                   ),
                       CombatFxOverlay(state: state, side: FxSide.enemy),
+                      BasicAttackSkinOverlay(state: state),
                     ]),
                   ),
                 ),
@@ -5485,6 +5665,17 @@ class _BattlePassLevelRow extends StatelessWidget {
 class CustomizationScreen extends StatelessWidget {
   const CustomizationScreen({super.key});
 
+  // Slotů ability tlačítek, co jde přebarvit/přeikonovat zvlášť (viz SpellVisual.slotKey) -
+  // stejné pořadí, v jakém se zobrazují v combatActionGrid.
+  static const List<(String, String)> _buttonSlots = [
+    ('basicAttack', 'Základní útok'),
+    ('tier1', 'Schopnost 1'),
+    ('tier2', 'Schopnost 2'),
+    ('tier3', 'Schopnost 3'),
+    ('tier4', 'Schopnost 4 (Rank 100)'),
+    ('relic', 'Relic'),
+  ];
+
   // BP-exkluzivní položky (nedají se koupit, jen Battle Pass) - zvlášť od kCosmeticShopCatalog,
   // který obsahuje jen to, co jde koupit za zlato/krystaly/reálné peníze.
   static const List<(String, String, String)> _bpOnlyFrames = [('battlepass_frame', 'Zlatý rám (Battle Pass)', 'Golden frame (Battle Pass)')];
@@ -5498,6 +5689,7 @@ class CustomizationScreen extends StatelessWidget {
         final shopFrames = kCosmeticShopCatalog.where((c) => c.category == CosmeticCategory.frame).toList();
         final shopSkins = kCosmeticShopCatalog.where((c) => c.category == CosmeticCategory.attackSkin).toList();
         final shopAuras = kCosmeticShopCatalog.where((c) => c.category == CosmeticCategory.aura).toList();
+        final shopButtonSkins = kCosmeticShopCatalog.where((c) => c.category == CosmeticCategory.buttonSkin).toList();
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -5588,9 +5780,215 @@ class CustomizationScreen extends StatelessWidget {
                   ),
               ],
             ),
+            const SizedBox(height: 24),
+            Text(tr('SKIN TLAČÍTEK SPELLŮ', 'SPELL BUTTON SKIN'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+            const SizedBox(height: 4),
+            Text(tr('Vlastní barva tlačítka, barva záře a ikona pro VŠECHNA ability tlačítka v boji najednou (základní útok, schopnosti, relic).', 'Custom button color, glow color, and icon for ALL ability buttons in combat at once (basic attack, abilities, relic).'), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12, runSpacing: 12,
+              children: [
+                _cosmeticTile(
+                  label: tr('Žádný', 'No skin'), unlocked: true, equipped: state.equippedButtonSkin == 'default', accent: const Color(0xFFFFB100),
+                  preview: Container(width: 64, height: 64, decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: FantasyColors2.obsidian, border: Border.all(color: const Color(0xFFFFB100).withOpacity(.4)))),
+                  onTap: () => state.equipButtonSkin('default'),
+                ),
+                for (final c in shopButtonSkins)
+                  _cosmeticTile(
+                    label: c.name, unlocked: state.unlockedButtonSkins.contains(c.id), equipped: state.equippedButtonSkin == c.id, accent: c.accent,
+                    price: c, state: state,
+                    preview: Builder(builder: (context) {
+                      final style = kButtonSkinStyles[c.id]!;
+                      return Container(
+                        width: 64, height: 64,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [style.buttonColor.withOpacity(.38), const Color(0xFF1A1511)]),
+                          border: Border.all(color: style.buttonColor, width: 2.2),
+                          boxShadow: [BoxShadow(color: style.glowColor.withOpacity(.55), blurRadius: 10, spreadRadius: 0.5), BoxShadow(color: style.glowColor.withOpacity(.22), blurRadius: 20, spreadRadius: 2)],
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(style.icon, color: style.buttonColor, size: 30),
+                      );
+                    }),
+                    onTap: state.unlockedButtonSkins.contains(c.id) ? () => state.equipButtonSkin(c.id) : (c.isPremiumOnly ? null : () => state.buyCosmetic(c.id)),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Text(tr('VZHLED TLAČÍTEK PO JEDNOTLIVÝCH SLOTECH', 'PER-SLOT BUTTON APPEARANCE'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFFB100))),
+            const SizedBox(height: 4),
+            Text(
+              tr('Zvol si symbol, barvu tlačítka a barvu záře ZVLÁŠŤ pro každý slot schopnosti - např. meč s červeným podbarvením a černou září pro Schopnost 1, kapku s modrým podbarvením a světle modrou září pro Schopnost 2. Má přednost před skinem výš, zdarma.',
+                  'Pick a symbol, button color and glow color SEPARATELY for each ability slot - e.g. a sword with red background and black glow for Ability 1, a drop with blue background and light-blue glow for Ability 2. Takes priority over the skin above, free.'),
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            for (final slot in _buttonSlots) _slotSkinTile(context, state, slot.$1, slot.$2),
           ],
         );
       }),
+    );
+  }
+
+  Widget _slotSkinTile(BuildContext context, GameState state, String slotKey, String slotLabel) {
+    final icon = state.customSlotIconFor(slotKey);
+    final buttonColor = state.customSlotButtonColorFor(slotKey);
+    final glowColor = state.customSlotGlowColorFor(slotKey);
+    final hasAnyCustom = icon != null || buttonColor != null || glowColor != null;
+    final previewColor = buttonColor ?? const Color(0xFF6B6B6B);
+    return Card(
+      color: const Color(0xFF1E1E24),
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: hasAnyCustom ? previewColor.withOpacity(.6) : Colors.grey.withOpacity(.2))),
+      child: ListTile(
+        onTap: () => _openSlotSkinPicker(context, state, slotKey, slotLabel),
+        leading: SizedBox(
+          width: 44, height: 44,
+          child: icon != null
+              ? Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(9),
+                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [previewColor.withOpacity(.38), const Color(0xFF1A1511)]),
+                    border: Border.all(color: previewColor, width: 1.6),
+                    boxShadow: glowColor != null ? [BoxShadow(color: glowColor.withOpacity(.6), blurRadius: 8, spreadRadius: 0.5)] : null,
+                  ),
+                  alignment: Alignment.center,
+                  child: standaloneAccentIcon(icon, previewColor, size: 30),
+                )
+              : Container(
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(9), border: Border.all(color: Colors.grey.withOpacity(.3)), color: FantasyColors2.obsidian),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.auto_awesome, color: Colors.grey, size: 20),
+                ),
+        ),
+        title: Text(slotLabel, style: const TextStyle(color: Color(0xFFF1E6D0), fontWeight: FontWeight.bold, fontSize: 13)),
+        subtitle: Text(
+          hasAnyCustom
+              ? [
+                  if (icon != null) kSelectableButtonIcons[icon] ?? '',
+                  if (buttonColor != null) tr('vlastní barva', 'custom color'),
+                  if (glowColor != null) tr('vlastní záře', 'custom glow'),
+                ].where((s) => s.isNotEmpty).join(' • ')
+              : tr('Výchozí vzhled', 'Default look'),
+          style: const TextStyle(color: Colors.grey, fontSize: 11),
+        ),
+        trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      ),
+    );
+  }
+
+  void _openSlotSkinPicker(BuildContext context, GameState state, String slotKey, String slotLabel) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1511),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (sheetContext) {
+        return Consumer<GameState>(builder: (sheetContext, s, _) {
+          final icon = s.customSlotIconFor(slotKey);
+          final buttonColor = s.customSlotButtonColorFor(slotKey);
+          final glowColor = s.customSlotGlowColorFor(slotKey);
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Expanded(child: Text(slotLabel, style: const TextStyle(color: Color(0xFFFFB100), fontWeight: FontWeight.bold, fontSize: 16))),
+                      TextButton(
+                        onPressed: () {
+                          s.setCustomSlotIcon(slotKey, null);
+                          s.setCustomSlotButtonColor(slotKey, null);
+                          s.setCustomSlotGlowColor(slotKey, null);
+                        },
+                        child: Text(tr('Vše výchozí', 'Reset all'), style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+                      ),
+                    ]),
+                    const Divider(color: Color(0xFF3A3028)),
+                    Text(tr('SYMBOL', 'SYMBOL'), style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11)),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 10, runSpacing: 10, children: [
+                      _pickerSwatch(
+                        selected: icon == null,
+                        onTap: () => s.setCustomSlotIcon(slotKey, null),
+                        child: const Icon(Icons.close, color: Colors.grey, size: 22),
+                        label: tr('Výchozí', 'Default'),
+                      ),
+                      for (final entry in kSelectableButtonIcons.entries)
+                        _pickerSwatch(
+                          selected: icon == entry.key,
+                          onTap: () => s.setCustomSlotIcon(slotKey, entry.key),
+                          child: standaloneAccentIcon(entry.key, buttonColor ?? const Color(0xFFFFB100), size: 28),
+                          label: entry.value,
+                        ),
+                    ]),
+                    const SizedBox(height: 16),
+                    Text(tr('BARVA TLAČÍTKA', 'BUTTON COLOR'), style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11)),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 10, runSpacing: 10, children: [
+                      _pickerSwatch(
+                        selected: buttonColor == null,
+                        onTap: () => s.setCustomSlotButtonColor(slotKey, null),
+                        child: const Icon(Icons.close, color: Colors.grey, size: 18),
+                        label: tr('Výchozí', 'Default'),
+                      ),
+                      for (final entry in kSelectableButtonColors.entries)
+                        _pickerSwatch(
+                          selected: buttonColor == entry.value,
+                          onTap: () => s.setCustomSlotButtonColor(slotKey, entry.value),
+                          child: Container(width: 26, height: 26, decoration: BoxDecoration(shape: BoxShape.circle, color: entry.value, border: Border.all(color: Colors.white24))),
+                          label: entry.key,
+                        ),
+                    ]),
+                    const SizedBox(height: 16),
+                    Text(tr('BARVA ZÁŘE', 'GLOW COLOR'), style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11)),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 10, runSpacing: 10, children: [
+                      _pickerSwatch(
+                        selected: glowColor == null,
+                        onTap: () => s.setCustomSlotGlowColor(slotKey, null),
+                        child: const Icon(Icons.close, color: Colors.grey, size: 18),
+                        label: tr('Výchozí', 'Default'),
+                      ),
+                      for (final entry in kSelectableButtonColors.entries)
+                        _pickerSwatch(
+                          selected: glowColor == entry.value,
+                          onTap: () => s.setCustomSlotGlowColor(slotKey, entry.value),
+                          child: Container(width: 26, height: 26, decoration: BoxDecoration(shape: BoxShape.circle, color: entry.value, boxShadow: [BoxShadow(color: entry.value.withOpacity(.8), blurRadius: 6)])),
+                          label: entry.key,
+                        ),
+                    ]),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  Widget _pickerSwatch({required bool selected, required VoidCallback onTap, required Widget child, required String label}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 46, height: 46,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFF14181C),
+            border: Border.all(color: selected ? const Color(0xFFFFB100) : Colors.white12, width: selected ? 2 : 1),
+          ),
+          alignment: Alignment.center,
+          child: child,
+        ),
+        const SizedBox(height: 3),
+        SizedBox(width: 52, child: Text(label, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 9, color: selected ? const Color(0xFFFFB100) : Colors.grey))),
+      ]),
     );
   }
 
@@ -6751,29 +7149,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ===== HLAVIČKA: kapacita + tlačítko zvětšit vedle sebe (dřív odděleně - číslo
-          // nahoře, tlačítko až pod scénou s postavou). Číslo a akce, co ho mění, patří k
-          // sobě, takže je hráč vidí naráz bez scrollování. =====
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  tr("Batoh (${state.bagItemCount}/${state.maxInventorySize})", "Bag (${state.bagItemCount}/${state.maxInventorySize})"),
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFFFB100)),
-                ),
-              ),
-              Tooltip(
-                message: tr("Zvětšit batoh (+5 míst, ${(state.maxInventorySize - 15) * 50} 🪙)", "Expand bag (+5 slots, ${(state.maxInventorySize - 15) * 50} 🪙)"),
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  icon: const Icon(Icons.add_box_outlined, color: Color(0xFFFFB100), size: 22),
-                  onPressed: state.upgradeInventoryCapacity,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
           // ===== ZÁLOŽKY: Vybavení / Lektvary (samostatná záložka, ne společný filtr) =====
           Row(children: [
             _tabButton(tr("⚔ Vybavení", "⚔ Gear"), !showPotions, () => setState(() => showPotions = false)),
@@ -6786,7 +7161,25 @@ class _InventoryScreenState extends State<InventoryScreen> {
           // vodorovného seznamu ikon - viz konverzace o Copilot promptu pro Batoh. Nahrazuje
           // "NASAZENÉ VYBAVENÍ" i pro prázdný stav (rámy jsou vidět prázdné přímo na obrázku,
           // takže tady na rozdíl od dřívějška netřeba `if (equippedItems.isEmpty) return...`).
-          EquippedGearScene(state: state, onItemTap: (ctx, item) => _showItemDetailDialog(ctx, state, item)),
+          //
+          // Titulek "Batoh (X/Y)" + tlačítko rozšíření teď žijí jako overlay přímo v obrázku
+          // (viz EquippedGearScene) - dřív byly v samostatném Row nad scénou. Transform.translate
+          // + vynucená šířka na celou obrazovku "prorazí" 16px padding okolního ListView, ať je
+          // scéna plnokrevná přes celou šířku (stejně jako Město/Dobrodružství), i když zbytek
+          // obsahu (záložky, filtry, mřížka itemů) zůstává normálně odsazený.
+          Transform.translate(
+            offset: const Offset(-16, 0),
+            child: SizedBox(
+              width: MediaQuery.sizeOf(context).width,
+              child: EquippedGearScene(
+                state: state,
+                onItemTap: (ctx, item) => _showItemDetailDialog(ctx, state, item),
+                title: tr("Batoh (${state.bagItemCount}/${state.maxInventorySize})", "Bag (${state.bagItemCount}/${state.maxInventorySize})"),
+                onExpand: state.upgradeInventoryCapacity,
+                expandTooltip: tr("Zvětšit batoh (+5 míst, ${(state.maxInventorySize - 15) * 50} 🪙)", "Expand bag (+5 slots, ${(state.maxInventorySize - 15) * 50} 🪙)"),
+              ),
+            ),
+          ),
           const SizedBox(height: 15),
           // ===== AUTO-OBLÉKNUTÍ + ZÁMKY - zkompaktněné na dvě tlačítka vedle sebe (dřív dva
           // velké boxy s trvale vypsaným popisem). Popis teď nese tooltip (podržení/hover),

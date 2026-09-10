@@ -712,6 +712,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         "equippedAttackSkin": equippedAttackSkin,
         "unlockedAuras": unlockedAuras.toList(),
         "equippedAura": equippedAura,
+        "unlockedButtonSkins": unlockedButtonSkins.toList(),
+        "equippedButtonSkin": equippedButtonSkin,
+        "customSlotIcon": customSlotIcon,
+        "customSlotButtonColor": customSlotButtonColor,
+        "customSlotGlowColor": customSlotGlowColor,
         "redeemedPromoCodes": redeemedPromoCodes.toList(),
         "introSeen": introSeen,
         "introTutorialDone": introTutorialDone,
@@ -904,6 +909,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     unlockedAuras = Set<String>.from((json["unlockedAuras"] as List?) ?? const ['default']);
     if (unlockedAuras.isEmpty) unlockedAuras.add('default');
     equippedAura = json["equippedAura"] as String? ?? 'default';
+    unlockedButtonSkins = Set<String>.from((json["unlockedButtonSkins"] as List?) ?? const ['default']);
+    if (unlockedButtonSkins.isEmpty) unlockedButtonSkins.add('default');
+    equippedButtonSkin = json["equippedButtonSkin"] as String? ?? 'default';
+    customSlotIcon = Map<String, String>.from((json["customSlotIcon"] as Map?) ?? const {});
+    customSlotButtonColor = Map<String, int>.from((json["customSlotButtonColor"] as Map?) ?? const {});
+    customSlotGlowColor = Map<String, int>.from((json["customSlotGlowColor"] as Map?) ?? const {});
     redeemedPromoCodes = Set<String>.from((json["redeemedPromoCodes"] as List?) ?? const []);
     introSeen = json["introSeen"] as bool? ?? false;
     introTutorialDone = json["introTutorialDone"] as bool? ?? true;
@@ -1726,10 +1737,72 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   String equippedFrame = 'default';
   Set<String> unlockedAttackSkins = {'default'};
   String equippedAttackSkin = 'default';
+  // Zvýší se při KAŽDÉM základním útoku (fight()) - manuálním i auto-boj tiku - bez ohledu na
+  // třídu/typ útoku. UI (viz _BasicAttackSkinOverlay) na tohle poslouchá a přehraje krátký burst
+  // v barvě nasazeného skinu základního útoku. Dřív skin neměl vůbec žádný háček, kde by se
+  // při základním útoku zobrazil - fungoval jen jako popisek v obchodě/paint na ikoně tlačítka,
+  // ale při skutečném zásahu se nic nepřebarvilo (skin se aplikoval jen na SpellFx tier1-4
+  // schopnosti, ne na základní útok - viz konverzace).
+  int basicAttackFxSeq = 0;
   // Aura - jemný barevný glow/částice kolem portrétu hrdiny v combat kartě (Věž/Lair) - nová
   // kategorie kosmetiky, na rozdíl od rámů/skinů se dá koupit JEN v obchodě, ne přes Battle Pass.
   Set<String> unlockedAuras = {'default'};
   String equippedAura = 'default';
+  // Skin tlačítek spellů - barva tlačítka + barva záře + ikona, co nahradí ikonu KAŽDÉHO ability
+  // tlačítka (základní útok, tier1-4, relic) napříč všemi bojovými obrazovkami. Na rozdíl od
+  // skinu základního útoku (ten jen přidává efekt PŘI zásahu) tenhle mění, jak tlačítka vypadají
+  // permanentně, dokud je boj otevřený - viz kButtonSkinStyles a SpellIconButton.
+  Set<String> unlockedButtonSkins = {'default'};
+  String equippedButtonSkin = 'default';
+  // Ruční volba PO JEDNOTLIVÝCH SLOTECH (viz konverzace: "meč pro spell 1, kapka pro spell 2,
+  // každý svojí barvou") - klíč je 'basicAttack'/'tier1'/'tier2'/'tier3'/'tier4'/'relic' (viz
+  // SpellVisual.slotKey). Nezávislé na equippedButtonSkin výš a má PŘEDNOST před ním, pokud je
+  // pro daný slot nastavená - prázdný/chybějící klíč = spadá zpět na equippedButtonSkin, nebo
+  // na vlastní vzhled spellu, pokud není nasazený ani ten. Uloženo jako String (enum name), ne
+  // přímo _SpecAccent, ať to jde triviálně serializovat do JSON.
+  Map<String, String> customSlotIcon = {};
+  Map<String, int> customSlotButtonColor = {};
+  Map<String, int> customSlotGlowColor = {};
+
+  void setCustomSlotIcon(String slot, _SpecAccent? accent) {
+    if (accent == null) {
+      customSlotIcon.remove(slot);
+    } else {
+      customSlotIcon[slot] = accent.name;
+    }
+    notifyListeners();
+  }
+
+  void setCustomSlotButtonColor(String slot, Color? color) {
+    if (color == null) {
+      customSlotButtonColor.remove(slot);
+    } else {
+      customSlotButtonColor[slot] = color.value;
+    }
+    notifyListeners();
+  }
+
+  void setCustomSlotGlowColor(String slot, Color? color) {
+    if (color == null) {
+      customSlotGlowColor.remove(slot);
+    } else {
+      customSlotGlowColor[slot] = color.value;
+    }
+    notifyListeners();
+  }
+
+  _SpecAccent? customSlotIconFor(String? slot) {
+    if (slot == null) return null;
+    final name = customSlotIcon[slot];
+    if (name == null) return null;
+    for (final a in _SpecAccent.values) {
+      if (a.name == name) return a;
+    }
+    return null;
+  }
+
+  Color? customSlotButtonColorFor(String? slot) => slot != null && customSlotButtonColor.containsKey(slot) ? Color(customSlotButtonColor[slot]!) : null;
+  Color? customSlotGlowColorFor(String? slot) => slot != null && customSlotGlowColor.containsKey(slot) ? Color(customSlotGlowColor[slot]!) : null;
 
   void equipFrame(String id) {
     if (!unlockedFrames.contains(id)) return;
@@ -1746,6 +1819,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   void equipAura(String id) {
     if (!unlockedAuras.contains(id)) return;
     equippedAura = id;
+    notifyListeners();
+  }
+
+  void equipButtonSkin(String id) {
+    if (!unlockedButtonSkins.contains(id)) return;
+    equippedButtonSkin = id;
     notifyListeners();
   }
 
@@ -1769,6 +1848,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       CosmeticCategory.frame => unlockedFrames.contains(id),
       CosmeticCategory.attackSkin => unlockedAttackSkins.contains(id),
       CosmeticCategory.aura => unlockedAuras.contains(id),
+      CosmeticCategory.buttonSkin => unlockedButtonSkins.contains(id),
     };
     if (owned) return;
     if (item.crystalPrice > 0) {
@@ -1790,6 +1870,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       case CosmeticCategory.frame: unlockedFrames.add(id);
       case CosmeticCategory.attackSkin: unlockedAttackSkins.add(id);
       case CosmeticCategory.aura: unlockedAuras.add(id);
+      case CosmeticCategory.buttonSkin: unlockedButtonSkins.add(id);
     }
     message = tr("✨ Koupeno: ${item.name}!", "✨ Purchased: ${item.name}!");
     _checkAchievements();
@@ -8279,7 +8360,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (gearScore >= 6000) _unlockAchievement(AchievementId.gearScoreLegend);
     if (totalDeaths >= 250) _unlockAchievement(AchievementId.survivor250);
     if (heroClass == HeroClass.necromancer && floor >= 5) _unlockAchievement(AchievementId.necromancerPioneer);
-    final ownedCosmetics = (unlockedFrames.length - 1) + (unlockedAttackSkins.length - 1) + (unlockedAuras.length - 1);
+    final ownedCosmetics = (unlockedFrames.length - 1) + (unlockedAttackSkins.length - 1) + (unlockedAuras.length - 1) + (unlockedButtonSkins.length - 1);
     if (ownedCosmetics >= 5) _unlockAchievement(AchievementId.cosmeticCollector);
     if (ownedCosmetics >= 15) _unlockAchievement(AchievementId.cosmeticConnoisseur);
   }
@@ -14869,6 +14950,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       comboStreak++;
     }
     currentEnemyHp -= dealtDmg;
+    // Signál pro UI (viz _BasicAttackSkinOverlay) - přehraje krátký burst v barvě nasazeného
+    // skinu základního útoku. Musí být tady (jednou za KAŽDÝ skutečný zásah, včetně Extra
+    // Attack rekurze níž), ne až za _resolveCombatRound(), aby chytil i extra útoky zvlášť.
+    basicAttackFxSeq++;
 
     // Deathknight: soul runa za každý útok (dmg done)
     if (heroClass == HeroClass.deathknight) _gainSoulRune();

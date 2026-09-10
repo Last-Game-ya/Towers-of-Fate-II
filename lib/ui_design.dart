@@ -2362,12 +2362,21 @@ _FrameStyle _frameStyleFor(String frameId) {
 
 class BattlePassFramePainter extends CustomPainter {
   final String frameId;
-  const BattlePassFramePainter({required this.frameId});
+  // Kulatý (výchozí) pro malé avatary/ikony, obdélníkový pro velkou kartu hrdiny (portrét + HP +
+  // Štít + resource dohromady) - viz konverzace: rám kosmetiky má obepínat celou kartu, ne jen
+  // kolečko kolem portrétu.
+  final bool rectangular;
+  final double cornerRadius;
+  const BattlePassFramePainter({required this.frameId, this.rectangular = false, this.cornerRadius = 13});
 
   @override
   void paint(Canvas canvas, Size size) {
     if (frameId == 'default') return; // výchozí = žádný rám navrch, jen portrét samotný
     final style = _frameStyleFor(frameId);
+    if (rectangular) {
+      _paintRectangular(canvas, size, style);
+      return;
+    }
     final center = Offset(size.width / 2, size.height / 2);
     final r = size.shortestSide / 2 - 2;
     // Škálování podle velikosti plátna - hodnoty v _frameStyleFor jsou navržené pro cca 64px
@@ -2404,8 +2413,53 @@ class BattlePassFramePainter extends CustomPainter {
     }
   }
 
+  // Obdélníková varianta - stejný jazyk (sweep gradient prstenec + vnější glow + klenoty +
+  // dvojitý prstenec u top-tier), jen vykreslený jako zaoblený obdélník kolem celé karty místo
+  // kruhu kolem portrétu. Klenoty se rozmístí po OBVODU obdélníku (ne úhlově po kruhu), ať
+  // sedí na rozích/hranách místo aby "plavaly" uprostřed nějaké strany daleko od rámu.
+  void _paintRectangular(Canvas canvas, Size size, _FrameStyle style) {
+    final scale = (size.shortestSide / 64).clamp(0.7, 2.2);
+    final ringWidth = (style.ringWidth * scale).clamp(2.5, 6.0);
+    final rect = Rect.fromLTWH(ringWidth / 2 + 1, ringWidth / 2 + 1, size.width - ringWidth - 2, size.height - ringWidth - 2);
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(cornerRadius));
+    canvas.drawRRect(rrect, Paint()..color = style.color.withOpacity(style.doubleRing ? .35 : .18)..style = PaintingStyle.stroke..strokeWidth = ringWidth * 2.3..maskFilter = MaskFilter.blur(BlurStyle.normal, (style.doubleRing ? 6 : 4) * scale));
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = ringWidth
+      ..shader = SweepGradient(colors: [style.color, Color.lerp(style.color, Colors.white, .35)!, style.color, Color.lerp(style.color, Colors.black, .25)!]).createShader(rect);
+    canvas.drawRRect(rrect, ringPaint);
+    if (style.doubleRing) {
+      final innerRect = rect.deflate(ringWidth * 1.8);
+      canvas.drawRRect(RRect.fromRectAndRadius(innerRect, Radius.circular((cornerRadius - ringWidth * 1.8).clamp(0, cornerRadius))), Paint()..style = PaintingStyle.stroke..strokeWidth = ringWidth * .45..color = Color.lerp(style.color, Colors.white, .5)!.withOpacity(.8));
+    }
+    if (style.gems > 0) {
+      final gemR = 4.5 * scale, gemR2 = 3.6 * scale, gemHighlight = 1.1 * scale;
+      // Body po obvodu obdélníku - 4 rohy vždy, zbylé klenoty rozmístěné rovnoměrně mezi nimi
+      // po obvodovém "perimetru" (jednodušší a spolehlivější než úhlová trigonometrie na
+      // obdélníku, která by u širokých karet dávala nerovnoměrné rozestupy).
+      final w = rect.width, h = rect.height;
+      final perimeter = 2 * (w + h);
+      for (int i = 0; i < style.gems; i++) {
+        final dist = (i / style.gems) * perimeter;
+        Offset p;
+        if (dist < w) {
+          p = Offset(rect.left + dist, rect.top);
+        } else if (dist < w + h) {
+          p = Offset(rect.right, rect.top + (dist - w));
+        } else if (dist < 2 * w + h) {
+          p = Offset(rect.right - (dist - w - h), rect.bottom);
+        } else {
+          p = Offset(rect.left, rect.bottom - (dist - 2 * w - h));
+        }
+        canvas.drawCircle(p, gemR, Paint()..color = style.color.withOpacity(.5)..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 * scale));
+        canvas.drawCircle(p, gemR2, Paint()..color = Color.lerp(style.color, Colors.white, .2)!);
+        canvas.drawCircle(p - Offset(0.7 * scale, 0.7 * scale), gemHighlight, Paint()..color = Colors.white.withOpacity(.75));
+      }
+    }
+  }
+
   @override
-  bool shouldRepaint(covariant BattlePassFramePainter old) => old.frameId != frameId;
+  bool shouldRepaint(covariant BattlePassFramePainter old) => old.frameId != frameId || old.rectangular != rectangular;
 }
 
 // ===== SPECIALIZAČNÍ RELIC IKONY (Paragon 50 - viz kSpecRelics v data_models.dart) =====
@@ -2441,7 +2495,21 @@ enum _SpecAccent {
   flame, shieldChevron, commandStar, crosshair, pawprint, ghostEye, sunburst, gavel, hammerWave,
   snowflake, bloodDrop, biohazard, iceCrystal, hourglass, rapierMark, crossedBlades, bolt,
   thunderCore, mountain, yinyang, moonDecay, barkLeaf, waterDrop, sunrise, targetRune, shadowEye,
-  boneMinion, pactDrop,
+  boneMinion, pactDrop, sword,
+  // Rozšíření sady pro ruční výběr symbolu tlačítka (viz kSelectableButtonIcons) - zlomená/
+  // roztříštěná varianta meče a štítu vedle celistvých, plus luk/šíp jako dvojice a samostatná
+  // lebka odlišná od crossed-bones motivu (boneMinion výš).
+  shatteredShield, brokenSword, arrow, bow, skull,
+  // Další rozšíření - lektvarová lahvička, hrudní brnění, otevřená dlaň a zaťatá pěst.
+  potionBottle, armor, palm, fist,
+  // Upíří tesáky, vlčí hlava z profilu, samostatné oko a velké dvouruké bojové kladivo (odlišné
+  // od `gavel` výš, což je malá soudcovská palička/mlat).
+  vampireFangs, wolfHead, eye, warHammer,
+  // Sekera, dýka a dvojice zkřížených dýk (jiný motiv než crossedBlades výš, což jsou dlouhé
+  // meče - dýky jsou kratší a širší, s viditelně jinými proporcemi čepele).
+  axe, dagger, crossedDaggers,
+  // Odlehčenější/neutrální motivy mimo zbraně - polštář a fotbalový míč.
+  pillow, football,
 }
 
 _SpecAccent _specAccentFor(SpecRelicKind k) {
@@ -2794,6 +2862,327 @@ void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent
       canvas.drawPath(_classIconTeardrop(c, s, up: false), p);
       canvas.drawLine(c + Offset(-s * 0.03, s * 0.02), c + Offset(s * 0.03, s * 0.02), Paint()..color = color..strokeWidth = s * 0.012);
       break;
+    case _SpecAccent.sword:
+      // Meč - rovná čepel s hrotem nahoře, příčka (crossguard), rukojeť a hlavice dole. Na
+      // rozdíl od crossedBlades (dvě zkřížené čepele jako motiv "boje") jde o jeden jasně
+      // čitelný meč jako samostatný symbol - pro ruční výběr ikony tlačítka (viz konverzace).
+      final blade = Path()
+        ..moveTo(c.dx, c.dy - s * 0.20)
+        ..lineTo(c.dx + s * 0.035, c.dy - s * 0.09)
+        ..lineTo(c.dx + s * 0.035, c.dy + s * 0.07)
+        ..lineTo(c.dx - s * 0.035, c.dy + s * 0.07)
+        ..lineTo(c.dx - s * 0.035, c.dy - s * 0.09)
+        ..close();
+      canvas.drawPath(blade, p);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.17), Offset(c.dx, c.dy + s * 0.05), Paint()..color = color.withOpacity(.5)..strokeWidth = s * 0.008);
+      canvas.drawLine(c + Offset(-s * 0.09, s * 0.07), c + Offset(s * 0.09, s * 0.07), lp);
+      canvas.drawLine(c + Offset(0, s * 0.07), c + Offset(0, s * 0.15), Paint()..color = light..strokeWidth = s * 0.03..strokeCap = StrokeCap.round);
+      canvas.drawCircle(c + Offset(0, s * 0.175), s * 0.025, p);
+      break;
+    case _SpecAccent.shatteredShield:
+      // Roztříštěný štít - celistvý obrys erbovního štítu, přeťatý cik-cak trhlinou, a jeden
+      // úlomek rohu odlomený a odsazený stranou (aby bylo na první pohled jasné "rozbité",
+      // ne jen "štít" - shieldChevron výš je celistvý, tohle je jeho poškozená varianta).
+      final shield = Path()
+        ..moveTo(c.dx, c.dy - s * 0.17)
+        ..lineTo(c.dx + s * 0.13, c.dy - s * 0.10)
+        ..lineTo(c.dx + s * 0.13, c.dy + s * 0.03)
+        ..quadraticBezierTo(c.dx + s * 0.13, c.dy + s * 0.14, c.dx, c.dy + s * 0.20)
+        ..quadraticBezierTo(c.dx - s * 0.13, c.dy + s * 0.14, c.dx - s * 0.13, c.dy + s * 0.03)
+        ..lineTo(c.dx - s * 0.13, c.dy - s * 0.10)
+        ..close();
+      canvas.drawPath(shield, p);
+      // Trhlina - tmavá cik-cak linie přes celý štít, jako by pod ní zela díra.
+      final crack = Path()
+        ..moveTo(c.dx - s * 0.03, c.dy - s * 0.16)
+        ..lineTo(c.dx + s * 0.03, c.dy - s * 0.06)
+        ..lineTo(c.dx - s * 0.03, c.dy + 0.01 * s)
+        ..lineTo(c.dx + s * 0.04, c.dy + s * 0.12);
+      canvas.drawPath(crack, Paint()..color = const Color(0xFF14181C)..style = PaintingStyle.stroke..strokeWidth = s * 0.025..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round);
+      // Odlomený roh - malý trojúhelníkový úlomek odsazený vpravo dole od štítu.
+      final shard = Path()
+        ..moveTo(c.dx + s * 0.17, c.dy + s * 0.16)
+        ..lineTo(c.dx + s * 0.24, c.dy + s * 0.12)
+        ..lineTo(c.dx + s * 0.21, c.dy + s * 0.22)
+        ..close();
+      canvas.drawPath(shard, p);
+      break;
+    case _SpecAccent.brokenSword:
+      // Zlomený meč - stejná rukojeť/příčka jako celistvý meč, ale čepel končí uprostřed
+      // zubatým lomem místo hrotu, a odlomený kus čepele "odlétá" stranou nahoře.
+      final stump = Path()
+        ..moveTo(c.dx - s * 0.035, c.dy - s * 0.01)
+        ..lineTo(c.dx - s * 0.02, c.dy - s * 0.06)
+        ..lineTo(c.dx + s * 0.01, c.dy - s * 0.02)
+        ..lineTo(c.dx + s * 0.035, c.dy - s * 0.07)
+        ..lineTo(c.dx + s * 0.035, c.dy + s * 0.07)
+        ..lineTo(c.dx - s * 0.035, c.dy + s * 0.07)
+        ..close();
+      canvas.drawPath(stump, p);
+      canvas.drawLine(c + Offset(-s * 0.09, s * 0.07), c + Offset(s * 0.09, s * 0.07), lp);
+      canvas.drawLine(c + Offset(0, s * 0.07), c + Offset(0, s * 0.15), Paint()..color = light..strokeWidth = s * 0.03..strokeCap = StrokeCap.round);
+      canvas.drawCircle(c + Offset(0, s * 0.175), s * 0.025, p);
+      // Odlomený úlomek čepele - malý kosočtverec vyletující od lomu, mírně pootočený.
+      final shardBlade = Path()
+        ..moveTo(c.dx + s * 0.08, c.dy - s * 0.20)
+        ..lineTo(c.dx + s * 0.115, c.dy - s * 0.13)
+        ..lineTo(c.dx + s * 0.075, c.dy - s * 0.10)
+        ..lineTo(c.dx + s * 0.05, c.dy - s * 0.16)
+        ..close();
+      canvas.drawPath(shardBlade, Paint()..color = light.withOpacity(.85));
+      break;
+    case _SpecAccent.arrow:
+      // Šíp - dřík, trojúhelníkový hrot nahoře, opeření (dvě ploutvičky) dole.
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.15), Offset(c.dx, c.dy + s * 0.16), lp);
+      final head = Path()
+        ..moveTo(c.dx, c.dy - s * 0.22)
+        ..lineTo(c.dx + s * 0.07, c.dy - s * 0.09)
+        ..lineTo(c.dx - s * 0.07, c.dy - s * 0.09)
+        ..close();
+      canvas.drawPath(head, p);
+      canvas.drawLine(c + Offset(0, s * 0.13), c + Offset(-s * 0.06, s * 0.22), lp);
+      canvas.drawLine(c + Offset(0, s * 0.13), c + Offset(s * 0.06, s * 0.22), lp);
+      break;
+    case _SpecAccent.bow:
+      // Luk - zakřivené rameno (oblouk), tětiva jako rovná linie a napnutý šíp uprostřed.
+      final limb = Path()
+        ..moveTo(c.dx + s * 0.03, c.dy - s * 0.20)
+        ..quadraticBezierTo(c.dx + s * 0.17, c.dy, c.dx + s * 0.03, c.dy + s * 0.20);
+      canvas.drawPath(limb, Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.025..strokeCap = StrokeCap.round);
+      canvas.drawLine(Offset(c.dx + s * 0.03, c.dy - s * 0.20), Offset(c.dx + s * 0.03, c.dy + s * 0.20), Paint()..color = color.withOpacity(.55)..strokeWidth = s * 0.01);
+      canvas.drawLine(c + Offset(-s * 0.14, 0), c + Offset(s * 0.08, 0), Paint()..color = light..strokeWidth = s * 0.018..strokeCap = StrokeCap.round);
+      final nockHead = Path()
+        ..moveTo(c.dx - s * 0.14, c.dy)
+        ..lineTo(c.dx - s * 0.075, c.dy - s * 0.035)
+        ..lineTo(c.dx - s * 0.075, c.dy + s * 0.035)
+        ..close();
+      canvas.drawPath(nockHead, p);
+      break;
+    case _SpecAccent.skull:
+      // Lebka - zaoblená lebeční kost, čelist dole, tmavé oční důlky a nosní dutina. Odlišná od
+      // boneMinion výš (dvě zkřížené kosti) - tady jde o samostatnou čitelnou lebku.
+      canvas.drawCircle(c + Offset(0, -s * 0.03), s * 0.13, p);
+      final jaw = Path()
+        ..moveTo(c.dx - s * 0.08, c.dy + s * 0.05)
+        ..lineTo(c.dx - s * 0.065, c.dy + s * 0.15)
+        ..lineTo(c.dx + s * 0.065, c.dy + s * 0.15)
+        ..lineTo(c.dx + s * 0.08, c.dy + s * 0.05)
+        ..close();
+      canvas.drawPath(jaw, p);
+      final socketPaint = Paint()..color = const Color(0xFF14181C);
+      canvas.drawCircle(c + Offset(-s * 0.05, -s * 0.03), s * 0.035, socketPaint);
+      canvas.drawCircle(c + Offset(s * 0.05, -s * 0.03), s * 0.035, socketPaint);
+      canvas.drawCircle(c + Offset(0, s * 0.03), s * 0.018, socketPaint);
+      for (final dx in [-0.04, -0.013, 0.013, 0.04]) {
+        canvas.drawLine(Offset(c.dx + dx * s, c.dy + s * 0.06), Offset(c.dx + dx * s, c.dy + s * 0.10), Paint()..color = const Color(0xFF14181C)..strokeWidth = s * 0.008);
+      }
+      break;
+    case _SpecAccent.potionBottle:
+      // Lektvarová lahvička - úzké hrdlo se zátkou, baňatá nádoba, tekutina uvnitř probarvená
+      // barvou skinu (ne světlou `light`), ať je vidět, že jde o lahvičku S OBSAHEM.
+      canvas.drawRect(Rect.fromCenter(center: Offset(c.dx, c.dy - s * 0.155), width: s * 0.05, height: s * 0.07), p);
+      canvas.drawRect(Rect.fromCenter(center: Offset(c.dx, c.dy - s * 0.20), width: s * 0.08, height: s * 0.035), Paint()..color = light);
+      final flask = Path()
+        ..moveTo(c.dx - s * 0.025, c.dy - s * 0.10)
+        ..lineTo(c.dx - s * 0.105, c.dy + s * 0.01)
+        ..quadraticBezierTo(c.dx - s * 0.14, c.dy + s * 0.20, c.dx, c.dy + s * 0.20)
+        ..quadraticBezierTo(c.dx + s * 0.14, c.dy + s * 0.20, c.dx + s * 0.105, c.dy + s * 0.01)
+        ..lineTo(c.dx + s * 0.025, c.dy - s * 0.10)
+        ..close();
+      canvas.drawPath(flask, Paint()..color = light.withOpacity(.35)..style = PaintingStyle.stroke..strokeWidth = s * 0.02);
+      canvas.save();
+      canvas.clipPath(flask);
+      canvas.drawRect(Rect.fromLTRB(c.dx - s * 0.16, c.dy + s * 0.05, c.dx + s * 0.16, c.dy + s * 0.22), Paint()..color = color);
+      canvas.restore();
+      canvas.drawCircle(c + Offset(-s * 0.045, s * 0.11), s * 0.015, Paint()..color = Colors.white.withOpacity(.55));
+      break;
+    case _SpecAccent.armor:
+      // Hrudní brnění - symetrický nákrčník/náprsník s vystouplým středovým žebrem a drobnými
+      // nýty na ramenou, jako stylizovaný erb zbroje.
+      final chest = Path()
+        ..moveTo(c.dx, c.dy - s * 0.19)
+        ..lineTo(c.dx + s * 0.12, c.dy - s * 0.12)
+        ..lineTo(c.dx + s * 0.14, c.dy + s * 0.02)
+        ..lineTo(c.dx + s * 0.06, c.dy + s * 0.21)
+        ..lineTo(c.dx, c.dy + s * 0.14)
+        ..lineTo(c.dx - s * 0.06, c.dy + s * 0.21)
+        ..lineTo(c.dx - s * 0.14, c.dy + s * 0.02)
+        ..lineTo(c.dx - s * 0.12, c.dy - s * 0.12)
+        ..close();
+      canvas.drawPath(chest, p);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.15), Offset(c.dx, c.dy + s * 0.11), Paint()..color = color.withOpacity(.55)..strokeWidth = s * 0.012);
+      canvas.drawCircle(Offset(c.dx + s * 0.09, c.dy - s * 0.09), s * 0.014, Paint()..color = color.withOpacity(.6));
+      canvas.drawCircle(Offset(c.dx - s * 0.09, c.dy - s * 0.09), s * 0.014, Paint()..color = color.withOpacity(.6));
+      break;
+    case _SpecAccent.palm:
+      // Otevřená dlaň - zaoblená dlaňová základna, 4 prsty (fanoucí se, různě dlouhé) a palec
+      // z boku. Čitelný "stop/vztyčená dlaň" tvar i v malém měřítku.
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(c.dx, c.dy + s * 0.06), width: s * 0.20, height: s * 0.19), Radius.circular(s * 0.06)), p);
+      const fingerDx = [-0.075, -0.026, 0.026, 0.075];
+      const fingerLen = [0.13, 0.16, 0.16, 0.12];
+      for (int i = 0; i < 4; i++) {
+        final len = fingerLen[i] * s;
+        canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(c.dx + fingerDx[i] * s, c.dy - s * 0.04 - len / 2), width: s * 0.032, height: len), Radius.circular(s * 0.016)), p);
+      }
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(c.dx - s * 0.135, c.dy + s * 0.02), width: s * 0.06, height: s * 0.11), Radius.circular(s * 0.03)), p);
+      break;
+    case _SpecAccent.fist:
+      // Zaťatá pěst - hranatější zaoblený blok s liniemi kloubů prstů a palcem obtočeným
+      // zepředu dole, jasně odlišná silueta od otevřené dlaně výš.
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: c - Offset(0, s * 0.02), width: s * 0.24, height: s * 0.20), Radius.circular(s * 0.055)), p);
+      for (final dx in [-0.075, -0.025, 0.025, 0.075]) {
+        canvas.drawLine(Offset(c.dx + dx * s, c.dy - s * 0.12), Offset(c.dx + dx * s, c.dy + s * 0.08), Paint()..color = color.withOpacity(.45)..strokeWidth = s * 0.01);
+      }
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(c.dx - s * 0.08, c.dy + s * 0.10), width: s * 0.11, height: s * 0.06), Radius.circular(s * 0.03)), Paint()..color = light);
+      break;
+    case _SpecAccent.vampireFangs:
+      // Upíří tesáky - zaoblená "dáseň" nahoře, dva ostré špičaté zuby dole. Jednoduchý,
+      // okamžitě čitelný symbol i v malém měřítku.
+      final gum = Path()
+        ..moveTo(c.dx - s * 0.14, c.dy - s * 0.04)
+        ..quadraticBezierTo(c.dx, c.dy - s * 0.15, c.dx + s * 0.14, c.dy - s * 0.04)
+        ..lineTo(c.dx + s * 0.14, c.dy + s * 0.01)
+        ..quadraticBezierTo(c.dx, c.dy - s * 0.08, c.dx - s * 0.14, c.dy + s * 0.01)
+        ..close();
+      canvas.drawPath(gum, p);
+      final fangL = Path()
+        ..moveTo(c.dx - s * 0.085, c.dy - s * 0.005)
+        ..lineTo(c.dx - s * 0.10, c.dy + s * 0.14)
+        ..lineTo(c.dx - s * 0.045, c.dy - s * 0.005)
+        ..close();
+      final fangR = Path()
+        ..moveTo(c.dx + s * 0.085, c.dy - s * 0.005)
+        ..lineTo(c.dx + s * 0.10, c.dy + s * 0.14)
+        ..lineTo(c.dx + s * 0.045, c.dy - s * 0.005)
+        ..close();
+      canvas.drawPath(fangL, p);
+      canvas.drawPath(fangR, p);
+      canvas.drawCircle(Offset(c.dx - s * 0.10, c.dy + s * 0.13), s * 0.012, Paint()..color = Colors.white.withOpacity(.7));
+      canvas.drawCircle(Offset(c.dx + s * 0.10, c.dy + s * 0.13), s * 0.012, Paint()..color = Colors.white.withOpacity(.7));
+      break;
+    case _SpecAccent.wolfHead:
+      // Vlčí hlava z profilu (dívá se doprava) - špičaté ucho, svažující se čelo, protáhlý
+      // čenich, náznak tlamy a jedno oko. Stylizovaná jednotahová silueta, ne realistická kresba.
+      final head = Path()
+        ..moveTo(c.dx - s * 0.12, c.dy + s * 0.14)
+        ..lineTo(c.dx - s * 0.13, c.dy - s * 0.04)
+        ..lineTo(c.dx - s * 0.02, c.dy - s * 0.20)
+        ..lineTo(c.dx + s * 0.015, c.dy - s * 0.07)
+        ..lineTo(c.dx + s * 0.15, c.dy - s * 0.03)
+        ..lineTo(c.dx + s * 0.20, c.dy + s * 0.025)
+        ..lineTo(c.dx + s * 0.13, c.dy + s * 0.055)
+        ..lineTo(c.dx + s * 0.095, c.dy + s * 0.025)
+        ..lineTo(c.dx + s * 0.01, c.dy + s * 0.10)
+        ..lineTo(c.dx - s * 0.04, c.dy + s * 0.13)
+        ..close();
+      canvas.drawPath(head, p);
+      canvas.drawCircle(Offset(c.dx + s * 0.015, c.dy - s * 0.015), s * 0.016, Paint()..color = const Color(0xFF14181C));
+      break;
+    case _SpecAccent.eye:
+      // Samostatné oko - mandlový obrys, duhovka v barvě skinu, tmavá zornice a malý lesk.
+      final eyeShape = Path()
+        ..moveTo(c.dx - s * 0.17, c.dy)
+        ..quadraticBezierTo(c.dx, c.dy - s * 0.13, c.dx + s * 0.17, c.dy)
+        ..quadraticBezierTo(c.dx, c.dy + s * 0.13, c.dx - s * 0.17, c.dy)
+        ..close();
+      canvas.drawPath(eyeShape, Paint()..color = light.withOpacity(.9)..style = PaintingStyle.stroke..strokeWidth = s * 0.025);
+      canvas.drawCircle(c, s * 0.075, p);
+      canvas.drawCircle(c, s * 0.032, Paint()..color = const Color(0xFF14181C));
+      canvas.drawCircle(c - Offset(s * 0.02, s * 0.02), s * 0.013, Paint()..color = Colors.white.withOpacity(.85));
+      break;
+    case _SpecAccent.warHammer:
+      // Velké dvouruké bojové kladivo - masivní obdélníková hlava kolmo na rukojeť + omotávka
+      // na topůrku. Jasně odlišné od `gavel` (malá soudcovská palička s kulatou hlavičkou).
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(c.dx, c.dy - s * 0.11), width: s * 0.28, height: s * 0.13), Radius.circular(s * 0.02)), p);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.045), Offset(c.dx, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.035..strokeCap = StrokeCap.round);
+      canvas.drawLine(Offset(c.dx - s * 0.045, c.dy + s * 0.10), Offset(c.dx + s * 0.045, c.dy + s * 0.10), Paint()..color = color.withOpacity(.6)..strokeWidth = s * 0.015);
+      break;
+    case _SpecAccent.axe:
+      // Sekera - diagonální topůrko + srpovitá čepel nasazená na horním konci.
+      canvas.drawLine(Offset(c.dx - s * 0.04, c.dy - s * 0.16), Offset(c.dx + s * 0.09, c.dy + s * 0.19), Paint()..color = light..strokeWidth = s * 0.03..strokeCap = StrokeCap.round);
+      final axeHead = Path()
+        ..moveTo(c.dx - s * 0.04, c.dy - s * 0.17)
+        ..quadraticBezierTo(c.dx - s * 0.22, c.dy - s * 0.19, c.dx - s * 0.20, c.dy - s * 0.01)
+        ..quadraticBezierTo(c.dx - s * 0.10, c.dy - s * 0.02, c.dx + s * 0.005, c.dy - s * 0.075)
+        ..close();
+      canvas.drawPath(axeHead, p);
+      break;
+    case _SpecAccent.dagger:
+      // Dýka - kratší a širší čepel než u meče, kratší příčka, bez dlouhé rukojeti.
+      final dblade = Path()
+        ..moveTo(c.dx, c.dy - s * 0.15)
+        ..lineTo(c.dx + s * 0.045, c.dy - s * 0.02)
+        ..lineTo(c.dx + s * 0.045, c.dy + s * 0.06)
+        ..lineTo(c.dx - s * 0.045, c.dy + s * 0.06)
+        ..lineTo(c.dx - s * 0.045, c.dy - s * 0.02)
+        ..close();
+      canvas.drawPath(dblade, p);
+      canvas.drawLine(c + Offset(-s * 0.065, s * 0.06), c + Offset(s * 0.065, s * 0.06), lp);
+      canvas.drawLine(c + Offset(0, s * 0.06), c + Offset(0, s * 0.12), Paint()..color = light..strokeWidth = s * 0.028..strokeCap = StrokeCap.round);
+      canvas.drawCircle(c + Offset(0, s * 0.14), s * 0.02, p);
+      break;
+    case _SpecAccent.crossedDaggers:
+      // Dvě zkřížené dýky - hroty nahoru/do stran, rukojeti křížící se dole (heraldický vzor).
+      // Vlastní pomocná funkce s dir/perp vektory (stejný trik jako u boneMinion výš) místo
+      // canvas.rotate(), ať se to nemíchá se save/restore okolo zbytku kresby.
+      void miniDagger(double angle) {
+        final dir = Offset(cos(angle), sin(angle));
+        final perp = Offset(-sin(angle), cos(angle));
+        final tip = c - dir * s * 0.15;
+        final shoulderL = c - dir * s * 0.02 + perp * s * 0.035;
+        final shoulderR = c - dir * s * 0.02 - perp * s * 0.035;
+        final baseL = c + dir * s * 0.09 + perp * s * 0.035;
+        final baseR = c + dir * s * 0.09 - perp * s * 0.035;
+        canvas.drawPath(Path()..moveTo(tip.dx, tip.dy)..lineTo(shoulderL.dx, shoulderL.dy)..lineTo(baseL.dx, baseL.dy)..lineTo(baseR.dx, baseR.dy)..lineTo(shoulderR.dx, shoulderR.dy)..close(), p);
+        final guardPos = c + dir * s * 0.09;
+        canvas.drawLine(guardPos - perp * s * 0.06, guardPos + perp * s * 0.06, lp);
+        canvas.drawLine(guardPos, c + dir * s * 0.16, Paint()..color = light..strokeWidth = s * 0.02..strokeCap = StrokeCap.round);
+      }
+      miniDagger(-pi * 0.75);
+      miniDagger(-pi * 0.25);
+      break;
+    case _SpecAccent.pillow:
+      // Polštář - měkký zaoblený obrys se zvlněnými hranami (mírně "nafouklý" tvar, ne ostrý
+      // obdélník) + prošívaný knoflík uprostřed se čtyřmi stehy do rohů.
+      final pillow = Path()
+        ..moveTo(c.dx - s * 0.16, c.dy - s * 0.10)
+        ..quadraticBezierTo(c.dx - s * 0.06, c.dy - s * 0.16, c.dx, c.dy - s * 0.10)
+        ..quadraticBezierTo(c.dx + s * 0.06, c.dy - s * 0.16, c.dx + s * 0.16, c.dy - s * 0.10)
+        ..quadraticBezierTo(c.dx + s * 0.10, c.dy, c.dx + s * 0.16, c.dy + s * 0.10)
+        ..quadraticBezierTo(c.dx + s * 0.06, c.dy + s * 0.16, c.dx, c.dy + s * 0.10)
+        ..quadraticBezierTo(c.dx - s * 0.06, c.dy + s * 0.16, c.dx - s * 0.16, c.dy + s * 0.10)
+        ..quadraticBezierTo(c.dx - s * 0.10, c.dy, c.dx - s * 0.16, c.dy - s * 0.10)
+        ..close();
+      canvas.drawPath(pillow, p);
+      canvas.drawCircle(c, s * 0.022, Paint()..color = color.withOpacity(.6));
+      for (final d in [const Offset(-1, -0.6), Offset(1, -0.6), const Offset(-1, 0.6), Offset(1, 0.6)]) {
+        canvas.drawLine(c, c + Offset(d.dx * s * 0.10, d.dy * s * 0.10), Paint()..color = color.withOpacity(.35)..strokeWidth = s * 0.006);
+      }
+      break;
+    case _SpecAccent.football:
+      // Fotbalový míč - kruh + centrální pětiúhelník a 5 švů vybíhajících k okraji, klasický
+      // "soccer ball" vzor zjednodušený na pár tahů.
+      canvas.drawCircle(c, s * 0.17, p);
+      final pentagon = Path();
+      final pentaPts = <Offset>[];
+      for (int i = 0; i < 5; i++) {
+        final a = -pi / 2 + i * (2 * pi / 5);
+        final pt = c + Offset(cos(a), sin(a)) * s * 0.065;
+        pentaPts.add(pt);
+        if (i == 0) {
+          pentagon.moveTo(pt.dx, pt.dy);
+        } else {
+          pentagon.lineTo(pt.dx, pt.dy);
+        }
+      }
+      pentagon.close();
+      canvas.drawPath(pentagon, Paint()..color = const Color(0xFF14181C));
+      for (int i = 0; i < 5; i++) {
+        final a = -pi / 2 + i * (2 * pi / 5);
+        final outer = c + Offset(cos(a), sin(a)) * s * 0.16;
+        canvas.drawLine(pentaPts[i], outer, Paint()..color = const Color(0xFF14181C)..strokeWidth = s * 0.012);
+      }
+      break;
   }
 }
 
@@ -2995,6 +3384,96 @@ class ClassSpellIconPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant ClassSpellIconPainter old) => old.shape != shape || old.accent != accent || old.color != color;
 }
+
+// ===== RUČNÍ VÝBĚR SYMBOLU TLAČÍTKA (per-slot skin, viz konverzace) =====
+// Na rozdíl od ClassSpellIconPainter výš (nosný tvar třídy + motiv spellu) tady hráč vybírá jen
+// SAMOTNÝ symbol bez nosného tvaru - "meč", "kapka" atd. jako čistý, samostatně čitelný znak.
+// Používá stejnou _paintClassIconAccent kresbu (žádná duplicitní grafika), jen ji vykreslí ve
+// větším měřítku (inflatedS), protože motivy jsou navržené jako menší akcent UVNITŘ nosného
+// tvaru, ne jako samostatně vyplňující kresba - bez umělého zvětšení by na 60px tlačítku
+// působily jako malá tečka uprostřed prázdného kruhu.
+Widget standaloneAccentIcon(_SpecAccent accent, Color color, {double size = 32}) {
+  return SizedBox(width: size, height: size, child: CustomPaint(painter: StandaloneAccentIconPainter(accent: accent, color: color)));
+}
+
+class StandaloneAccentIconPainter extends CustomPainter {
+  final _SpecAccent accent;
+  final Color color;
+  const StandaloneAccentIconPainter({required this.accent, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.shortestSide;
+    final c = Offset(size.width / 2, size.height / 2);
+    canvas.drawCircle(c, s * 0.46, Paint()..color = color.withOpacity(.22)..maskFilter = MaskFilter.blur(BlurStyle.normal, s * 0.14));
+    _paintClassIconAccent(canvas, c, s * 2.4, accent, color);
+  }
+
+  @override
+  bool shouldRepaint(covariant StandaloneAccentIconPainter old) => old.accent != accent || old.color != color;
+}
+
+// Nabídka symbolů pro ruční výběr - podmnožina _SpecAccent, co dává smysl jako samostatný
+// obecný symbol (ne úzce svázaný s konkrétní mechanikou jedné specializace) + český název pro
+// popisek v Kosmetice.
+const Map<_SpecAccent, String> kSelectableButtonIcons = {
+  _SpecAccent.sword: 'Meč',
+  _SpecAccent.brokenSword: 'Zlomený meč',
+  _SpecAccent.bloodDrop: 'Kapka krve',
+  _SpecAccent.waterDrop: 'Kapka vody',
+  _SpecAccent.flame: 'Plamen',
+  _SpecAccent.snowflake: 'Sněhová vločka',
+  _SpecAccent.iceCrystal: 'Ledový krystal',
+  _SpecAccent.crossedBlades: 'Zkřížené čepele',
+  _SpecAccent.targetRune: 'Cílová runa',
+  _SpecAccent.bolt: 'Blesk',
+  _SpecAccent.thunderCore: 'Bouře',
+  _SpecAccent.sunburst: 'Sluneční záře',
+  _SpecAccent.moonDecay: 'Měsíční srp',
+  _SpecAccent.shadowEye: 'Stínové oko',
+  _SpecAccent.boneMinion: 'Zkřížené kosti',
+  _SpecAccent.skull: 'Lebka',
+  _SpecAccent.yinyang: 'Rovnováha',
+  _SpecAccent.mountain: 'Hora',
+  _SpecAccent.pawprint: 'Tlapka',
+  _SpecAccent.commandStar: 'Hvězda',
+  _SpecAccent.shieldChevron: 'Štít',
+  _SpecAccent.shatteredShield: 'Roztříštěný štít',
+  _SpecAccent.gavel: 'Kladivo',
+  _SpecAccent.arrow: 'Šíp',
+  _SpecAccent.bow: 'Luk',
+  _SpecAccent.potionBottle: 'Lahvička lektvaru',
+  _SpecAccent.armor: 'Brnění',
+  _SpecAccent.palm: 'Dlaň',
+  _SpecAccent.fist: 'Pěst',
+  _SpecAccent.vampireFangs: 'Upíří tesáky',
+  _SpecAccent.wolfHead: 'Vlčí hlava',
+  _SpecAccent.eye: 'Oko',
+  _SpecAccent.warHammer: 'Bojové kladivo',
+  _SpecAccent.axe: 'Sekera',
+  _SpecAccent.dagger: 'Dýka',
+  _SpecAccent.crossedDaggers: 'Zkřížené dýky',
+  _SpecAccent.pillow: 'Polštář',
+  _SpecAccent.football: 'Fotbalový míč',
+};
+
+// Nabídka barev pro ruční výběr barvy tlačítka/záře - stejná paleta pro obě, ale volí se
+// nezávisle (viz konverzace: "1. spell červené podbarvení a černá záře, 2. spell modré a
+// světle modré").
+const Map<String, Color> kSelectableButtonColors = {
+  'Červená': Color(0xFFD32F2F),
+  'Černá': Color(0xFF1A1A1A),
+  'Modrá': Color(0xFF1976D2),
+  'Světle modrá': Color(0xFF64B5F6),
+  'Zelená': Color(0xFF388E3C),
+  'Limetková': Color(0xFFAEEA00),
+  'Fialová': Color(0xFF7B1FA2),
+  'Růžová': Color(0xFFE91E63),
+  'Zlatá': Color(0xFFFFB300),
+  'Oranžová': Color(0xFFE64A19),
+  'Bílá': Color(0xFFF5F5F5),
+  'Tyrkysová': Color(0xFF00BCD4),
+};
 
 
 /// Widget, co obalí libovolný portrét rámem podle state.equippedFrame - dá se použít kdekoliv,
@@ -4318,24 +4797,23 @@ class EquipSceneSlot {
 /// klidně přeskupte, pokud bude sedět jinak vizuálně (např. helma nahoře by dávala smysl blíž
 /// hlavě postavy).
 const List<EquipSceneSlot> equipSceneSlots = [
-  // Levý sloupec (dx ~0.19), shora dolů - přeměřeno přímo z reálného screenshotu hry (ne
-  // ze zdrojového inventory_bg.png), pixelovou detekcí skutečného středu ikony/rámu -
-  // dřívější odhad byl systematicky cca 2 % vlevo a níž oproti reálnému středu rámu.
-  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.190, dy: 0.168),
-  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.190, dy: 0.285),
-  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.188, dy: 0.408),
-  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.190, dy: 0.533),
-  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.184, dy: 0.661),
-  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.190, dy: 0.772),
-  // Pravý sloupec (dx ~0.78), shora dolů - stejná korekce, tady byl odhad naopak cca 2 %
-  // vpravo a níž.
-  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.782, dy: 0.218),
-  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.774, dy: 0.346),
-  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.780, dy: 0.450),
-  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.763, dy: 0.586),
+  // Levý sloupec (dx ~0.207), shora dolů - druhé přeměření na jiném screenshotu (jiná postava,
+  // stejné pozadí) ukázalo pořád zbytkový posun cca 2 % vpravo oproti dřívějšímu odhadu - teď
+  // sedí přesně na pixelové detekci středu ikony/rámu z obou screenshotů dohromady.
+  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.198, dy: 0.159),
+  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.211, dy: 0.276),
+  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.207, dy: 0.397),
+  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.209, dy: 0.516),
+  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.208, dy: 0.653),
+  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.207, dy: 0.761),
+  // Pravý sloupec (dx ~0.76), shora dolů - stejná druhá korekce, tady naopak cca 1,5 % vlevo.
+  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.767, dy: 0.215),
+  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.760, dy: 0.337),
+  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.764, dy: 0.432),
+  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.761, dy: 0.569),
   // Pár malých rámů dole vpravo - dva sloty Přívěsku vedle sebe.
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.709, dy: 0.719, accessoryIndex: 0),
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.902, dy: 0.722, accessoryIndex: 1),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.694, dy: 0.717, accessoryIndex: 0),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.877, dy: 0.721, accessoryIndex: 1),
 ];
 
 /// Malovaná scéna "Nasazené vybavení" v Batohu - stejný jazyk jako SceneMapView níž
@@ -4348,7 +4826,13 @@ class EquippedGearScene extends StatelessWidget {
   // _showItemDetailDialog žije v screens.dart a je file-private (podtržítko), takže sem musí
   // přijít jako callback z InventoryScreen, ne volaný přímo odsud.
   final void Function(BuildContext context, Item item) onItemTap;
-  const EquippedGearScene({super.key, required this.state, required this.onItemTap});
+  // Titulek ("Batoh (18/55)") + tlačítko na rozšíření batohu teď žijí přímo v obrázku (viz
+  // konverzace) místo v samostatném Row nad scénou - stejný jazyk jako u SceneMapView (Město/
+  // Dobrodružství), kde nadpis sedí jako overlay přes plnokrevnou ilustraci.
+  final String title;
+  final VoidCallback onExpand;
+  final String expandTooltip;
+  const EquippedGearScene({super.key, required this.state, required this.onItemTap, required this.title, required this.onExpand, required this.expandTooltip});
 
   Item? _itemForSlot(EquipSceneSlot spot) {
     final items = state.inventory.where((i) => i.isActive && i.slot == spot.slot).toList();
@@ -4360,11 +4844,13 @@ class EquippedGearScene extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Plnokrevná scéna přes celou šířku obrazovky (žádný boční padding) - zaoblené jen spodní
+    // rohy a tenká linka dole místo rámečku po celém obvodu, stejně jako u Města/Dobrodružství.
     return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(18), bottomRight: Radius.circular(18)),
       child: Container(
         height: 600,
-        decoration: BoxDecoration(border: Border.all(color: const Color(0xFFC69214).withOpacity(.35))),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: const Color(0xFFC69214).withOpacity(.35), width: 1))),
         child: LayoutBuilder(builder: (context, constraints) {
           final size = Size(constraints.maxWidth, constraints.maxHeight);
           return Stack(
@@ -4378,6 +4864,29 @@ class EquippedGearScene extends StatelessWidget {
                   top: spot.dy * size.height - 30,
                   child: _EquipSceneSlotMarker(item: _itemForSlot(spot), onTap: onItemTap),
                 ),
+              // Titulek + tlačítko na rozšíření - overlay nahoře s gradientním scrimem pro
+              // čitelnost, stejný vzor jako jméno hrdiny přes combat portrét.
+              Positioned(
+                left: 0, right: 0, top: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black87, Colors.transparent])),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFFFB100)))),
+                      Tooltip(
+                        message: expandTooltip,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          icon: const Icon(Icons.add_box_outlined, color: Color(0xFFFFB100), size: 22),
+                          onPressed: onExpand,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           );
         }),
@@ -4515,6 +5024,12 @@ class SceneMapView extends StatelessWidget {
   // z Kovárny, jedovatě zelený z Alchymie), takže jednotná bílá nebyla dost odlišující. Prázdný
   // seznam nebo chybějící index = výchozí šedý kouř.
   final List<Color> smokeColors;
+  // Stoupající runové světlo (viz Runový Čaroděj) - každá položka je [spodní bod, horní bod]
+  // jedné svislé runové linie na budově. Animace postupně "olízne" linii zdola nahoru modrou
+  // září, chvíli podrží plně rozsvícenou a pak pohasne, než cyklus začne znovu - prázdný seznam
+  // = žádný efekt (výchozí).
+  final List<List<Offset>> runeRiseLines;
+  final Color runeRiseColor;
   // Cesta ke skutečné vygenerované ilustraci scény (viz konverzace o Copilot promptech) - pokud
   // je zadaná, nahradí procedurální _SceneBackdropPainter. Zůstává null, dokud daná scéna nemá
   // hotový obrázek - pak se použije starý procedurální fallback, nic dalšího se měnit nemusí.
@@ -4522,7 +5037,7 @@ class SceneMapView extends StatelessWidget {
   // Většina scén chce nadpis + ikonu nad malovanou mapou (viz Row níž), ale Dobrodružství ho
   // nechce vůbec - nastavuje false na svém volání.
   final bool showTitle;
-  const SceneMapView({super.key, required this.title, required this.titleIcon, required this.titleAccent, required this.danger, required this.buildings, this.smokePoints = const [], this.smokeColors = const [], this.glowPoints = const [], this.backgroundImage, this.showTitle = true});
+  const SceneMapView({super.key, required this.title, required this.titleIcon, required this.titleAccent, required this.danger, required this.buildings, this.smokePoints = const [], this.smokeColors = const [], this.glowPoints = const [], this.runeRiseLines = const [], this.runeRiseColor = const Color(0xFF5AC8FA), this.backgroundImage, this.showTitle = true});
 
   @override
   Widget build(BuildContext context) {
@@ -4564,7 +5079,7 @@ class SceneMapView extends StatelessWidget {
                             ? Image.asset(backgroundImage!, fit: BoxFit.cover)
                             : CustomPaint(painter: _SceneBackdropPainter(danger: danger, nodePositions: buildings.map((b) => Offset(b.dx, b.dy)).toList())),
                       ),
-                      Positioned.fill(child: _SceneLifeOverlay(danger: danger, smokePoints: smokePoints, smokeColors: smokeColors, glowPoints: glowPoints)),
+                      Positioned.fill(child: _SceneLifeOverlay(danger: danger, smokePoints: smokePoints, smokeColors: smokeColors, glowPoints: glowPoints, runeRiseLines: runeRiseLines, runeRiseColor: runeRiseColor)),
                       for (final b in buildings)
                         Positioned(
                           left: (b.dx * size.width - (b.tapWidth * b.prominence) / 2).clamp(0.0, size.width - b.tapWidth * b.prominence),
@@ -4591,35 +5106,47 @@ class _SceneLifeOverlay extends StatefulWidget {
   final List<Offset> smokePoints;
   final List<Color> smokeColors;
   final List<Offset> glowPoints;
-  const _SceneLifeOverlay({required this.danger, required this.smokePoints, this.smokeColors = const [], required this.glowPoints});
+  final List<List<Offset>> runeRiseLines;
+  final Color runeRiseColor;
+  const _SceneLifeOverlay({required this.danger, required this.smokePoints, this.smokeColors = const [], required this.glowPoints, this.runeRiseLines = const [], this.runeRiseColor = const Color(0xFF5AC8FA)});
 
   @override
   State<_SceneLifeOverlay> createState() => _SceneLifeOverlayState();
 }
 
-class _SceneLifeOverlayState extends State<_SceneLifeOverlay> with SingleTickerProviderStateMixin {
+class _SceneLifeOverlayState extends State<_SceneLifeOverlay> with TickerProviderStateMixin {
   late final AnimationController _c;
+  // Ptáci mají vlastní, mnohem delší nezávislou smyčku (55s) místo odvozování z hlavního `_c`
+  // (12s). Dřív se jejich pozice počítala jako t*speed s hodně malým speed (0.05-0.08) - za
+  // celých 12s tak urazili jen zlomek oblohy, a jakmile se `_c` po 12s tvrdě resetovalo zpátky
+  // na 0 (AnimationController.repeat() neanimuje zpátky, jen skočí), pták viditelně "teleportoval"
+  // zpátky na start uprostřed letu. Vlastní 55s cyklus + jeho SUROVÁ hodnota přímo jako fáze letu
+  // (bez násobení malým speed) zajistí, že se smyčka zavře přesně v okamžiku, kdy je pták už mimo
+  // viditelnou oblast/plně vytracený ve mlze (viz edgeFade níž) - reset je pak neviditelný.
+  late final AnimationController _birdC;
 
   @override
   void initState() {
     super.initState();
     _c = AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
+    _birdC = AnimationController(vsync: this, duration: const Duration(seconds: 55))..repeat();
   }
 
   @override
   void dispose() {
     _c.dispose();
+    _birdC.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.smokePoints.isEmpty && widget.glowPoints.isEmpty) return const SizedBox.shrink();
+    if (widget.smokePoints.isEmpty && widget.glowPoints.isEmpty && widget.runeRiseLines.isEmpty) return const SizedBox.shrink();
     return IgnorePointer(
       child: AnimatedBuilder(
-        animation: _c,
+        animation: Listenable.merge([_c, _birdC]),
         builder: (context, _) => CustomPaint(
-          painter: _SceneLifePainter(t: _c.value, danger: widget.danger, smokePoints: widget.smokePoints, smokeColors: widget.smokeColors, glowPoints: widget.glowPoints),
+          painter: _SceneLifePainter(t: _c.value, birdT: _birdC.value, danger: widget.danger, smokePoints: widget.smokePoints, smokeColors: widget.smokeColors, glowPoints: widget.glowPoints, runeRiseLines: widget.runeRiseLines, runeRiseColor: widget.runeRiseColor),
           size: Size.infinite,
         ),
       ),
@@ -4629,11 +5156,14 @@ class _SceneLifeOverlayState extends State<_SceneLifeOverlay> with SingleTickerP
 
 class _SceneLifePainter extends CustomPainter {
   final double t;
+  final double birdT;
   final bool danger;
   final List<Offset> smokePoints;
   final List<Color> smokeColors;
   final List<Offset> glowPoints;
-  _SceneLifePainter({required this.t, required this.danger, required this.smokePoints, this.smokeColors = const [], required this.glowPoints});
+  final List<List<Offset>> runeRiseLines;
+  final Color runeRiseColor;
+  _SceneLifePainter({required this.t, this.birdT = 0, required this.danger, required this.smokePoints, this.smokeColors = const [], required this.glowPoints, this.runeRiseLines = const [], this.runeRiseColor = const Color(0xFF5AC8FA)});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -4776,21 +5306,25 @@ class _SceneLifePainter extends CustomPainter {
       }
       canvas.restore();
       // Ptáci - 3 drobné "V" siluety, pomalu táhnou zleva doprava v mírně odlišných výškách a
-      // rychlostech, mizí za pravým okrajem a znovu se objeví vlevo (nekonečná smyčka).
-      // Fade in/out u obou krajů (ne tvrdý střih) - dřív bylo vidět náhlé zmizení/objevení na
-      // hraně viditelné oblasti, tohle to změkčí do plynulého mizení v mlžném horizontu.
+      // rychlostech, mizí za pravým okrajem a znovu se objeví vlevo (nekonečná smyčka). Fáze letu
+      // vychází ze samostatného pomalého `birdT` (55s cyklus, viz _SceneLifeOverlayState) místo
+      // z hlavního `t` - díky tomu proletí celou oblohu za jeden cyklus a smyčka se zavře přesně
+      // v okamžiku, kdy jsou mimo viditelnou oblast, takže reset není vidět (dřív byl znát
+      // tvrdý "střih"/skok uprostřed letu). Široké fade pásmo na obou krajích (25 % šířky) pro
+      // opravdu plynulé postupné mizení v mlze místo náhlého zmizení.
       final birdRnd = Random(11);
       for (int i = 0; i < 3; i++) {
-        final speed = 0.05 + birdRnd.nextDouble() * 0.03;
+        final speedVariance = 0.85 + birdRnd.nextDouble() * 0.3; // mírně odlišná rychlost, ne přesně synchronní let
         final yFrac = 0.08 + birdRnd.nextDouble() * 0.12;
-        final phase = (t * speed + i * 0.33) % 1.0;
-        final x = phase * size.width * 1.3 - size.width * 0.15;
+        final phase = (birdT * speedVariance + i * 0.33) % 1.0;
+        final x = phase * size.width * 1.5 - size.width * 0.25;
         final y = yFrac * size.height + sin(phase * pi * 4) * 6;
         final wingFlap = sin(t * 2 * pi * 3 + i) * 0.5;
         final bw = 7.0;
-        // Fade podle vzdálenosti od viditelných okrajů (0..width) - poslední/první ~12 % šířky
-        // od kraje se plynule ztrácí, místo aby zmizel najednou mimo dohled.
-        final edgeFade = (x / (size.width * 0.12)).clamp(0.0, 1.0) * ((size.width - x) / (size.width * 0.12)).clamp(0.0, 1.0);
+        // Fade podle vzdálenosti od viditelných okrajů (0..width) - posledních/prvních 25 % šířky
+        // od kraje se plynule ztrácí (dřív jen 12 %, pořád trochu znát), místo náhlého zmizení.
+        final fadeMargin = size.width * 0.25;
+        final edgeFade = (x / fadeMargin).clamp(0.0, 1.0) * ((size.width - x) / fadeMargin).clamp(0.0, 1.0);
         final path = Path()
           ..moveTo(x - bw, y - wingFlap * 4)
           ..quadraticBezierTo(x, y + 3, x, y)
@@ -4917,6 +5451,40 @@ class _SceneLifePainter extends CustomPainter {
       final base = Offset(glowPoints[i].dx * size.width, glowPoints[i].dy * size.height);
       final flicker = 0.5 + 0.5 * sin(t * 2 * pi * (1.3 + i * 0.21) + i);
       canvas.drawCircle(base, 5 + flicker * 2, Paint()..color = const Color(0xFFFFD37A).withOpacity(0.22 + flicker * 0.33)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    }
+    // Stoupající runové světlo (Runový Čaroděj) - každá linie se "olízne" modrou září zdola
+    // nahoru, chvíli podrží plně rozsvícenou, pohasne a cyklus začne znovu. Nezávislý pomalejší
+    // cyklus (8s) než hlavní 12s `t`, ať to nepůsobí uspěchaně jako blikající okna výš.
+    for (int i = 0; i < runeRiseLines.length; i++) {
+      final line = runeRiseLines[i];
+      if (line.length < 2) continue;
+      final bottom = Offset(line[0].dx * size.width, line[0].dy * size.height);
+      final top = Offset(line[1].dx * size.width, line[1].dy * size.height);
+      // Fázový posun mezi liniemi (i * 0.15), ať se nerozsvěcí všechny naráz - působí to víc
+      // jako živé kouzlo než jeden centrálně spínaný efekt.
+      final cycle = (t * 1.5 + i * 0.15) % 1.0;
+      // 0.00-0.55 stoupá, 0.55-0.75 drží plně rozsvícené, 0.75-1.00 pohasíná do tmy.
+      double fill, glowOpacity;
+      if (cycle < 0.55) {
+        fill = cycle / 0.55;
+        glowOpacity = 1.0;
+      } else if (cycle < 0.75) {
+        fill = 1.0;
+        glowOpacity = 1.0;
+      } else {
+        fill = 1.0;
+        glowOpacity = 1.0 - (cycle - 0.75) / 0.25;
+      }
+      final headPoint = Offset.lerp(bottom, top, fill)!;
+      // Už rozsvícená část linie - měkký modrý paprsek od spodu po aktuální výšku.
+      if (fill > 0.02) {
+        canvas.drawLine(bottom, headPoint, Paint()..color = runeRiseColor.withOpacity(0.55 * glowOpacity)..strokeWidth = 3..strokeCap = StrokeCap.round..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
+      }
+      // Jasná "hlava" stoupajícího světla - jen během stoupání (cycle < 0.55), ne během držení.
+      if (cycle < 0.55) {
+        canvas.drawCircle(headPoint, 6, Paint()..color = runeRiseColor.withOpacity(0.9)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+        canvas.drawCircle(headPoint, 2.2, Paint()..color = Colors.white.withOpacity(0.85));
+      }
     }
     // Poletující světlušky/jiskry napříč celou scénou - teplá barva u Města, ohnivější u Dobrodružství.
     final rnd = Random(danger ? 99 : 42);
@@ -5069,8 +5637,9 @@ class AdventureScreen extends StatelessWidget {
         buildings: buildings,
         backgroundImage: 'assets/images/scenes/adventure_bg.png',
         // Přepočítáno podle skutečného obrázku: zářivý paprsek na vrcholu Věže, žhavá záře
-        // World Bosse, doutnající vchod do Doupěte.
-        glowPoints: const [Offset(0.50, 0.06), Offset(0.50, 0.64), Offset(0.15, 0.40)],
+        // World Bosse, doutnající vchod do Doupěte - třetí bod přeměřen přesně na ústa/vchod
+        // jeskyně v lebce (dřív mířil spíš do prázdné skály pod ní).
+        glowPoints: const [Offset(0.50, 0.06), Offset(0.50, 0.64), Offset(0.185, 0.375)],
       );
     });
   }
@@ -5259,10 +5828,20 @@ class CityScreen extends StatelessWidget {
         // reálně odliší podle zdroje.
         smokePoints: const [Offset(0.503, 0.40), Offset(0.115, 0.325)],
         smokeColors: const [Color(0xFF4A4A4A), Color(0xFF6FCF50)],
-        // Blikající okénka podle skutečných světel na obrázku - Runový Čaroděj (modrá záře),
-        // Runový Kovář (rudá záře), Banka (modré dveře vzadu), Kronika (prosvětlené okno věže),
-        // tržní lucerničky.
-        glowPoints: const [Offset(0.14, 0.80), Offset(0.85, 0.80), Offset(0.50, 0.13), Offset(0.90, 0.18), Offset(0.80, 0.42)],
+        // Blikající okénka podle skutečných světel na obrázku - Runový Čaroděj (teplá okna těsně
+        // pod špičkou věže, přeměřeno přesně na ně - dřív bod mířil na vchod dole, kde není
+        // žádné okno, jen kamenný portál s modrými runami), Runový Kovář (rudá záře, přeměřeno
+        // přesně na světélkující oblouk vchodu), Banka (modré dveře vzadu), Kronika (prosvětlené
+        // okno věže), tržní lucerničky.
+        glowPoints: const [Offset(0.170, 0.647), Offset(0.81, 0.805), Offset(0.50, 0.13), Offset(0.90, 0.18), Offset(0.80, 0.42)],
+        // Dvě svislé runové linie na těle věže Runového Čaroděje (mezi okny nahoře a vchodem
+        // dole) - pozice přeměřeny detekcí modrých pixelů přímo ze screenshotu. Modré světlo
+        // po nich postupně stoupá zdola nahoru (viz _SceneLifePainter).
+        runeRiseLines: const [
+          [Offset(0.140, 0.818), Offset(0.140, 0.680)],
+          [Offset(0.190, 0.818), Offset(0.190, 0.680)],
+        ],
+        runeRiseColor: const Color(0xFF6FC8FF),
       );
     });
   }
@@ -6649,8 +7228,18 @@ class SpellVisual {
   // SpellIconButton ho použije místo generické Material ikony `icon` (ta zůstává jen jako
   // fallback pro dlouhé podržení/dialog, kde vlastní kreslení zatím nemá smysl duplikovat).
   final Widget Function(Color color, double size)? customIcon;
-  const SpellVisual(this.name, this.icon, this.color, {this.customIcon});
+  // Identifikátor slotu tlačítka ('basicAttack'/'tier1'/'tier2'/'tier3'/'tier4'/'relic') - viz
+  // GameState.customSlotIcon/customSlotButtonColor/customSlotGlowColor. Umožňuje SpellIconButton
+  // najít ruční per-slot volbu hráče nezávisle na tom, jaký konkrétní spell/třída/specializace
+  // v tom slotu zrovna je.
+  final String? slotKey;
+  const SpellVisual(this.name, this.icon, this.color, {this.customIcon, this.slotKey});
 }
+
+// Obalí existující SpellVisual identifikátorem slotu (viz slotKey výš), beze změny čehokoliv
+// dalšího - použito v _spellVisualTierXRaw wrapperech níž, ať nemusí každá z 11-33 větví dané
+// tier funkce zvlášť přidávat slotKey ručně.
+SpellVisual _withSlot(SpellVisual v, String slot) => SpellVisual(v.name, v.icon, v.color, customIcon: v.customIcon, slotKey: slot);
 
 // Jednotná signální barva pro danou třídu — používá se pro VŠECHNY její
 // spell sloty (základní útok, tier1-4), aby tlačítka schopností na jedné
@@ -6673,7 +7262,8 @@ Color classSignatureColor(HeroClass c) {
 }
 
 // Tier 1 — Paragon 10, "Pokročilá třída" (isBerserk/isAssassin/...).
-SpellVisual spellVisualTier1(HeroClass c) {
+SpellVisual spellVisualTier1(HeroClass c) => _withSlot(_spellVisualTier1Raw(c), 'tier1');
+SpellVisual _spellVisualTier1Raw(HeroClass c) {
   switch (c) {
     case HeroClass.warrior: return SpellVisual('Mocný úder', Icons.fitness_center, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier1', col, size: sz));
     case HeroClass.hunter: return SpellVisual('Skrytý úder', Icons.visibility_off, classSignatureColor(HeroClass.hunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.hunter, 'tier1', col, size: sz));
@@ -6691,7 +7281,8 @@ SpellVisual spellVisualTier1(HeroClass c) {
 }
 
 // Tier 2 — Paragon 40, "Ultimátní třída" (isWarlord/isShadowMaster/...).
-SpellVisual spellVisualTier2(HeroClass c) {
+SpellVisual spellVisualTier2(HeroClass c) => _withSlot(_spellVisualTier2Raw(c), 'tier2');
+SpellVisual _spellVisualTier2Raw(HeroClass c) {
   switch (c) {
     case HeroClass.warrior: return SpellVisual('Rozdrcení světa', Icons.public, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier2', col, size: sz));
     case HeroClass.hunter: return SpellVisual('Stínová poprava', Icons.gps_fixed, classSignatureColor(HeroClass.hunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.hunter, 'tier2', col, size: sz));
@@ -6709,7 +7300,8 @@ SpellVisual spellVisualTier2(HeroClass c) {
 }
 
 // Tier 3 — Paragon 75, "Boží třída" (isValhallaWarrior/isVoidStalker/...).
-SpellVisual spellVisualTier3(HeroClass c) {
+SpellVisual spellVisualTier3(HeroClass c) => _withSlot(_spellVisualTier3Raw(c), 'tier3');
+SpellVisual _spellVisualTier3Raw(HeroClass c) {
   switch (c) {
     case HeroClass.warrior: return SpellVisual('Boží hněv', Icons.flash_on, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier3', col, size: sz));
     case HeroClass.hunter: return SpellVisual('Prázdnotová bouře', Icons.blur_circular, classSignatureColor(HeroClass.hunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.hunter, 'tier3', col, size: sz));
@@ -6727,7 +7319,8 @@ SpellVisual spellVisualTier3(HeroClass c) {
 }
 
 // Tier 4 — Rank 100, tři volby (rank100Choice 1/2/3) na třídu.
-SpellVisual spellVisualTier4(HeroClass c, int choice) {
+SpellVisual spellVisualTier4(HeroClass c, int choice) => _withSlot(_spellVisualTier4Raw(c, choice), 'tier4');
+SpellVisual _spellVisualTier4Raw(HeroClass c, int choice) {
   switch (c) {
     case HeroClass.warrior:
       if (choice == 1) return SpellVisual('Patář světa', Icons.terrain, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier4', col, choice: 1, size: sz));
@@ -6779,7 +7372,8 @@ SpellVisual spellVisualTier4(HeroClass c, int choice) {
 }
 
 // Základní útok - ikona/barva podle typu útoku, nebo signature (Paragon 150).
-SpellVisual basicAttackVisual(GameState s) {
+SpellVisual basicAttackVisual(GameState s) => _withSlot(_basicAttackVisualRaw(s), 'basicAttack');
+SpellVisual _basicAttackVisualRaw(GameState s) {
   if (s.hasParagon150) return SpellVisual(s.signatureAttackLabel, Icons.auto_awesome, classSignatureColor(s.heroClass), customIcon: (col, sz) => classSpellIconWidget(s.heroClass, 'signature', col, size: sz));
   return s.classIsMagicAttack
       ? SpellVisual('Magický útok', Icons.flash_on, classSignatureColor(s.heroClass))
@@ -7547,11 +8141,35 @@ class SpellIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Skin tlačítek spellů (viz kButtonSkinStyles) - volitelně přebarví POZADÍ/OKRAJ, ZÁŘI a
+    // IKONU všech ability tlačítek najednou, nezávisle na konkrétním spellu. 'default' = beze
+    // změny, přesně jako dřív (barva/ikona podle samotného spellu).
+    final state = context.watch<GameState>();
+    final buttonSkinId = state.equippedButtonSkin;
+    final skinStyle = buttonSkinId != 'default' ? kButtonSkinStyles[buttonSkinId] : null;
+    // Ruční volba PO JEDNOTLIVÝCH SLOTECH (viz konverzace: "meč pro spell 1 s červenou/černou,
+    // kapka pro spell 2 s modrou/světle modrou") - má PŘEDNOST před globálním skinem výš, pokud
+    // je pro daný slot (visual.slotKey) nastavená. Nezávislé na sobě - hráč může mít vybraný jen
+    // symbol, jen barvu tlačítka, jen barvu záře, nebo libovolnou kombinaci; co není nastavené,
+    // spadá na globální skin a pak na výchozí vzhled spellu.
+    final customIconAccent = state.customSlotIconFor(visual.slotKey);
+    final customButtonColor = state.customSlotButtonColorFor(visual.slotKey);
+    final customGlowColor = state.customSlotGlowColorFor(visual.slotKey);
     // Ready/not-ready musí být na první pohled jasně odlišitelné - dřív se disabled stav řešil
     // jen 45% Opacity na CELÉM tlačítku (barva i glow zůstávaly, jen ztlumené), takže hlavně u
     // tmavších barev (necromancer fialová) šlo těžko poznat, jestli spell čeká na cooldown, nebo
     // je připravený. Teď: ready = plná barva + glow, not-ready = plochá šedá BEZ glow vůbec.
-    final Color effColor = disabled ? const Color(0xFF4A4A52) : visual.color;
+    final Color effColor = disabled ? const Color(0xFF4A4A52) : (customButtonColor ?? skinStyle?.buttonColor ?? visual.color);
+    // Záře má vlastní nezávislou barvu od skinu/ruční volby (dřív vždycky stejná jako effColor) -
+    // "barva tlačítka" a "barva záře" jsou dvě samostatné volby v Kosmetice, viz konverzace.
+    final Color glowColor = disabled ? const Color(0xFF4A4A52) : (customGlowColor ?? skinStyle?.glowColor ?? effColor);
+    // Ikona: ruční per-slot volba > vlastní ikona spellu (ClassSpellIconPainter/SpecRelicIconPainter,
+    // jiná pro každou specializaci/tier) > ikona globálního skinu > obecná Material ikona spellu.
+    final Widget iconWidget = customIconAccent != null
+        ? standaloneAccentIcon(customIconAccent, effColor, size: size * 0.72)
+        : (visual.customIcon != null
+            ? visual.customIcon!(effColor, size * 0.72)
+            : (skinStyle != null ? Icon(skinStyle.icon, color: effColor, size: size * 0.6) : Icon(visual.icon, color: effColor, size: size * 0.46)));
     return Tooltip(
       message: costLabel != null ? '${visual.name}\n$costLabel' : visual.name,
       child: InkWell(
@@ -7560,9 +8178,9 @@ class SpellIconButton extends StatelessWidget {
           HapticFeedback.mediumImpact();
           showFantasyInfoDialog(
             context,
-            icon: visual.icon,
+            icon: skinStyle?.icon ?? visual.icon,
             title: visual.name,
-            color: visual.color,
+            color: customButtonColor ?? skinStyle?.buttonColor ?? visual.color,
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -7603,12 +8221,12 @@ class SpellIconButton extends StatelessWidget {
                   // (cooldown/použito/chybí zdroj) nemají žádný glow, ať je okamžitě jasné, že
                   // teď nejdou použít.
                   boxShadow: disabled ? [] : [
-                    BoxShadow(color: effColor.withOpacity(.55), blurRadius: 10, spreadRadius: 0.5),
-                    BoxShadow(color: effColor.withOpacity(.22), blurRadius: 20, spreadRadius: 2),
+                    BoxShadow(color: glowColor.withOpacity(.55), blurRadius: 10, spreadRadius: 0.5),
+                    BoxShadow(color: glowColor.withOpacity(.22), blurRadius: 20, spreadRadius: 2),
                   ],
                 ),
                 child: Stack(alignment: Alignment.center, children: [
-                  visual.customIcon != null ? visual.customIcon!(effColor, size * 0.5) : Icon(visual.icon, color: effColor, size: size * 0.46),
+                  iconWidget,
                   // Rohové ornamenty (echo FantasyIconFrame legendary/artifact stylu) - taky jen
                   // u ready spellů, ať not-ready působí opravdu "vypnutě".
                   if (!disabled)
@@ -7901,7 +8519,7 @@ class ArenaScreen extends StatelessWidget {
                   : lockedTier4Slot(state),
               relic: state.currentSpecRelicUnlocked
                   ? SpellIconButton(
-                      visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz)),
+                      visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz), slotKey: 'relic'),
                       costLabel: state.isSpecRelicEquipped
                           ? (state.heroClass == HeroClass.deathknight ? tr('Uvolnit duše', 'Release Souls') : 'Relic spell')
                           : tr('Nutno nasadit v Inventáři!', 'Must be equipped in Inventory!'),
@@ -8145,7 +8763,7 @@ class SpellbookScreen extends StatelessWidget {
         if (state.hasGodClass) _SpellbookEntry(spellVisualTier3(c), '${spellShortDesc(c, 3)} (${state.spellLiveEffectText(3)})'),
         if (state.hasRank100Class) _SpellbookEntry(spellVisualTier4(c, state.rank100Choice), '${spellShortDesc(c, 4, choice: state.rank100Choice)} (${state.spellLiveEffectText(4, choice: state.rank100Choice)})'),
         if (state.currentSpecRelicUnlocked) _SpellbookEntry(
-          SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz)),
+          SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz), slotKey: 'relic'),
           state.currentSpecRelic.effects.isNotEmpty ? state.currentSpecRelic.effects.first.description : 'Speciální spell ze specializačního Relicu.',
         ),
       ];
