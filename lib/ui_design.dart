@@ -2515,6 +2515,15 @@ enum _SpecAccent {
   axe, dagger, crossedDaggers,
   // Odlehčenější/neutrální motivy mimo zbraně - polštář a fotbalový míč.
   pillow, football,
+  // Slunce, mrak a duha - obecné "přírodní/oblohové" symboly pro picker (viz konverzace).
+  sun, cloud, rainbow,
+  // Vikingské runy (Elder Futhark) - 6 nejvýraznějších/nejčitelnějších na malém plátně. Záměrně
+  // jen rovné linie (žádné křivky) - přesně tak se runy historicky řezaly do dřeva/kamene, takže
+  // to není jen stylizace, ale autentický vzhled.
+  runeAlgiz, runeTiwaz, runeSowilo, runeOthala, runeBerkano, runeFehu,
+  // Druhá dávka run - Uruz (síla), Thurisaz (Thor/trn), Raido (cesta), Kenaz (pochodeň),
+  // Gebo (dar), Dagaz (průlom/nový den), Ehwaz (kůň/pohyb).
+  runeUruz, runeThurisaz, runeRaido, runeKenaz, runeGebo, runeDagaz, runeEhwaz,
 }
 
 _SpecAccent _specAccentFor(SpecRelicKind k) {
@@ -2739,17 +2748,26 @@ void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent
       }
       break;
     case _SpecAccent.gavel:
-      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: c + Offset(0, -s * 0.06), width: s * 0.18, height: s * 0.08), Radius.circular(s * 0.015)), p);
-      canvas.drawLine(c + Offset(0, -s * 0.02), c + Offset(0, s * 0.16), lp);
+      // Soudcovská palička - PŘEPRACOVÁNO (viz konverzace o kvalitě): hlavička byla dřív moc
+      // tenká/malá a opticky odpojená od rukojeti. Teď je hlavička silnější (výška 0.11 místo
+      // 0.08) a rukojeť na ni navazuje bez mezery (začíná přesně na spodním okraji hlavičky).
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: c + Offset(0, -s * 0.08), width: s * 0.20, height: s * 0.11), Radius.circular(s * 0.02)), p);
+      canvas.drawLine(c + Offset(0, -s * 0.025), c + Offset(0, s * 0.17), lp);
+      canvas.drawLine(c + Offset(-s * 0.06, s * 0.14), c + Offset(s * 0.06, s * 0.14), lp);
       break;
     case _SpecAccent.hammerWave:
-      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: c + Offset(-s * 0.06, -s * 0.10), width: s * 0.13, height: s * 0.06), Radius.circular(s * 0.012)), p);
-      canvas.drawLine(c + Offset(-s * 0.06, -s * 0.07), c + Offset(-s * 0.06, s * 0.03), lp);
-      final wave = Path()
-        ..moveTo(c.dx - s * 0.15, c.dy + s * 0.12)
-        ..quadraticBezierTo(c.dx - s * 0.06, c.dy + s * 0.05, c.dx + s * 0.03, c.dy + s * 0.12)
-        ..quadraticBezierTo(c.dx + s * 0.12, c.dy + s * 0.19, c.dx + s * 0.20, c.dy + s * 0.12);
-      canvas.drawPath(wave, lp);
+      // Úderové kladivo + rázová vlna - PŘEPRACOVÁNO: hlavička byla malá a vlna vypadala jako
+      // oddělený, nesouvisející tvar pod ní. Teď hlavička o dost větší, rukojeť sahá PŘESNĚ do
+      // bodu dopadu, a rázová vlna jsou dva soustředné oblouky vycházející z toho bodu.
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: c + Offset(-s * 0.05, -s * 0.13), width: s * 0.17, height: s * 0.09), Radius.circular(s * 0.018)), p);
+      canvas.drawLine(c + Offset(-s * 0.05, -s * 0.085), c + Offset(-s * 0.02, s * 0.06), lp);
+      final impact = c + Offset(-s * 0.01, s * 0.07);
+      for (final r in [0.07, 0.13]) {
+        final wave = Path()
+          ..moveTo(impact.dx - s * r, impact.dy + s * r * 0.5)
+          ..quadraticBezierTo(impact.dx, impact.dy + s * r * 1.1, impact.dx + s * r, impact.dy + s * r * 0.5);
+        canvas.drawPath(wave, Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.022..strokeCap = StrokeCap.round);
+      }
       break;
     case _SpecAccent.snowflake:
       for (int i = 0; i < 3; i++) {
@@ -2782,12 +2800,27 @@ void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent
       for (final pt in pts) canvas.drawLine(c, pt, Paint()..color = light.withOpacity(.5)..strokeWidth = s * 0.015);
       break;
     case _SpecAccent.hourglass:
+      // Přesýpací hodiny - PŘEPRACOVÁNO: oba trojúhelníky se dřív dotýkaly jen v jednom
+      // nekonečně tenkém bodě uprostřed, což opticky působilo jako přerušení/mezera. Teď mají
+      // navíc vodorovné příčky nahoře/dole (klasický dřevěný rám), co obě komory vizuálně
+      // sváže v jeden pevný objekt, ne dva trojúhelníky vedle sebe.
+      canvas.drawLine(c + Offset(-s * 0.10, -s * 0.14), c + Offset(s * 0.10, -s * 0.14), lp);
+      canvas.drawLine(c + Offset(-s * 0.10, s * 0.14), c + Offset(s * 0.10, s * 0.14), lp);
       canvas.drawPath(Path()..moveTo(c.dx - s * 0.10, c.dy - s * 0.14)..lineTo(c.dx + s * 0.10, c.dy - s * 0.14)..lineTo(c.dx, c.dy)..close(), lp..style = PaintingStyle.stroke);
-      canvas.drawPath(Path()..moveTo(c.dx - s * 0.10, c.dy + s * 0.14)..lineTo(c.dx + s * 0.10, c.dy + s * 0.14)..lineTo(c.dx, c.dy)..close(), lp);
+      canvas.drawPath(Path()..moveTo(c.dx - s * 0.10, c.dy + s * 0.14)..lineTo(c.dx + s * 0.10, c.dy + s * 0.14)..lineTo(c.dx, c.dy)..close(), p);
       break;
     case _SpecAccent.rapierMark:
-      canvas.drawCircle(c, s * 0.10, lp);
-      canvas.drawLine(c + Offset(-s * 0.16, -s * 0.16), c + Offset(s * 0.16, s * 0.16), lp);
+      // Rapírová značka - PŘEKRESLENO (viz konverzace): dřív to byl obyčejný kruh + diagonální
+      // čára, k nerozeznání od Cílové runy. Teď tenká diagonální čepel s malou příčkou u jílce
+      // a hlavicí na konci - jasně čitelné jako "rapír", ne obecný geometrický tvar.
+      final bladeDir = Offset(cos(pi / 4), sin(pi / 4));
+      final tip = c - bladeDir * s * 0.18;
+      final hilt = c + bladeDir * s * 0.14;
+      canvas.drawLine(tip, hilt, Paint()..color = light..strokeWidth = s * 0.022..strokeCap = StrokeCap.round);
+      final guardPerp = Offset(-bladeDir.dy, bladeDir.dx) * s * 0.055;
+      final guardCenter = c + bladeDir * s * 0.05;
+      canvas.drawLine(guardCenter - guardPerp, guardCenter + guardPerp, lp);
+      canvas.drawCircle(hilt, s * 0.025, p);
       break;
     case _SpecAccent.crossedBlades:
       canvas.drawLine(c + Offset(-s * 0.14, -s * 0.14), c + Offset(s * 0.14, s * 0.14), lp);
@@ -2839,15 +2872,24 @@ void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent
       }
       break;
     case _SpecAccent.targetRune:
-      canvas.drawCircle(c, s * 0.12, lp);
-      canvas.drawLine(c - Offset(s * 0.09, s * 0.09), c + Offset(s * 0.09, s * 0.09), lp);
+      // Cílová runa - PŘEKRESLENO: dřív byla k nerozeznání od Rapírové značky (stejný kruh +
+      // diagonální čára). Teď skutečný terč - dva soustředné kruhy + středový bod, jasně
+      // odlišené i od Zaměřovače (crosshair výš, ten má naopak čtyři vnější tiky bez kruhů).
+      canvas.drawCircle(c, s * 0.15, lp);
+      canvas.drawCircle(c, s * 0.08, Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.022);
+      canvas.drawCircle(c, s * 0.025, p);
       break;
     case _SpecAccent.shadowEye:
-      final lid = Path()..moveTo(c.dx - s * 0.14, c.dy)..quadraticBezierTo(c.dx, c.dy + s * 0.09, c.dx + s * 0.14, c.dy);
-      canvas.drawPath(lid, lp);
-      for (final dx in [-0.05, 0.05]) {
-        canvas.drawCircle(c + Offset(dx * s, s * 0.10), s * 0.015, Paint()..color = light.withOpacity(.5));
-      }
+      // Stínové oko - PŘEKRESLENO (viz konverzace): dřív křivka + dvě tečky vypadaly spíš jako
+      // úsměv s řasami než oko. Teď těžké skoro zavřené víčko (plný tvar) s tenkým tmavým
+      // proužkem duhovky uprostřed - jako by někdo sledoval ze stínu skrz škvíru.
+      final lid = Path()
+        ..moveTo(c.dx - s * 0.15, c.dy - s * 0.01)
+        ..quadraticBezierTo(c.dx, c.dy - s * 0.11, c.dx + s * 0.15, c.dy - s * 0.01)
+        ..quadraticBezierTo(c.dx, c.dy + s * 0.025, c.dx - s * 0.15, c.dy - s * 0.01)
+        ..close();
+      canvas.drawPath(lid, p);
+      canvas.drawLine(Offset(c.dx - s * 0.09, c.dy - s * 0.002), Offset(c.dx + s * 0.09, c.dy - s * 0.002), Paint()..color = const Color(0xFF14181C)..strokeWidth = s * 0.025..strokeCap = StrokeCap.round);
       break;
     case _SpecAccent.boneMinion:
       void bone(double angle) {
@@ -3204,6 +3246,173 @@ void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent
         canvas.drawLine(pentaPts[i], outer, Paint()..color = const Color(0xFF14181C)..strokeWidth = s * 0.016..strokeCap = StrokeCap.round);
       }
       break;
+    case _SpecAccent.sun:
+      // Slunce - plný kotouč uprostřed + 8 paprsků do stran, klasický "weather icon" tvar.
+      canvas.drawCircle(c, s * 0.115, p);
+      for (int i = 0; i < 8; i++) {
+        final a = i * (pi / 4);
+        final dir = Offset(cos(a), sin(a));
+        canvas.drawLine(c + dir * s * 0.155, c + dir * s * 0.24, Paint()..color = light..strokeWidth = s * 0.022..strokeCap = StrokeCap.round);
+      }
+      break;
+    case _SpecAccent.cloud:
+      // Mrak - tři překrývající se kruhy nahoře (nadýchaný obrys) + zaoblený plochý spodek.
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: c + Offset(0, s * 0.06), width: s * 0.36, height: s * 0.17), Radius.circular(s * 0.085)), p);
+      canvas.drawCircle(c + Offset(-s * 0.09, -s * 0.015), s * 0.095, p);
+      canvas.drawCircle(c + Offset(s * 0.03, -s * 0.05), s * 0.12, p);
+      canvas.drawCircle(c + Offset(s * 0.15, 0.0), s * 0.085, p);
+      break;
+    case _SpecAccent.rainbow:
+      // Duha - tři soustředné půlkruhové pruhy (v jedné barevné rodině skinu, ne doslova
+      // ROYGBIV - malíř dostává jen jeden `color`) se střídavou sytostí, ať jsou pruhy od sebe
+      // aspoň trochu odlišitelné.
+      final arcCenter = c + Offset(0, s * 0.11);
+      canvas.drawArc(Rect.fromCenter(center: arcCenter, width: s * 0.46, height: s * 0.46), pi, pi, false, Paint()..style = PaintingStyle.stroke..strokeWidth = s * 0.046..strokeCap = StrokeCap.round..color = color);
+      canvas.drawArc(Rect.fromCenter(center: arcCenter, width: s * 0.33, height: s * 0.33), pi, pi, false, Paint()..style = PaintingStyle.stroke..strokeWidth = s * 0.046..strokeCap = StrokeCap.round..color = light);
+      canvas.drawArc(Rect.fromCenter(center: arcCenter, width: s * 0.20, height: s * 0.20), pi, pi, false, Paint()..style = PaintingStyle.stroke..strokeWidth = s * 0.046..strokeCap = StrokeCap.round..color = color.withOpacity(.55));
+      break;
+    case _SpecAccent.runeAlgiz:
+      // Algiz (ᛉ) - runa ochrany. Svislý stvol + dvě větve nahoře do V (jako parohy/vztyčené
+      // paže). Ostré hrany bez zaoblení - rovné tahy dýkou/dlátem, ne štětcem.
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.20), Offset(c.dx, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.05), Offset(c.dx - s * 0.14, c.dy - s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.05), Offset(c.dx + s * 0.14, c.dy - s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      break;
+    case _SpecAccent.runeTiwaz:
+      // Tiwaz (ᛏ) - runa boha Týra, vítězství v boji. Svislý stvol + šipkovitý hrot nahoře.
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.20), Offset(c.dx, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.20), Offset(c.dx - s * 0.12, c.dy - s * 0.02), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.20), Offset(c.dx + s * 0.12, c.dy - s * 0.02), Paint()..color = light..strokeWidth = s * 0.028);
+      break;
+    case _SpecAccent.runeSowilo:
+      // Sowilo (ᛊ) - runa slunce/vítězství. Klikatý blesk (3 rovné segmenty), historicky
+      // dvojitá u SS run, tady jednoduchá varianta.
+      canvas.drawPath(
+        Path()
+          ..moveTo(c.dx - s * 0.11, c.dy - s * 0.20)
+          ..lineTo(c.dx + s * 0.06, c.dy - s * 0.04)
+          ..lineTo(c.dx - s * 0.06, c.dy + s * 0.04)
+          ..lineTo(c.dx + s * 0.11, c.dy + s * 0.20),
+        Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.028..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round,
+      );
+      break;
+    case _SpecAccent.runeOthala:
+      // Othala (ᛟ) - runa dědictví/domova. Kosočtverec s dvěma "nohami" dole.
+      canvas.drawPath(
+        Path()
+          ..moveTo(c.dx, c.dy - s * 0.19)
+          ..lineTo(c.dx + s * 0.13, c.dy - s * 0.02)
+          ..lineTo(c.dx, c.dy + s * 0.04)
+          ..lineTo(c.dx - s * 0.13, c.dy - s * 0.02)
+          ..close(),
+        Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.026..strokeJoin = StrokeJoin.round,
+      );
+      canvas.drawLine(Offset(c.dx - s * 0.06, c.dy + s * 0.04), Offset(c.dx - s * 0.15, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.026);
+      canvas.drawLine(Offset(c.dx + s * 0.06, c.dy + s * 0.04), Offset(c.dx + s * 0.15, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.026);
+      break;
+    case _SpecAccent.runeBerkano:
+      // Berkano (ᛒ) - runa břízy/růstu. Svislý stvol + dva zaostřené trojúhelníky navazující
+      // (jako písmeno B, ale zcela z rovných úseček, žádné oblouky).
+      canvas.drawLine(Offset(c.dx - s * 0.10, c.dy - s * 0.20), Offset(c.dx - s * 0.10, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawPath(
+        Path()
+          ..moveTo(c.dx - s * 0.10, c.dy - s * 0.20)
+          ..lineTo(c.dx + s * 0.11, c.dy - s * 0.10)
+          ..lineTo(c.dx - s * 0.10, c.dy - s * 0.01)
+          ..close(),
+        Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.026..strokeJoin = StrokeJoin.round,
+      );
+      canvas.drawPath(
+        Path()
+          ..moveTo(c.dx - s * 0.10, c.dy - s * 0.01)
+          ..lineTo(c.dx + s * 0.13, c.dy + s * 0.095)
+          ..lineTo(c.dx - s * 0.10, c.dy + s * 0.20)
+          ..close(),
+        Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.026..strokeJoin = StrokeJoin.round,
+      );
+      break;
+    case _SpecAccent.runeFehu:
+      // Fehu (ᚠ) - runa bohatství/majetku. Svislý stvol + dvě diagonální větve nahoru-vpravo.
+      canvas.drawLine(Offset(c.dx - s * 0.10, c.dy - s * 0.20), Offset(c.dx - s * 0.10, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawLine(Offset(c.dx - s * 0.10, c.dy - s * 0.20), Offset(c.dx + s * 0.13, c.dy - s * 0.09), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawLine(Offset(c.dx - s * 0.10, c.dy - s * 0.01), Offset(c.dx + s * 0.13, c.dy + s * 0.10), Paint()..color = light..strokeWidth = s * 0.028);
+      break;
+    case _SpecAccent.runeUruz:
+      // Uruz (ᚢ) - runa síly/pratura. Svislá levá noha + diagonála z jejího vrchu do
+      // pravého dolního rohu (rohovitý klínový tvar).
+      canvas.drawLine(Offset(c.dx - s * 0.12, c.dy - s * 0.20), Offset(c.dx - s * 0.12, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawLine(Offset(c.dx - s * 0.12, c.dy - s * 0.20), Offset(c.dx + s * 0.12, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      break;
+    case _SpecAccent.runeThurisaz:
+      // Thurisaz (ᚦ) - runa Thora/trnu. Svislý stvol + trojúhelníkový osten vpravo uprostřed.
+      canvas.drawLine(Offset(c.dx - s * 0.10, c.dy - s * 0.20), Offset(c.dx - s * 0.10, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawPath(
+        Path()
+          ..moveTo(c.dx - s * 0.10, c.dy - s * 0.09)
+          ..lineTo(c.dx + s * 0.13, c.dy)
+          ..lineTo(c.dx - s * 0.10, c.dy + s * 0.10)
+          ..close(),
+        Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.026..strokeJoin = StrokeJoin.round,
+      );
+      break;
+    case _SpecAccent.runeRaido:
+      // Raido (ᚱ) - runa cesty/jízdy. Svislý stvol, trojúhelníková smyčka nahoře a diagonální
+      // "noha" z ní dolů-vpravo, jako písmeno R.
+      canvas.drawLine(Offset(c.dx - s * 0.10, c.dy - s * 0.20), Offset(c.dx - s * 0.10, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.028);
+      canvas.drawPath(
+        Path()
+          ..moveTo(c.dx - s * 0.10, c.dy - s * 0.20)
+          ..lineTo(c.dx + s * 0.12, c.dy - s * 0.13)
+          ..lineTo(c.dx - s * 0.10, c.dy - s * 0.02)
+          ..close(),
+        Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.026..strokeJoin = StrokeJoin.round,
+      );
+      canvas.drawLine(Offset(c.dx - s * 0.10, c.dy - s * 0.02), Offset(c.dx + s * 0.14, c.dy + s * 0.20), Paint()..color = light..strokeWidth = s * 0.026);
+      break;
+    case _SpecAccent.runeKenaz:
+      // Kenaz (ᚲ) - runa pochodně/vědění. Jednoduché "<" - dvě linie sbíhající se do bodu
+      // vlevo, jako plamínek nebo otevřená čelist.
+      canvas.drawLine(Offset(c.dx + s * 0.12, c.dy - s * 0.18), Offset(c.dx - s * 0.12, c.dy), Paint()..color = light..strokeWidth = s * 0.03..strokeCap = StrokeCap.round);
+      canvas.drawLine(Offset(c.dx - s * 0.12, c.dy), Offset(c.dx + s * 0.12, c.dy + s * 0.18), Paint()..color = light..strokeWidth = s * 0.03..strokeCap = StrokeCap.round);
+      break;
+    case _SpecAccent.runeGebo:
+      // Gebo (ᚷ) - runa daru/výměny. Symetrické X - odlišné od crossedBlades (ten je motiv
+      // "boje", tenhle jasně symetrický, o něco větší a se zaoblenými konci).
+      canvas.drawLine(Offset(c.dx - s * 0.16, c.dy - s * 0.16), Offset(c.dx + s * 0.16, c.dy + s * 0.16), Paint()..color = light..strokeWidth = s * 0.026..strokeCap = StrokeCap.round);
+      canvas.drawLine(Offset(c.dx - s * 0.16, c.dy + s * 0.16), Offset(c.dx + s * 0.16, c.dy - s * 0.16), Paint()..color = light..strokeWidth = s * 0.026..strokeCap = StrokeCap.round);
+      break;
+    case _SpecAccent.runeDagaz:
+      // Dagaz (ᛞ) - runa průlomu/nového dne. Ležatý "motýlek" - dva trojúhelníky hrotem k
+      // sobě uprostřed, na rozdíl od Přesýpacích hodin (ty jsou svislé, tohle je vodorovné).
+      canvas.drawPath(
+        Path()
+          ..moveTo(c.dx - s * 0.17, c.dy - s * 0.15)
+          ..lineTo(c.dx - s * 0.17, c.dy + s * 0.15)
+          ..lineTo(c.dx, c.dy)
+          ..close(),
+        Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.026..strokeJoin = StrokeJoin.round,
+      );
+      canvas.drawPath(
+        Path()
+          ..moveTo(c.dx + s * 0.17, c.dy - s * 0.15)
+          ..lineTo(c.dx + s * 0.17, c.dy + s * 0.15)
+          ..lineTo(c.dx, c.dy)
+          ..close(),
+        Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.026..strokeJoin = StrokeJoin.round,
+      );
+      break;
+    case _SpecAccent.runeEhwaz:
+      // Ehwaz (ᛖ) - runa koně/pohybu. Cik-cak "M" ze čtyř navazujících úseček.
+      canvas.drawPath(
+        Path()
+          ..moveTo(c.dx - s * 0.14, c.dy + s * 0.20)
+          ..lineTo(c.dx - s * 0.14, c.dy - s * 0.12)
+          ..lineTo(c.dx, c.dy + s * 0.05)
+          ..lineTo(c.dx + s * 0.14, c.dy - s * 0.12)
+          ..lineTo(c.dx + s * 0.14, c.dy + s * 0.20),
+        Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.026..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round,
+      );
+      break;
   }
 }
 
@@ -3456,6 +3665,7 @@ const Map<_SpecAccent, String> kSelectableButtonIcons = {
   _SpecAccent.crossedBlades: 'Zkřížené čepele',
   _SpecAccent.targetRune: 'Cílová runa',
   _SpecAccent.bolt: 'Blesk',
+  _SpecAccent.hourglass: 'Přesýpací hodiny',
   _SpecAccent.thunderCore: 'Bouře',
   _SpecAccent.sunburst: 'Sluneční záře',
   _SpecAccent.moonDecay: 'Měsíční srp',
@@ -3484,6 +3694,22 @@ const Map<_SpecAccent, String> kSelectableButtonIcons = {
   _SpecAccent.crossedDaggers: 'Zkřížené dýky',
   _SpecAccent.pillow: 'Polštář',
   _SpecAccent.football: 'Fotbalový míč',
+  _SpecAccent.sun: 'Slunce',
+  _SpecAccent.cloud: 'Mrak',
+  _SpecAccent.rainbow: 'Duha',
+  _SpecAccent.runeAlgiz: 'Runa Algiz (ochrana)',
+  _SpecAccent.runeTiwaz: 'Runa Tiwaz (vítězství)',
+  _SpecAccent.runeSowilo: 'Runa Sowilo (slunce)',
+  _SpecAccent.runeOthala: 'Runa Othala (dědictví)',
+  _SpecAccent.runeBerkano: 'Runa Berkano (růst)',
+  _SpecAccent.runeFehu: 'Runa Fehu (bohatství)',
+  _SpecAccent.runeUruz: 'Runa Uruz (síla)',
+  _SpecAccent.runeThurisaz: 'Runa Thurisaz (Thor)',
+  _SpecAccent.runeRaido: 'Runa Raido (cesta)',
+  _SpecAccent.runeKenaz: 'Runa Kenaz (pochodeň)',
+  _SpecAccent.runeGebo: 'Runa Gebo (dar)',
+  _SpecAccent.runeDagaz: 'Runa Dagaz (průlom)',
+  _SpecAccent.runeEhwaz: 'Runa Ehwaz (kůň)',
 };
 
 // Nabídka barev pro ruční výběr barvy tlačítka/záře - stejná paleta pro obě, ale volí se
@@ -4828,23 +5054,24 @@ class EquipSceneSlot {
 /// klidně přeskupte, pokud bude sedět jinak vizuálně (např. helma nahoře by dávala smysl blíž
 /// hlavě postavy).
 const List<EquipSceneSlot> equipSceneSlots = [
-  // Levý sloupec (dx ~0.207), shora dolů - druhé přeměření na jiném screenshotu (jiná postava,
-  // stejné pozadí) ukázalo pořád zbytkový posun cca 2 % vpravo oproti dřívějšímu odhadu - teď
-  // sedí přesně na pixelové detekci středu ikony/rámu z obou screenshotů dohromady.
-  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.198, dy: 0.159),
-  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.211, dy: 0.276),
-  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.207, dy: 0.397),
-  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.209, dy: 0.516),
-  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.208, dy: 0.653),
+  // Levý sloupec (dx ~0.20), shora dolů - třetí přeměření, tentokrát na screenshotu POŘÍZENÉM
+  // AŽ PO opravě OverflowBox/SizedBox (skutečně plnokrevná scéna 0-100% šířky obrazovky, ne
+  // dřívější (šířka-32px) render, na který mířila předchozí dvě kola). Detekce barevných pixelů
+  // ikony vůči celé ploše scény (ne odhad), takže by tohle mělo sedět přesně.
+  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.190, dy: 0.148),
+  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.209, dy: 0.302),
+  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.206, dy: 0.378),
+  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.219, dy: 0.516),
+  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.212, dy: 0.652),
   EquipSceneSlot(slot: EquipSlot.ring, dx: 0.207, dy: 0.761),
-  // Pravý sloupec (dx ~0.76), shora dolů - stejná druhá korekce, tady naopak cca 1,5 % vlevo.
-  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.767, dy: 0.215),
-  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.760, dy: 0.337),
-  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.764, dy: 0.432),
-  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.761, dy: 0.569),
+  // Pravý sloupec (dx ~0.76), shora dolů.
+  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.771, dy: 0.205),
+  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.761, dy: 0.320),
+  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.752, dy: 0.402),
+  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.766, dy: 0.541),
   // Pár malých rámů dole vpravo - dva sloty Přívěsku vedle sebe.
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.694, dy: 0.717, accessoryIndex: 0),
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.877, dy: 0.721, accessoryIndex: 1),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.694, dy: 0.698, accessoryIndex: 0),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.873, dy: 0.688, accessoryIndex: 1),
 ];
 
 /// Malovaná scéna "Nasazené vybavení" v Batohu - stejný jazyk jako SceneMapView níž

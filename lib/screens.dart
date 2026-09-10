@@ -393,6 +393,12 @@ class _SpellFxPainter extends CustomPainter {
     final spec = kSpellFxSpec[kind];
     final epic = spec?.epic ?? false;
     _paintVignette(canvas, size, epic);
+    // Impact flash - PŘIDÁNO (viz konverzace, živý JS náhled odhalil, že celému systému chybí
+    // jeden ostrý "pop" moment v momentu vrcholu zásahu). Bez tohohle všechny efekty jen plynule
+    // najíždí a odeznívají easing křivkou - chybí základní VFX princip anticipace → impact flash
+    // → doznění. Sdílené pro všech 9 archetypů najednou, ne per-efekt duplikace. Vrchol kolem
+    // t=0.12-0.18 (dřív, než hlavní tvar dosáhne plné velikosti), krátký a ostrý - ne dlouhý fade.
+    _paintImpactFlash(canvas, size, spec?.secondary ?? Colors.white, epic);
     switch (kind) {
       case SpellFxKind.dkCursedStrike:
         _paintCursedStrike(canvas, size);
@@ -431,6 +437,29 @@ class _SpellFxPainter extends CustomPainter {
     canvas.drawRect(rect, Paint()..shader = RadialGradient(
       colors: [Colors.black.withOpacity(0), Colors.black.withOpacity(strength)],
       stops: const [0.45, 1.0],
+    ).createShader(Rect.fromCircle(center: center, radius: maxR)));
+  }
+
+  // Krátký ostrý "pop" v momentu vrcholu zásahu - na rozdíl od vignette výš (ta trvá přes CELOU
+  // animaci jako zvonová křivka) žije tenhle impulz jen v úzkém okně kolem t=0.14, DŘÍV, než
+  // hlavní tvar archetypu dosáhne plné velikosti. Bez tohohle působily všechny efekty jen jako
+  // plynulé najetí+doznění, chyběl moment "tohle PRÁVĚ zasáhlo" - základní princip anticipace →
+  // impact flash → doznění. Barva je jemně tónovaná podle `tint` (obvykle secondary barva dané
+  // specializace), ne čistě bílá, ať flash pořád patří k paletě efektu, ne jak cizí bleskovka.
+  void _paintImpactFlash(Canvas canvas, Size size, Color tint, bool epic) {
+    const peak = 0.14;
+    const window = 0.09;
+    final dist = (t - peak).abs();
+    if (dist > window) return;
+    final strength = (1 - (dist / window)).clamp(0.0, 1.0);
+    final eased = Curves.easeOutCubic.transform(strength);
+    if (eased <= 0.01) return;
+    final center = Offset(size.width / 2, size.height * 0.28);
+    final maxR = size.shortestSide * (epic ? 0.55 : 0.4);
+    final flashColor = Color.lerp(Colors.white, tint, 0.3)!;
+    canvas.drawRect(Offset.zero & size, Paint()..shader = RadialGradient(
+      colors: [flashColor.withOpacity(eased * (epic ? 0.5 : 0.32)), flashColor.withOpacity(0)],
+      stops: const [0.0, 1.0],
     ).createShader(Rect.fromCircle(center: center, radius: maxR)));
   }
 
@@ -6973,8 +7002,13 @@ class AlchemistScreen extends StatelessWidget {
               ),
             )
           else
-            Container(
-              decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(10)),
+            Card(
+              // Card (ne obyčejný Container/DecoratedBox) - ListTile-family widgety (SwitchListTile
+              // patří mezi ně) kreslí svoje pozadí a ink-splash efekty na NEJBLIŽŠÍ Material
+              // předka. Container s barvou tohle pozadí schová a splash efekty by nebyly vidět
+              // (viz Flutter log: "ListTile background color or ink splashes may be invisible").
+              color: const Color(0xFF1E1E24),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               child: SwitchListTile(
                 title: Text(tr("Auto-Léčení Aktivní", "Auto-Heal Active")),
                 value: state.autoHealEnabled,

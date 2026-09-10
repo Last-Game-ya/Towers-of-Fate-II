@@ -1637,6 +1637,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     double divisor = 1.0;
     double prevLayerFloor100 = floor100Growth; // Normal patro 100 (own mult = 1.0)
     for (int lvl = 1; lvl <= level && lvl <= 3; lvl++) {
+      // BUG FIX (viz konverzace - "nemůžu porazit prvního hardcore bosse ani na Paragon 37"):
+      // lvl==2/3 násobí ownMult svým vlastním vstupním difficulty multem (predpekli/peklo), ale
+      // lvl==1 dřív NEnásobil ničím - přitom skutečný boj (_generateNextEnemy/fightLairBoss)
+      // navíc VŽDY násobí (1.0 + 0.5*hardcoreTier), a hardcoreTier je při prvním vstupu do
+      // Hardcore vždycky aspoň 1. Bez týhle řádky tak přechod Normal→Hardcore vycházel na 1.65×
+      // (marže 1.1× × zapomenutý 1.5× hardcoreTier faktor) místo zamýšlené 1.1× marže - jediný
+      // ze tří přechodů, co byl mimo plán, a zrovna ten úplně první, na co hráč narazí.
+      if (lvl == 1) ownMult *= 1.5; // baseline (1.0 + 0.5 * hardcoreTier) při hardcoreTier == 1
       if (lvl == 2) ownMult *= predpekliDifficultyMult;
       if (lvl == 3) ownMult *= pekloDifficultyMult;
       divisor = ownMult / (_ascensionLayerMargin * prevLayerFloor100);
@@ -4509,28 +4517,39 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     return sum;
   }
 
+  // BUG FIX 2 (viz konverzace o balance - "itemy dávají staty ve velkém, uvažuj Kovárnu na ranku
+  // 100 a hardcore Paragon"): první oprava (multiplikátor ze SOUČTU item+talent) vypadala rozumně
+  // izolovaně, ale item staty mají VLASTNÍ neomezený násobič (paragonMultiplierFor, roste lineárně
+  // s Paragonem navždy) - takže `base` u gearnutého hardcore hrdiny byl už tak obrovský (v řádu
+  // tisíců), že násobení SEBE SAMA (`base*(1+base*k)`) druhotně explodovalo úplně stejně jako
+  // předtím, jen to teď spouštěl gear místo talent bodů (ověřeno: Paragon 37 + Kovárna rank 100,
+  // JEN ze 4 kusů gearu, 0 talent bodů → 99,8 % Block capu). Item staty (+ z nich odvozené relic/
+  // set bonusy - taky nejsou VOLBA hráče, jen odměna z gearu) se teď přičítají AŽ ZA
+  // multiplikátorem, beze změny. Multiplikátor `points*(1+points*k)` počítá VÝHRADNĚ z
+  // talentových bodů - jít do jednoho statu pořád dává reálnou výhodu (ten stat dostane svůj
+  // vlastní bonus), ale gear už ho druhotně nezesiluje.
   double get totalStrength {
     final int points = talents["Strength"]!;
-    final double base = points + _itemStatSum("Strength") + ((heroClass==HeroClass.warrior||heroClass==HeroClass.deathknight||heroClass==HeroClass.duelist||heroClass==HeroClass.monk)?specRelicMainStatBonus:0) + eliteSetMainStatBonus("Strength");
-    return base * (1 + points * 0.01);
+    final double itemAndGearBonuses = _itemStatSum("Strength") + ((heroClass==HeroClass.warrior||heroClass==HeroClass.deathknight||heroClass==HeroClass.duelist||heroClass==HeroClass.monk)?specRelicMainStatBonus:0) + eliteSetMainStatBonus("Strength");
+    return itemAndGearBonuses + points * (1 + points * 0.0025);
   }
 
   double get totalAgility {
     final int points = talents["Agility"]!;
-    final double base = points + _itemStatSum("Agility") + (heroClass==HeroClass.hunter?specRelicMainStatBonus:0) + eliteSetMainStatBonus("Agility");
-    return base * (1 + points * 0.01);
+    final double itemAndGearBonuses = _itemStatSum("Agility") + (heroClass==HeroClass.hunter?specRelicMainStatBonus:0) + eliteSetMainStatBonus("Agility");
+    return itemAndGearBonuses + points * (1 + points * 0.0025);
   }
 
   double get totalWisdom {
     final int points = talents["Wisdom"]!;
-    final double base = points + _itemStatSum("Wisdom") + ((heroClass==HeroClass.mage||heroClass==HeroClass.healer)?specRelicMainStatBonus:0) + eliteSetMainStatBonus("Wisdom");
-    return base * (1 + points * 0.01);
+    final double itemAndGearBonuses = _itemStatSum("Wisdom") + ((heroClass==HeroClass.mage||heroClass==HeroClass.healer)?specRelicMainStatBonus:0) + eliteSetMainStatBonus("Wisdom");
+    return itemAndGearBonuses + points * (1 + points * 0.0025);
   }
 
   double get totalVitality {
     final int points = talents["Vitality"]!;
-    final double base = points + _itemStatSum("Vitality") + specRelicVitalityBonus + eliteSetMainStatBonus("Vitality");
-    return base * (1 + points * 0.01);
+    final double itemAndGearBonuses = _itemStatSum("Vitality") + specRelicVitalityBonus + eliteSetMainStatBonus("Vitality");
+    return itemAndGearBonuses + points * (1 + points * 0.0025);
   }
 
   int get itemBonusHp {
@@ -7892,9 +7911,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
 
   double get critChance {
-    // Crit má teď DVA zdroje statů (Agility i Wisdom - "hbitost i důvtip vedou k přesnému
-    // zásahu"), stejná váha pro oba, univerzálně pro všechny třídy/specializace.
-    double raw = 0.05 + (totalAgility * 0.0015) + (totalWisdom * 0.001125) + (_itemStatSum("Crit") * 0.001);
+    // BUG FIX 3 (viz konverzace - "itemy dávají staty ve velkém"): totalAgility/totalWisdom
+    // sahají do tisíců až desetitisíců u gearnutého hardcore hrdiny (Paragon multiplikátor na
+    // item statech nemá strop), takže i po opravě 1/2 (oddělení item statů od talentového
+    // sebe-násobení) byl SUROVÝ stat pořád o řády větší, než na jaký byl kalibrovaný převodní
+    // koeficient (Agility*0.0015 apod.) - crit/dodge/block se tak sytily téměř okamžitě.
+    // Řešení: stat se PŘED převodem na raw% nejdřív sám změkčí přes DR křivku (_diminish s
+    // "měkkým stropem" 800) - u nízkých hodnot skoro nezasáhne (crit citelně roste od začátku
+    // hry), u vysokých hodnot ale i statisíce Agility/Wisdom asymptoticky míří k témuž stropu
+    // místo aby lineárně drtily cap. Váhový poměr Agility:Wisdom (4:3) zachován.
+    double raw = 0.05 + (_diminish(totalAgility, 800) * 0.001) + (_diminish(totalWisdom, 800) * 0.00075) + (_itemStatSum("Crit") * 0.001);
     if (hasGodClass) raw += 0.05;
     if (hasRank100Class) raw += 0.05;
     // Léčitel: Posvátný úsudek - crit je JEHO hlavní signature stat (DK Mráz je specializovaný
@@ -7933,7 +7959,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     // bonusy) škálují o 10 % silněji než u ostatních tříd.
     final bool isHunter = heroClass == HeroClass.hunter;
     final double hunterScale = isHunter ? 1.10 : 1.0;
-    double raw = 0.03 + (totalAgility * 0.001 * hunterScale) + (_itemStatSum("Dodge") * 0.001);
+    // BUG FIX 3 (viz konverzace, stejná oprava jako u critChance) - Agility se před převodem na
+    // raw% nejdřív změkčí přes DR (měkký strop 800), ať i statisíce Agility z gearu/Paragonu
+    // asymptoticky míří k rozumnému stropu, ne aby okamžitě saturovaly dodge cap.
+    double raw = 0.03 + (_diminish(totalAgility, 800) * 0.0013 * hunterScale) + (_itemStatSum("Dodge") * 0.001);
     if (isHunter) {
       double tierBonus = 0;
       if (hasAdvancedClass) tierBonus += 0.04;
@@ -7957,7 +7986,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   double get blockChance {
     // Blok teď škáluje ze Strength místo Vitality ("Síla protěžuje fyzický dmg a blok").
-    double raw = 0.05 + (totalStrength * 0.001) + (_itemStatSum("Block") * 0.001);
+    // BUG FIX 3 (viz konverzace, stejná oprava jako u critChance/dodgeChance) - Strength se před
+    // převodem na raw% nejdřív změkčí přes DR (měkký strop 800).
+    double raw = 0.05 + (_diminish(totalStrength, 800) * 0.0013) + (_itemStatSum("Block") * 0.001);
     // Válečník: Nezlomná hradba - blok je jeho signature stat
     if (heroClass == HeroClass.warrior) {
       if (hasAdvancedClass) raw += 0.04;
