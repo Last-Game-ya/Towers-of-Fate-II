@@ -2312,6 +2312,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool pauseAutoBattleOnMerchant = true;
   void setPauseAutoBattleOnMerchant(bool v) { pauseAutoBattleOnMerchant = v; notifyListeners(); }
   static const double merchantSpawnChance = 0.05; // 5 % šance
+  static const int merchantMinLevel = 18; // Potulný obchodník se ve Věži neobjeví dřív než na tomhle levelu
   static const int merchantMaterialsPrice = 8;
   // Opakovatelné počítadla pro questy - kolik Trhlin bylo zdoláno v aktuálním období (resetuje se
   // s daily/weekly/monthly questy, na rozdíl od permanentního riftTier rekordu).
@@ -2574,50 +2575,50 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   // Časy MUSÍ odpovídat duration v SpellFxOverlay (screens.dart) - jinak by auto-boj naskočil
   // dřív/později, než animace doopravdy skončí.
   static const Map<SpellFxKind, int> _spellFxSlowMoMs = {
-    SpellFxKind.dkCursedStrike: 1300,
-    SpellFxKind.healerBlessing: 1300,
-    SpellFxKind.dkCurseExplosion: 2200,
-    SpellFxKind.healerJudgment: 2200,
+    SpellFxKind.dkCursedStrike: 1950,
+    SpellFxKind.healerBlessing: 1950,
+    SpellFxKind.dkCurseExplosion: 3300,
+    SpellFxKind.healerJudgment: 3300,
     // Tier 15 "Advanced" - rychlé/nonepic (1300ms), stejně jako výš. Explicitně vypsáno kvůli
     // čitelnosti, i když by to bez záznamu spadlo na stejný default 1300ms.
-    SpellFxKind.berserk: 1300,
-    SpellFxKind.assassin: 1300,
-    SpellFxKind.elementalist: 1300,
-    SpellFxKind.bladeDancer: 1300,
-    SpellFxKind.disciple: 1300,
-    SpellFxKind.astralDruid: 1300,
-    SpellFxKind.faithGuardian: 1300,
-    SpellFxKind.felBlade: 1300,
-    SpellFxKind.boneLord: 1300,
+    SpellFxKind.berserk: 1950,
+    SpellFxKind.assassin: 1950,
+    SpellFxKind.elementalist: 1950,
+    SpellFxKind.bladeDancer: 1950,
+    SpellFxKind.disciple: 1950,
+    SpellFxKind.astralDruid: 1950,
+    SpellFxKind.faithGuardian: 1950,
+    SpellFxKind.felBlade: 1950,
+    SpellFxKind.boneLord: 1950,
     // Tier 40 "Ultimate" a tier 75 "God" - epické (2200ms) - MUSÍ odpovídat epic:true v
     // kSpellFxSpec (screens.dart), jinak by se auto-boj rozjel dřív, než animace doběhne.
-    SpellFxKind.warlord: 2200,
-    SpellFxKind.valhallaWarrior: 2200,
-    SpellFxKind.shadowMaster: 2200,
-    SpellFxKind.voidStalker: 2200,
-    SpellFxKind.lightBearer: 2200,
-    SpellFxKind.deathReaper: 2200,
-    SpellFxKind.arcanist: 2200,
-    SpellFxKind.archmage: 2200,
-    SpellFxKind.bladeMaster: 2200,
-    SpellFxKind.stormblade: 2200,
-    SpellFxKind.grandmaster: 2200,
-    SpellFxKind.enlightened: 2200,
-    SpellFxKind.moonfury: 2200,
-    SpellFxKind.elderTreant: 2200,
-    SpellFxKind.retributor: 2200,
-    SpellFxKind.crusader: 2200,
-    SpellFxKind.demonSlayer: 2200,
-    SpellFxKind.abyssWalker: 2200,
-    SpellFxKind.deathSovereign: 2200,
-    SpellFxKind.graveWarden: 2200,
+    SpellFxKind.warlord: 3300,
+    SpellFxKind.valhallaWarrior: 3300,
+    SpellFxKind.shadowMaster: 3300,
+    SpellFxKind.voidStalker: 3300,
+    SpellFxKind.lightBearer: 3300,
+    SpellFxKind.deathReaper: 3300,
+    SpellFxKind.arcanist: 3300,
+    SpellFxKind.archmage: 3300,
+    SpellFxKind.bladeMaster: 3300,
+    SpellFxKind.stormblade: 3300,
+    SpellFxKind.grandmaster: 3300,
+    SpellFxKind.enlightened: 3300,
+    SpellFxKind.moonfury: 3300,
+    SpellFxKind.elderTreant: 3300,
+    SpellFxKind.retributor: 3300,
+    SpellFxKind.crusader: 3300,
+    SpellFxKind.demonSlayer: 3300,
+    SpellFxKind.abyssWalker: 3300,
+    SpellFxKind.deathSovereign: 3300,
+    SpellFxKind.graveWarden: 3300,
     // Nepřátelská schopnost bosse - vždy epic (jednorázový "moment" v souboji).
-    SpellFxKind.lairBossStrike: 2200,
-    SpellFxKind.lairBossCurse: 2200,
-    SpellFxKind.lairBossPlague: 2200,
-    SpellFxKind.lairBossBind: 2200,
-    SpellFxKind.lairBossEmpower: 2200,
-    SpellFxKind.lairBossDrain: 2200,
+    SpellFxKind.lairBossStrike: 3300,
+    SpellFxKind.lairBossCurse: 3300,
+    SpellFxKind.lairBossPlague: 3300,
+    SpellFxKind.lairBossBind: 3300,
+    SpellFxKind.lairBossEmpower: 3300,
+    SpellFxKind.lairBossDrain: 3300,
   };
   DateTime? _spellSlowMoUntil;
   bool get isSpellSlowMo => _spellSlowMoUntil != null && DateTime.now().isBefore(_spellSlowMoUntil!);
@@ -2630,7 +2631,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     combatFx.add(CombatFxEvent(id: _fxIdCounter++, kind: kind, side: side, value: value, jitter: (Random().nextDouble() - 0.5), label: label, burstKind: burstKind, spellFxKind: spellFxKind));
     if (combatFx.length > 14) combatFx.removeAt(0); // bezpečnostní strop, ať fronta neroste do nekonečna
     if (spellFxKind != null) {
-      final ms = _spellFxSlowMoMs[spellFxKind] ?? 950;
+      final ms = _spellFxSlowMoMs[spellFxKind] ?? 1425; // 950 * 1.5 - stejné +50% prodloužení jako u ostatních
       final until = DateTime.now().add(Duration(milliseconds: ms));
       // Pokud už jedno slow-mo okno běží (např. rychlé po sobě jdoucí spelly), prodloužíme ho,
       // nikdy nezkrátíme - vždy se čeká na tu POSLEDNÍ spuštěnou animaci.
@@ -14069,7 +14070,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   void _generateNextEnemy({bool allowMerchant = true}) {
     isMerchantEncounter = false;
     comboStreak = 0; // nový nepřítel = nový combo streak, ať jde vždy jen o "za sebou proti TOMUHLE nepříteli"
-    if (allowMerchant && Random().nextDouble() < merchantSpawnChance) {
+    if (allowMerchant && level >= merchantMinLevel && Random().nextDouble() < merchantSpawnChance) {
       isMerchantEncounter = true;
       message = tr("🧳 Potulný obchodník! Nabízí ocel, kůži a dřevo za zlato.", "🧳 A wandering merchant! Offering steel, leather, and wood for gold.");
       return;

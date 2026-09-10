@@ -2370,32 +2370,632 @@ class BattlePassFramePainter extends CustomPainter {
     final style = _frameStyleFor(frameId);
     final center = Offset(size.width / 2, size.height / 2);
     final r = size.shortestSide / 2 - 2;
+    // Škálování podle velikosti plátna - hodnoty v _frameStyleFor jsou navržené pro cca 64px
+    // avatar/portrét. Bez tohohle by byl rám na malém 26px kompaktním avataru (viz combat
+    // header) neúměrně tlustý prstenec s obřími klenoty; na velkém portrétu (170px) by zas
+    // působil tenounce. Clamp dolů na 0.45, ať tenký rám nezmizí úplně na nejmenších avatarech.
+    final scale = (size.shortestSide / 64).clamp(0.45, 2.2);
+    final ringWidth = style.ringWidth * scale;
+    final gemR = 4 * scale, gemR2 = 3.2 * scale, gemHighlight = 1 * scale;
     // Vnější glow - vyšší vzácnost (doubleRing) má výraznější záři, ať je na první pohled
     // vidět rozdíl mezi "obyčejným" bronzem a "vzácným" void rámem.
-    canvas.drawCircle(center, r, Paint()..color = style.color.withOpacity(style.doubleRing ? .35 : .18)..style = PaintingStyle.stroke..strokeWidth = style.ringWidth * 2.3..maskFilter = MaskFilter.blur(BlurStyle.normal, style.doubleRing ? 5 : 3));
+    canvas.drawCircle(center, r, Paint()..color = style.color.withOpacity(style.doubleRing ? .35 : .18)..style = PaintingStyle.stroke..strokeWidth = ringWidth * 2.3..maskFilter = MaskFilter.blur(BlurStyle.normal, (style.doubleRing ? 5 : 3) * scale));
     final ringPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = style.ringWidth
+      ..strokeWidth = ringWidth
       ..shader = SweepGradient(colors: [style.color, Color.lerp(style.color, Colors.white, .35)!, style.color, Color.lerp(style.color, Colors.black, .25)!]).createShader(Rect.fromCircle(center: center, radius: r));
     canvas.drawCircle(center, r, ringPaint);
     // Druhý, tenčí vnitřní prstenec - jen u top-tier rámů (battlepass/ember/void/celestial),
     // ať mají skutečně jinou konstrukci, ne jen jinou barvu stejného jednoduchého kruhu.
     if (style.doubleRing) {
-      canvas.drawCircle(center, r - style.ringWidth * 1.8, Paint()..style = PaintingStyle.stroke..strokeWidth = style.ringWidth * .45..color = Color.lerp(style.color, Colors.white, .5)!.withOpacity(.8));
+      canvas.drawCircle(center, r - ringWidth * 1.8, Paint()..style = PaintingStyle.stroke..strokeWidth = ringWidth * .45..color = Color.lerp(style.color, Colors.white, .5)!.withOpacity(.8));
     }
-    // Klenoty po obvodu - počet podle vzácnosti (0 = žádné u nejlevnějších kovových rámů).
-    for (int i = 0; i < style.gems; i++) {
-      final a = i * (2 * pi / style.gems) - pi / 2;
-      final p = center + Offset(cos(a), sin(a)) * r;
-      canvas.drawCircle(p, 4, Paint()..color = style.color.withOpacity(.5)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
-      canvas.drawCircle(p, 3.2, Paint()..color = Color.lerp(style.color, Colors.white, .2)!);
-      canvas.drawCircle(p - const Offset(0.7, 0.7), 1, Paint()..color = Colors.white.withOpacity(.75));
+    // Klenoty po obvodu - počet podle vzácnosti (0 = žádné u nejlevnějších kovových rámů). Na
+    // nejmenších avatarech (kompaktní 26px combat header) se všechny přiblíží pod ~2px a spíš
+    // by tvořily kaši - tam se radši vynechají úplně, jen samotný prstenec nese informaci.
+    if (size.shortestSide >= 40) {
+      for (int i = 0; i < style.gems; i++) {
+        final a = i * (2 * pi / style.gems) - pi / 2;
+        final p = center + Offset(cos(a), sin(a)) * r;
+        canvas.drawCircle(p, gemR, Paint()..color = style.color.withOpacity(.5)..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 * scale));
+        canvas.drawCircle(p, gemR2, Paint()..color = Color.lerp(style.color, Colors.white, .2)!);
+        canvas.drawCircle(p - Offset(0.7 * scale, 0.7 * scale), gemHighlight, Paint()..color = Colors.white.withOpacity(.75));
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant BattlePassFramePainter old) => old.frameId != frameId;
 }
+
+// ===== SPECIALIZAČNÍ RELIC IKONY (Paragon 50 - viz kSpecRelics v data_models.dart) =====
+// Ruční vektorová ikona pro každou z 33 specializací (11 tříd × 3 větve) - nahrazuje dřívější
+// obecné Material ikony (Icons.shield, Icons.gavel...), které byly stejné napříč nesouvisejícími
+// spelly a nenesly žádnou informaci o mechanice. Systém: každá TŘÍDA má svůj "nosič" - opakující
+// se tvar, co okamžitě prozradí třídu (bojová standarta u Warriora, toulec u Huntera, kniha
+// kouzel u Mága/Nekromanta...) - a každá SPECIALIZACE do něj vykreslí vlastní motiv podle svého
+// spellu/mechaniky (plamen pro Rage, sněhová vločka pro Frost, kapka krve pro Blood...). Motivy
+// se schválně opakují napříč třídami se stejnou mechanikou (např. "gavel" u Healer Judgement i
+// Paladin Judgement) - nosný tvar je pořád jiný (halo vs. pečeť), takže se nepletou, a shoda
+// motivu naopak čitelně říká "tohle jsou obě soudcovské/odsuzující větve".
+enum _SpecBaseShape { banner, quiver, halo, sigil, tome, crest, mala, totem, seal, glaive }
+
+_SpecBaseShape _specBaseShapeFor(HeroClass c) {
+  switch (c) {
+    case HeroClass.warrior: return _SpecBaseShape.banner;
+    case HeroClass.hunter: return _SpecBaseShape.quiver;
+    case HeroClass.healer: return _SpecBaseShape.halo;
+    case HeroClass.deathknight: return _SpecBaseShape.sigil;
+    case HeroClass.mage: return _SpecBaseShape.tome;
+    case HeroClass.duelist: return _SpecBaseShape.crest;
+    case HeroClass.monk: return _SpecBaseShape.mala;
+    case HeroClass.druid: return _SpecBaseShape.totem;
+    case HeroClass.paladin: return _SpecBaseShape.seal;
+    case HeroClass.demonhunter: return _SpecBaseShape.glaive;
+    case HeroClass.necromancer: return _SpecBaseShape.tome;
+    case HeroClass.none: return _SpecBaseShape.seal;
+  }
+}
+
+enum _SpecAccent {
+  flame, shieldChevron, commandStar, crosshair, pawprint, ghostEye, sunburst, gavel, hammerWave,
+  snowflake, bloodDrop, biohazard, iceCrystal, hourglass, rapierMark, crossedBlades, bolt,
+  thunderCore, mountain, yinyang, moonDecay, barkLeaf, waterDrop, sunrise, targetRune, shadowEye,
+  boneMinion, pactDrop,
+}
+
+_SpecAccent _specAccentFor(SpecRelicKind k) {
+  switch (k) {
+    case SpecRelicKind.warriorBerserkBanner: return _SpecAccent.flame;
+    case SpecRelicKind.warriorGuardianBanner: return _SpecAccent.shieldChevron;
+    case SpecRelicKind.warriorWarlordBanner: return _SpecAccent.commandStar;
+    case SpecRelicKind.hunterMarksmanQuiver: return _SpecAccent.crosshair;
+    case SpecRelicKind.hunterBeastQuiver: return _SpecAccent.pawprint;
+    case SpecRelicKind.hunterGhostQuiver: return _SpecAccent.ghostEye;
+    case SpecRelicKind.healerDawnSymbol: return _SpecAccent.sunburst;
+    case SpecRelicKind.healerJudgementSymbol: return _SpecAccent.gavel;
+    case SpecRelicKind.healerBattleSymbol: return _SpecAccent.hammerWave;
+    case SpecRelicKind.deathKnightFrostSigil: return _SpecAccent.snowflake;
+    case SpecRelicKind.deathKnightBloodSigil: return _SpecAccent.bloodDrop;
+    case SpecRelicKind.deathKnightPlagueSigil: return _SpecAccent.biohazard;
+    case SpecRelicKind.mageFireTome: return _SpecAccent.flame;
+    case SpecRelicKind.mageFrostTome: return _SpecAccent.iceCrystal;
+    case SpecRelicKind.mageArcaneTome: return _SpecAccent.hourglass;
+    case SpecRelicKind.duelistNemesisCrest: return _SpecAccent.rapierMark;
+    case SpecRelicKind.duelistDanceCrest: return _SpecAccent.crossedBlades;
+    case SpecRelicKind.duelistLightningCrest: return _SpecAccent.bolt;
+    case SpecRelicKind.monkStormMala: return _SpecAccent.thunderCore;
+    case SpecRelicKind.monkStoneMala: return _SpecAccent.mountain;
+    case SpecRelicKind.monkHarmonyMala: return _SpecAccent.yinyang;
+    case SpecRelicKind.druidBalanceTotem: return _SpecAccent.moonDecay;
+    case SpecRelicKind.druidWildTotem: return _SpecAccent.barkLeaf;
+    case SpecRelicKind.druidRestoTotem: return _SpecAccent.waterDrop;
+    case SpecRelicKind.paladinGuardianSeal: return _SpecAccent.shieldChevron;
+    case SpecRelicKind.paladinJudgementSeal: return _SpecAccent.gavel;
+    case SpecRelicKind.paladinDawnSeal: return _SpecAccent.sunrise;
+    case SpecRelicKind.demonHunterHavocGlaive: return _SpecAccent.targetRune;
+    case SpecRelicKind.demonHunterVengeanceGlaive: return _SpecAccent.bloodDrop;
+    case SpecRelicKind.demonHunterShadowGlaive: return _SpecAccent.shadowEye;
+    case SpecRelicKind.necromancerBoneTome: return _SpecAccent.boneMinion;
+    case SpecRelicKind.necromancerPlagueTome: return _SpecAccent.biohazard;
+    case SpecRelicKind.necromancerBloodTome: return _SpecAccent.pactDrop;
+  }
+}
+
+/// Widget s vykreslenou ikonou dané specializace - použít kdekoliv, kde se dřív renderovalo
+/// Icon(def.icon, color: def.color) pro state.currentSpecRelic (ability tlačítka, combat avatar...).
+Widget specRelicIconWidget(SpecRelicKind kind, Color color, {double size = 32}) {
+  return SizedBox(width: size, height: size, child: CustomPaint(painter: SpecRelicIconPainter(kind: kind, color: color)));
+}
+
+class SpecRelicIconPainter extends CustomPainter {
+  final SpecRelicKind kind;
+  final Color color;
+  const SpecRelicIconPainter({required this.kind, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final def = kSpecRelics[kind]!;
+    final shape = _specBaseShapeFor(def.heroClass);
+    final accent = _specAccentFor(kind);
+    final s = size.shortestSide;
+    final c = Offset(size.width / 2, size.height / 2);
+
+    // Měkká záře na pozadí - stejný vizuální jazyk jako zbytek hry (BattlePassFramePainter,
+    // kRarityStyles) - barva ikony "vyzařuje" i mimo samotnou siluetu.
+    canvas.drawCircle(c, s * 0.46, Paint()..color = color.withOpacity(.22)..maskFilter = MaskFilter.blur(BlurStyle.normal, s * 0.14));
+
+    _paintClassIconBase(canvas, c, s, shape, color);
+    _paintClassIconAccent(canvas, c, s, accent, color);
+  }
+
+  @override
+  bool shouldRepaint(covariant SpecRelicIconPainter old) => old.kind != kind || old.color != color;
+}
+
+void _paintClassIconBase(Canvas canvas, Offset c, double s, _SpecBaseShape shape, Color color) {
+  final fill = Paint()..shader = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [color.withOpacity(.92), Color.lerp(color, Colors.black, .55)!.withOpacity(.92)]).createShader(Rect.fromCircle(center: c, radius: s * 0.5));
+  final stroke = Paint()..style = PaintingStyle.stroke..strokeWidth = s * 0.035..color = Color.lerp(color, Colors.white, .3)!.withOpacity(.9)..strokeJoin = StrokeJoin.round..strokeCap = StrokeCap.round;
+
+  switch (shape) {
+    case _SpecBaseShape.banner:
+      // Bojová standarta - žerď vlevo + vlající prapor s vlaštovčím zástřihem vpravo.
+      canvas.drawLine(Offset(c.dx - s * 0.22, c.dy - s * 0.34), Offset(c.dx - s * 0.22, c.dy + s * 0.36), Paint()..color = Color.lerp(color, Colors.white, .4)!..strokeWidth = s * 0.045..strokeCap = StrokeCap.round);
+      final p = Path()
+        ..moveTo(c.dx - s * 0.18, c.dy - s * 0.30)
+        ..lineTo(c.dx + s * 0.30, c.dy - s * 0.20)
+        ..lineTo(c.dx + s * 0.14, c.dy - s * 0.02)
+        ..lineTo(c.dx + s * 0.30, c.dy + s * 0.16)
+        ..lineTo(c.dx - s * 0.18, c.dy + s * 0.26)
+        ..close();
+      canvas.drawPath(p, fill);
+      canvas.drawPath(p, stroke);
+      break;
+    case _SpecBaseShape.quiver:
+      // Toulec - zaoblený lichoběžník + 3 opeření šípů čnící z hrdla.
+      final body = Path()
+        ..moveTo(c.dx - s * 0.16, c.dy - s * 0.10)
+        ..lineTo(c.dx + s * 0.16, c.dy - s * 0.10)
+        ..lineTo(c.dx + s * 0.10, c.dy + s * 0.38)
+        ..quadraticBezierTo(c.dx, c.dy + s * 0.46, c.dx - s * 0.10, c.dy + s * 0.38)
+        ..close();
+      canvas.drawPath(body, fill);
+      canvas.drawPath(body, stroke);
+      for (final dx in [-0.11, 0.0, 0.11]) {
+        canvas.drawLine(Offset(c.dx + dx * s, c.dy - s * 0.10), Offset(c.dx + dx * s * 1.6, c.dy - s * 0.42), Paint()..color = Color.lerp(color, Colors.white, .5)!..strokeWidth = s * 0.035..strokeCap = StrokeCap.round);
+      }
+      break;
+    case _SpecBaseShape.halo:
+      // Symbol Light - tenký vnější prstenec + plný vnitřní medailon.
+      canvas.drawCircle(c, s * 0.40, Paint()..style = PaintingStyle.stroke..strokeWidth = s * 0.05..color = stroke.color);
+      canvas.drawCircle(c, s * 0.24, fill);
+      canvas.drawCircle(c, s * 0.24, Paint()..style = PaintingStyle.stroke..strokeWidth = s * 0.025..color = Color.lerp(color, Colors.white, .5)!);
+      break;
+    case _SpecBaseShape.sigil:
+      // DK Sigil - kosočtverec jako rytá runová destička.
+      final p = Path()
+        ..moveTo(c.dx, c.dy - s * 0.38)
+        ..lineTo(c.dx + s * 0.32, c.dy)
+        ..lineTo(c.dx, c.dy + s * 0.38)
+        ..lineTo(c.dx - s * 0.32, c.dy)
+        ..close();
+      canvas.drawPath(p, fill);
+      canvas.drawPath(p, stroke);
+      break;
+    case _SpecBaseShape.tome:
+      // Kniha kouzel / Nekromantova kniha - otevřené stránky sbíhající se do hřbetu.
+      final left = Path()..moveTo(c.dx, c.dy - s * 0.06)..lineTo(c.dx - s * 0.34, c.dy - s * 0.20)..lineTo(c.dx - s * 0.34, c.dy + s * 0.28)..lineTo(c.dx, c.dy + s * 0.16)..close();
+      final right = Path()..moveTo(c.dx, c.dy - s * 0.06)..lineTo(c.dx + s * 0.34, c.dy - s * 0.20)..lineTo(c.dx + s * 0.34, c.dy + s * 0.28)..lineTo(c.dx, c.dy + s * 0.16)..close();
+      canvas.drawPath(left, fill); canvas.drawPath(left, stroke);
+      canvas.drawPath(right, fill); canvas.drawPath(right, stroke);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.06), Offset(c.dx, c.dy + s * 0.16), Paint()..color = Color.lerp(color, Colors.white, .5)!..strokeWidth = s * 0.03);
+      break;
+    case _SpecBaseShape.crest:
+      // Duelist Crest - heraldický štítek se špičatým spodkem.
+      final p = Path()
+        ..moveTo(c.dx - s * 0.28, c.dy - s * 0.30)
+        ..lineTo(c.dx + s * 0.28, c.dy - s * 0.30)
+        ..lineTo(c.dx + s * 0.28, c.dy + s * 0.06)
+        ..quadraticBezierTo(c.dx + s * 0.28, c.dy + s * 0.30, c.dx, c.dy + s * 0.42)
+        ..quadraticBezierTo(c.dx - s * 0.28, c.dy + s * 0.30, c.dx - s * 0.28, c.dy + s * 0.06)
+        ..close();
+      canvas.drawPath(p, fill);
+      canvas.drawPath(p, stroke);
+      break;
+    case _SpecBaseShape.mala:
+      // Mála - kruh malých korálků kolem prázdného středu.
+      canvas.drawCircle(c, s * 0.16, Paint()..style = PaintingStyle.stroke..strokeWidth = s * 0.02..color = color.withOpacity(.5));
+      for (int i = 0; i < 10; i++) {
+        final a = i * (2 * pi / 10);
+        final p = c + Offset(cos(a), sin(a)) * s * 0.36;
+        canvas.drawCircle(p, s * 0.045, Paint()..color = Color.lerp(color, Colors.white, i.isEven ? .35 : 0)!);
+      }
+      break;
+    case _SpecBaseShape.totem:
+      // Totem - svislý sloup se 2 vyřezanými rýhami a zaobleným vrcholem.
+      final p = Path()
+        ..moveTo(c.dx - s * 0.14, c.dy + s * 0.42)
+        ..lineTo(c.dx - s * 0.14, c.dy - s * 0.22)
+        ..quadraticBezierTo(c.dx - s * 0.14, c.dy - s * 0.40, c.dx, c.dy - s * 0.40)
+        ..quadraticBezierTo(c.dx + s * 0.14, c.dy - s * 0.40, c.dx + s * 0.14, c.dy - s * 0.22)
+        ..lineTo(c.dx + s * 0.14, c.dy + s * 0.42)
+        ..close();
+      canvas.drawPath(p, fill);
+      canvas.drawPath(p, stroke);
+      for (final dy in [-0.02, 0.16]) {
+        canvas.drawLine(Offset(c.dx - s * 0.14, c.dy + dy * s), Offset(c.dx + s * 0.14, c.dy + dy * s), Paint()..color = Color.lerp(color, Colors.white, .5)!..strokeWidth = s * 0.025);
+      }
+      break;
+    case _SpecBaseShape.seal:
+      // Svatá pečeť - ozdobný prstenec (vosková pečeť) s plným diskem uprostřed.
+      canvas.drawCircle(c, s * 0.40, Paint()..style = PaintingStyle.stroke..strokeWidth = s * 0.06..shader = SweepGradient(colors: [color, Color.lerp(color, Colors.white, .4)!, color]).createShader(Rect.fromCircle(center: c, radius: s * 0.4)));
+      canvas.drawCircle(c, s * 0.26, fill);
+      break;
+    case _SpecBaseShape.glaive:
+      // Fel Glaive - zakřivená srpovitá čepel po úhlopříčce.
+      final p = Path()
+        ..moveTo(c.dx - s * 0.30, c.dy + s * 0.30)
+        ..quadraticBezierTo(c.dx - s * 0.10, c.dy - s * 0.10, c.dx + s * 0.30, c.dy - s * 0.34)
+        ..quadraticBezierTo(c.dx + s * 0.06, c.dy - s * 0.06, c.dx - s * 0.06, c.dy + s * 0.38)
+        ..close();
+      canvas.drawPath(p, fill);
+      canvas.drawPath(p, stroke);
+      break;
+  }
+}
+
+void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent, Color color) {
+  final light = Color.lerp(color, Colors.white, .55)!;
+  final p = Paint()..color = light..style = PaintingStyle.fill;
+  final lp = Paint()..color = light..style = PaintingStyle.stroke..strokeWidth = s * 0.03..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
+
+  switch (accent) {
+    case _SpecAccent.flame:
+      canvas.drawPath(_classIconTeardrop(c, s, up: true), p);
+      break;
+    case _SpecAccent.shieldChevron:
+      final sh = Path()..moveTo(c.dx, c.dy - s * 0.14)..lineTo(c.dx + s * 0.12, c.dy - s * 0.06)..lineTo(c.dx + s * 0.12, c.dy + s * 0.08)..lineTo(c.dx, c.dy + s * 0.16)..lineTo(c.dx - s * 0.12, c.dy + s * 0.08)..lineTo(c.dx - s * 0.12, c.dy - s * 0.06)..close();
+      canvas.drawPath(sh, lp..style = PaintingStyle.stroke);
+      break;
+    case _SpecAccent.commandStar:
+      _classIconStar(canvas, c, s * 0.15, 4, p);
+      break;
+    case _SpecAccent.crosshair:
+      canvas.drawCircle(c, s * 0.10, lp);
+      canvas.drawLine(Offset(c.dx - s * 0.18, c.dy), Offset(c.dx - s * 0.07, c.dy), lp);
+      canvas.drawLine(Offset(c.dx + s * 0.07, c.dy), Offset(c.dx + s * 0.18, c.dy), lp);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.18), Offset(c.dx, c.dy - s * 0.07), lp);
+      canvas.drawLine(Offset(c.dx, c.dy + s * 0.07), Offset(c.dx, c.dy + s * 0.18), lp);
+      break;
+    case _SpecAccent.pawprint:
+      canvas.drawCircle(c + Offset(0, s * 0.05), s * 0.09, p);
+      for (final dx in [-0.09, -0.03, 0.03, 0.09]) {
+        canvas.drawCircle(c + Offset(dx * s, -s * 0.07), s * 0.035, p);
+      }
+      break;
+    case _SpecAccent.ghostEye:
+      final eye = Path()..moveTo(c.dx - s * 0.15, c.dy)..quadraticBezierTo(c.dx, c.dy - s * 0.11, c.dx + s * 0.15, c.dy)..quadraticBezierTo(c.dx, c.dy + s * 0.11, c.dx - s * 0.15, c.dy)..close();
+      canvas.drawPath(eye, Paint()..color = light.withOpacity(.85)..style = PaintingStyle.stroke..strokeWidth = s * 0.025);
+      canvas.drawCircle(c, s * 0.045, p);
+      break;
+    case _SpecAccent.sunburst:
+      canvas.drawCircle(c, s * 0.09, p);
+      for (int i = 0; i < 8; i++) {
+        final a = i * (2 * pi / 8);
+        canvas.drawLine(c + Offset(cos(a), sin(a)) * s * 0.14, c + Offset(cos(a), sin(a)) * s * 0.22, lp);
+      }
+      break;
+    case _SpecAccent.gavel:
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: c + Offset(0, -s * 0.06), width: s * 0.18, height: s * 0.08), Radius.circular(s * 0.015)), p);
+      canvas.drawLine(c + Offset(0, -s * 0.02), c + Offset(0, s * 0.16), lp);
+      break;
+    case _SpecAccent.hammerWave:
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: c + Offset(-s * 0.06, -s * 0.10), width: s * 0.13, height: s * 0.06), Radius.circular(s * 0.012)), p);
+      canvas.drawLine(c + Offset(-s * 0.06, -s * 0.07), c + Offset(-s * 0.06, s * 0.03), lp);
+      final wave = Path()
+        ..moveTo(c.dx - s * 0.15, c.dy + s * 0.12)
+        ..quadraticBezierTo(c.dx - s * 0.06, c.dy + s * 0.05, c.dx + s * 0.03, c.dy + s * 0.12)
+        ..quadraticBezierTo(c.dx + s * 0.12, c.dy + s * 0.19, c.dx + s * 0.20, c.dy + s * 0.12);
+      canvas.drawPath(wave, lp);
+      break;
+    case _SpecAccent.snowflake:
+      for (int i = 0; i < 3; i++) {
+        final a = i * (pi / 3);
+        final d = Offset(cos(a), sin(a)) * s * 0.17;
+        canvas.drawLine(c - d, c + d, lp);
+        final perp = Offset(-sin(a), cos(a)) * s * 0.05;
+        for (final f in [0.55, -0.55]) {
+          final branch = c + d * f;
+          canvas.drawLine(branch - perp, branch + perp, lp);
+        }
+      }
+      break;
+    case _SpecAccent.bloodDrop:
+      canvas.drawPath(_classIconTeardrop(c, s, up: false), p);
+      break;
+    case _SpecAccent.biohazard:
+      for (int i = 0; i < 3; i++) {
+        final a = -pi / 2 + i * (2 * pi / 3);
+        canvas.drawCircle(c + Offset(cos(a), sin(a)) * s * 0.09, s * 0.06, Paint()..color = light.withOpacity(.85)..style = PaintingStyle.stroke..strokeWidth = s * 0.02);
+      }
+      canvas.drawCircle(c, s * 0.025, p);
+      break;
+    case _SpecAccent.iceCrystal:
+      final pts = <Offset>[for (int i = 0; i < 6; i++) c + Offset(cos(i * (pi / 3) - pi / 2), sin(i * (pi / 3) - pi / 2)) * s * 0.14];
+      final hex = Path()..moveTo(pts[0].dx, pts[0].dy);
+      for (final pt in pts.skip(1)) hex.lineTo(pt.dx, pt.dy);
+      hex.close();
+      canvas.drawPath(hex, lp);
+      for (final pt in pts) canvas.drawLine(c, pt, Paint()..color = light.withOpacity(.5)..strokeWidth = s * 0.015);
+      break;
+    case _SpecAccent.hourglass:
+      canvas.drawPath(Path()..moveTo(c.dx - s * 0.10, c.dy - s * 0.14)..lineTo(c.dx + s * 0.10, c.dy - s * 0.14)..lineTo(c.dx, c.dy)..close(), lp..style = PaintingStyle.stroke);
+      canvas.drawPath(Path()..moveTo(c.dx - s * 0.10, c.dy + s * 0.14)..lineTo(c.dx + s * 0.10, c.dy + s * 0.14)..lineTo(c.dx, c.dy)..close(), lp);
+      break;
+    case _SpecAccent.rapierMark:
+      canvas.drawCircle(c, s * 0.10, lp);
+      canvas.drawLine(c + Offset(-s * 0.16, -s * 0.16), c + Offset(s * 0.16, s * 0.16), lp);
+      break;
+    case _SpecAccent.crossedBlades:
+      canvas.drawLine(c + Offset(-s * 0.14, -s * 0.14), c + Offset(s * 0.14, s * 0.14), lp);
+      canvas.drawLine(c + Offset(-s * 0.14, s * 0.14), c + Offset(s * 0.14, -s * 0.14), lp);
+      break;
+    case _SpecAccent.bolt:
+      canvas.drawPath(_classIconBoltPath(c, s, 1.0), p);
+      break;
+    case _SpecAccent.thunderCore:
+      canvas.drawCircle(c, s * 0.17, lp);
+      canvas.drawPath(_classIconBoltPath(c, s, 0.65), p);
+      break;
+    case _SpecAccent.mountain:
+      final m = Path()..moveTo(c.dx - s * 0.16, c.dy + s * 0.10)..lineTo(c.dx - s * 0.02, c.dy - s * 0.12)..lineTo(c.dx + s * 0.08, c.dy)..lineTo(c.dx + s * 0.16, c.dy + s * 0.10)..close();
+      canvas.drawPath(m, p);
+      canvas.drawLine(Offset(c.dx - s * 0.16, c.dy + s * 0.10), Offset(c.dx + s * 0.16, c.dy + s * 0.10), lp);
+      break;
+    case _SpecAccent.yinyang:
+      canvas.drawCircle(c, s * 0.14, Paint()..color = light.withOpacity(.18)..style = PaintingStyle.stroke..strokeWidth = s * 0.02);
+      final divider = Path()..moveTo(c.dx, c.dy - s * 0.14)..quadraticBezierTo(c.dx + s * 0.07, c.dy - s * 0.07, c.dx, c.dy)..quadraticBezierTo(c.dx - s * 0.07, c.dy + s * 0.07, c.dx, c.dy + s * 0.14);
+      canvas.drawPath(divider, lp);
+      canvas.drawCircle(c + Offset(0, -s * 0.07), s * 0.03, p);
+      canvas.drawCircle(c + Offset(0, s * 0.07), s * 0.03, Paint()..color = color);
+      break;
+    case _SpecAccent.moonDecay:
+      final moonPath = Path.combine(PathOperation.difference, Path()..addOval(Rect.fromCircle(center: c, radius: s * 0.13)), Path()..addOval(Rect.fromCircle(center: c + Offset(s * 0.06, -s * 0.02), radius: s * 0.12)));
+      canvas.drawPath(moonPath, p);
+      for (final a in [0.3, 1.9, 3.4]) {
+        canvas.drawCircle(c + Offset(cos(a), sin(a)) * s * 0.20, s * 0.02, Paint()..color = light.withOpacity(.6));
+      }
+      break;
+    case _SpecAccent.barkLeaf:
+      final leaf = Path()..moveTo(c.dx, c.dy - s * 0.16)..quadraticBezierTo(c.dx + s * 0.12, c.dy - s * 0.02, c.dx, c.dy + s * 0.16)..quadraticBezierTo(c.dx - s * 0.12, c.dy - s * 0.02, c.dx, c.dy - s * 0.16)..close();
+      canvas.drawPath(leaf, p);
+      canvas.drawLine(Offset(c.dx, c.dy - s * 0.14), Offset(c.dx, c.dy + s * 0.14), Paint()..color = color..strokeWidth = s * 0.015);
+      break;
+    case _SpecAccent.waterDrop:
+      canvas.drawPath(_classIconTeardrop(c, s, up: false), p);
+      break;
+    case _SpecAccent.sunrise:
+      canvas.save();
+      canvas.clipRect(Rect.fromLTWH(c.dx - s * 0.2, c.dy - s * 0.2, s * 0.4, s * 0.2));
+      canvas.drawCircle(c, s * 0.13, p);
+      canvas.restore();
+      canvas.drawLine(Offset(c.dx - s * 0.18, c.dy), Offset(c.dx + s * 0.18, c.dy), lp);
+      for (int i = 0; i < 5; i++) {
+        final a = pi + i * (pi / 4);
+        canvas.drawLine(c + Offset(cos(a), sin(a)) * s * 0.16, c + Offset(cos(a), sin(a)) * s * 0.24, lp);
+      }
+      break;
+    case _SpecAccent.targetRune:
+      canvas.drawCircle(c, s * 0.12, lp);
+      canvas.drawLine(c - Offset(s * 0.09, s * 0.09), c + Offset(s * 0.09, s * 0.09), lp);
+      break;
+    case _SpecAccent.shadowEye:
+      final lid = Path()..moveTo(c.dx - s * 0.14, c.dy)..quadraticBezierTo(c.dx, c.dy + s * 0.09, c.dx + s * 0.14, c.dy);
+      canvas.drawPath(lid, lp);
+      for (final dx in [-0.05, 0.05]) {
+        canvas.drawCircle(c + Offset(dx * s, s * 0.10), s * 0.015, Paint()..color = light.withOpacity(.5));
+      }
+      break;
+    case _SpecAccent.boneMinion:
+      void bone(double angle) {
+        final dir = Offset(cos(angle), sin(angle));
+        final perp = Offset(-sin(angle), cos(angle));
+        final a1 = c - dir * s * 0.14, a2 = c + dir * s * 0.14;
+        canvas.drawLine(a1, a2, Paint()..color = light..strokeWidth = s * 0.035..strokeCap = StrokeCap.round);
+        for (final end in [a1, a2]) {
+          canvas.drawCircle(end - perp * s * 0.03, s * 0.025, p);
+          canvas.drawCircle(end + perp * s * 0.03, s * 0.025, p);
+        }
+      }
+      bone(pi / 4);
+      bone(-pi / 4);
+      break;
+    case _SpecAccent.pactDrop:
+      canvas.drawPath(_classIconTeardrop(c, s, up: false), p);
+      canvas.drawLine(c + Offset(-s * 0.03, s * 0.02), c + Offset(s * 0.03, s * 0.02), Paint()..color = color..strokeWidth = s * 0.012);
+      break;
+  }
+}
+
+Path _classIconTeardrop(Offset c, double s, {required bool up}) {
+  final dir = up ? -1.0 : 1.0;
+  return Path()
+    ..moveTo(c.dx, c.dy - dir * s * 0.16)
+    ..quadraticBezierTo(c.dx + s * 0.09, c.dy, c.dx + s * 0.045, c.dy + dir * s * 0.09)
+    ..quadraticBezierTo(c.dx + s * 0.02, c.dy + dir * s * 0.14, c.dx, c.dy + dir * s * 0.12)
+    ..quadraticBezierTo(c.dx - s * 0.02, c.dy + dir * s * 0.14, c.dx - s * 0.045, c.dy + dir * s * 0.09)
+    ..quadraticBezierTo(c.dx - s * 0.09, c.dy, c.dx, c.dy - dir * s * 0.16)
+    ..close();
+}
+
+
+Path _classIconBoltPath(Offset c, double s, double scale) {
+  return Path()
+    ..moveTo(c.dx + s * 0.03 * scale, c.dy - s * 0.16 * scale)
+    ..lineTo(c.dx - s * 0.07 * scale, c.dy + s * 0.01 * scale)
+    ..lineTo(c.dx + s * 0.01 * scale, c.dy + s * 0.01 * scale)
+    ..lineTo(c.dx - s * 0.03 * scale, c.dy + s * 0.16 * scale)
+    ..lineTo(c.dx + s * 0.09 * scale, c.dy - s * 0.03 * scale)
+    ..lineTo(c.dx + s * 0.01 * scale, c.dy - s * 0.03 * scale)
+    ..close();
+}
+
+
+void _classIconStar(Canvas canvas, Offset c, double r, int points, Paint paint) {
+  final path = Path();
+  for (int i = 0; i < points * 2; i++) {
+    final radius = i.isEven ? r : r * 0.42;
+    final a = i * pi / points - pi / 2;
+    final pt = c + Offset(cos(a), sin(a)) * radius;
+    if (i == 0) {
+      path.moveTo(pt.dx, pt.dy);
+    } else {
+      path.lineTo(pt.dx, pt.dy);
+    }
+  }
+  path.close();
+  canvas.drawPath(path, paint);
+}
+
+// ===== IKONY ZÁKLADNÍCH SCHOPNOSTÍ (tier1-4 + signature útok, viz spellVisualTierX níž) =====
+// Stejný systém jako u SpecRelicIconPainter výš (nosný tvar podle třídy + motiv podle spellu),
+// jen napojený na tier/choice místo SpecRelicKind. Motivy jsou v rámci JEDNÉ třídy vybrané tak,
+// aby se nikdy neopakovaly napříč jejími celkem 9 tlačítky (3 spec relicy + tier1/2/3 + tier4×3)
+// - ty všechny sdílí stejný nosný tvar a zobrazují se současně v ability baru, takže duplicitní
+// motiv by vytvořil dvě vizuálně nerozlišitelná tlačítka. Napříč RŮZNÝMI třídami se motivy volně
+// opakují (jiný nosný tvar = žádná záměna).
+_SpecAccent _tier1AccentFor(HeroClass c) {
+  switch (c) {
+    case HeroClass.warrior: return _SpecAccent.bolt;
+    case HeroClass.hunter: return _SpecAccent.shadowEye;
+    case HeroClass.healer: return _SpecAccent.sunrise;
+    case HeroClass.deathknight: return _SpecAccent.targetRune;
+    case HeroClass.mage: return _SpecAccent.sunburst;
+    case HeroClass.duelist: return _SpecAccent.hammerWave;
+    case HeroClass.monk: return _SpecAccent.commandStar;
+    case HeroClass.druid: return _SpecAccent.pawprint;
+    case HeroClass.paladin: return _SpecAccent.targetRune;
+    case HeroClass.demonhunter: return _SpecAccent.crossedBlades;
+    case HeroClass.necromancer: return _SpecAccent.shadowEye;
+    case HeroClass.none: return _SpecAccent.commandStar;
+  }
+}
+
+_SpecAccent _tier2AccentFor(HeroClass c) {
+  switch (c) {
+    case HeroClass.warrior: return _SpecAccent.mountain;
+    case HeroClass.hunter: return _SpecAccent.targetRune;
+    case HeroClass.healer: return _SpecAccent.targetRune;
+    case HeroClass.deathknight: return _SpecAccent.commandStar;
+    case HeroClass.mage: return _SpecAccent.bolt;
+    case HeroClass.duelist: return _SpecAccent.crosshair;
+    case HeroClass.monk: return _SpecAccent.crossedBlades;
+    case HeroClass.druid: return _SpecAccent.commandStar;
+    case HeroClass.paladin: return _SpecAccent.bolt;
+    case HeroClass.demonhunter: return _SpecAccent.moonDecay;
+    case HeroClass.necromancer: return _SpecAccent.ghostEye;
+    case HeroClass.none: return _SpecAccent.bolt;
+  }
+}
+
+_SpecAccent _tier3AccentFor(HeroClass c) {
+  switch (c) {
+    case HeroClass.warrior: return _SpecAccent.sunburst;
+    case HeroClass.hunter: return _SpecAccent.thunderCore;
+    case HeroClass.healer: return _SpecAccent.bolt;
+    case HeroClass.deathknight: return _SpecAccent.shadowEye;
+    case HeroClass.mage: return _SpecAccent.thunderCore;
+    case HeroClass.duelist: return _SpecAccent.commandStar;
+    case HeroClass.monk: return _SpecAccent.sunburst;
+    case HeroClass.druid: return _SpecAccent.sunburst;
+    case HeroClass.paladin: return _SpecAccent.mountain;
+    case HeroClass.demonhunter: return _SpecAccent.flame;
+    case HeroClass.necromancer: return _SpecAccent.bloodDrop;
+    case HeroClass.none: return _SpecAccent.sunburst;
+  }
+}
+
+_SpecAccent _tier4AccentFor(HeroClass c, int choice) {
+  switch (c) {
+    case HeroClass.warrior:
+      if (choice == 1) return _SpecAccent.hammerWave;
+      if (choice == 2) return _SpecAccent.gavel;
+      return _SpecAccent.crossedBlades;
+    case HeroClass.hunter:
+      if (choice == 1) return _SpecAccent.bolt;
+      if (choice == 2) return _SpecAccent.hourglass;
+      return _SpecAccent.moonDecay;
+    case HeroClass.healer:
+      if (choice == 1) return _SpecAccent.thunderCore;
+      if (choice == 2) return _SpecAccent.waterDrop;
+      return _SpecAccent.crosshair;
+    case HeroClass.deathknight:
+      if (choice == 1) return _SpecAccent.boneMinion;
+      if (choice == 2) return _SpecAccent.moonDecay;
+      return _SpecAccent.pactDrop;
+    case HeroClass.mage:
+      if (choice == 1) return _SpecAccent.commandStar;
+      if (choice == 2) return _SpecAccent.snowflake;
+      return _SpecAccent.yinyang;
+    case HeroClass.duelist:
+      if (choice == 1) return _SpecAccent.targetRune;
+      if (choice == 2) return _SpecAccent.yinyang;
+      return _SpecAccent.thunderCore;
+    case HeroClass.monk:
+      if (choice == 1) return _SpecAccent.bolt;
+      if (choice == 2) return _SpecAccent.shieldChevron;
+      return _SpecAccent.ghostEye;
+    case HeroClass.druid:
+      if (choice == 1) return _SpecAccent.yinyang;
+      if (choice == 2) return _SpecAccent.mountain;
+      return _SpecAccent.sunrise;
+    case HeroClass.paladin:
+      if (choice == 1) return _SpecAccent.hourglass;
+      if (choice == 2) return _SpecAccent.crossedBlades;
+      return _SpecAccent.sunburst;
+    case HeroClass.demonhunter:
+      if (choice == 1) return _SpecAccent.commandStar;
+      if (choice == 2) return _SpecAccent.biohazard;
+      return _SpecAccent.bolt;
+    case HeroClass.necromancer:
+      if (choice == 1) return _SpecAccent.commandStar;
+      if (choice == 2) return _SpecAccent.moonDecay;
+      return _SpecAccent.yinyang;
+    case HeroClass.none:
+      return _SpecAccent.commandStar;
+  }
+}
+
+_SpecAccent _signatureAccentFor(HeroClass c) {
+  switch (c) {
+    case HeroClass.warrior: return _SpecAccent.thunderCore;
+    case HeroClass.hunter: return _SpecAccent.commandStar;
+    case HeroClass.healer: return _SpecAccent.commandStar;
+    case HeroClass.deathknight: return _SpecAccent.iceCrystal;
+    case HeroClass.mage: return _SpecAccent.crosshair;
+    case HeroClass.duelist: return _SpecAccent.sunrise;
+    case HeroClass.monk: return _SpecAccent.waterDrop;
+    case HeroClass.druid: return _SpecAccent.thunderCore;
+    case HeroClass.paladin: return _SpecAccent.commandStar;
+    case HeroClass.demonhunter: return _SpecAccent.sunburst;
+    case HeroClass.necromancer: return _SpecAccent.targetRune;
+    case HeroClass.none: return _SpecAccent.commandStar;
+  }
+}
+
+/// Widget s vykreslenou ikonou dané "tier" schopnosti - použít stejně jako specRelicIconWidget,
+/// jen pro spellVisualTier1/2/3/4 a signature útok (Paragon 150) místo Relicu. `slot` je 'tier1',
+/// 'tier2', 'tier3', 'tier4' (s povinným `choice` 1-3), nebo 'signature'.
+Widget classSpellIconWidget(HeroClass heroClass, String slot, Color color, {int choice = 1, double size = 32}) {
+  final accent = switch (slot) {
+    'tier1' => _tier1AccentFor(heroClass),
+    'tier2' => _tier2AccentFor(heroClass),
+    'tier3' => _tier3AccentFor(heroClass),
+    'tier4' => _tier4AccentFor(heroClass, choice),
+    _ => _signatureAccentFor(heroClass),
+  };
+  return SizedBox(width: size, height: size, child: CustomPaint(painter: ClassSpellIconPainter(shape: _specBaseShapeFor(heroClass), accent: accent, color: color)));
+}
+
+class ClassSpellIconPainter extends CustomPainter {
+  final _SpecBaseShape shape;
+  final _SpecAccent accent;
+  final Color color;
+  const ClassSpellIconPainter({required this.shape, required this.accent, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.shortestSide;
+    final c = Offset(size.width / 2, size.height / 2);
+    canvas.drawCircle(c, s * 0.46, Paint()..color = color.withOpacity(.22)..maskFilter = MaskFilter.blur(BlurStyle.normal, s * 0.14));
+    _paintClassIconBase(canvas, c, s, shape, color);
+    _paintClassIconAccent(canvas, c, s, accent, color);
+  }
+
+  @override
+  bool shouldRepaint(covariant ClassSpellIconPainter old) => old.shape != shape || old.accent != accent || old.color != color;
+}
+
 
 /// Widget, co obalí libovolný portrét rámem podle state.equippedFrame - dá se použít kdekoliv,
 /// kde se dnes kreslí hrdinův portrét (combat karty, Profil, výběr postavy...), bez zásahu do
@@ -3718,22 +4318,24 @@ class EquipSceneSlot {
 /// klidně přeskupte, pokud bude sedět jinak vizuálně (např. helma nahoře by dávala smysl blíž
 /// hlavě postavy).
 const List<EquipSceneSlot> equipSceneSlots = [
-  // Levý sloupec (dx 0.171), shora dolů - přeměřeno přímo z inventory_bg.png (detekce jasných
-  // barevných okrajů rámů proti tmavému pozadí).
-  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.171, dy: 0.195),
-  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.171, dy: 0.313),
-  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.171, dy: 0.432),
-  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.171, dy: 0.549),
-  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.171, dy: 0.667),
-  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.171, dy: 0.786),
-  // Pravý sloupec (dx 0.803), shora dolů.
-  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.803, dy: 0.252),
-  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.803, dy: 0.368),
-  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.803, dy: 0.485),
-  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.803, dy: 0.603),
+  // Levý sloupec (dx ~0.19), shora dolů - přeměřeno přímo z reálného screenshotu hry (ne
+  // ze zdrojového inventory_bg.png), pixelovou detekcí skutečného středu ikony/rámu -
+  // dřívější odhad byl systematicky cca 2 % vlevo a níž oproti reálnému středu rámu.
+  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.190, dy: 0.168),
+  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.190, dy: 0.285),
+  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.188, dy: 0.408),
+  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.190, dy: 0.533),
+  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.184, dy: 0.661),
+  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.190, dy: 0.772),
+  // Pravý sloupec (dx ~0.78), shora dolů - stejná korekce, tady byl odhad naopak cca 2 %
+  // vpravo a níž.
+  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.782, dy: 0.218),
+  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.774, dy: 0.346),
+  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.780, dy: 0.450),
+  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.763, dy: 0.586),
   // Pár malých rámů dole vpravo - dva sloty Přívěsku vedle sebe.
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.729, dy: 0.723, accessoryIndex: 0),
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.872, dy: 0.723, accessoryIndex: 1),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.709, dy: 0.719, accessoryIndex: 0),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.902, dy: 0.722, accessoryIndex: 1),
 ];
 
 /// Malovaná scéna "Nasazené vybavení" v Batohu - stejný jazyk jako SceneMapView níž
@@ -3801,20 +4403,42 @@ class _EquipSceneSlotMarker extends StatelessWidget {
     if (item == null) return const SizedBox(width: 60, height: 60);
     final style = kRarityStyles[item!.rarityVisual]!;
     final asset = FantasyIconRegistry.of(item!.iconType);
+    // Common nemá žádnou záři (glowAlpha 0) - ať se u nejběžnějších předmětů nezobrazuje
+    // prázdný kruh navíc, jen ikona samotná.
+    final hasGlow = style.glowAlpha > 0;
     return GestureDetector(
       onTap: () => onTap(context, item!),
       onLongPress: () => onTap(context, item!),
       child: SizedBox(
         width: 60,
         height: 60,
+        // Clip.none, ať záře může "probublat" i mimo 60x60 hranici ikony do okolního rámu -
+        // dřív ji Stack defaultně ořízl přesně na hranici ikony, takže i vzácné předměty
+        // působily jen mírně zabarveně. Teď je záře citelně větší než ikona samotná a
+        // rozlévá se do dřevěného/kamenného rámu okolo, což je hlavní signál kvality na
+        // dálku (barva rámu samotného se u různých předmětů skoro neliší).
         child: Stack(
+          clipBehavior: Clip.none,
           fit: StackFit.expand,
           children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(colors: [style.glowColor.withOpacity(style.glowAlpha * 0.85), style.glowColor.withOpacity(style.glowAlpha * 0.25), Colors.transparent], stops: const [0.0, 0.55, 1.0]),
+            if (hasGlow)
+              Positioned(
+                left: -18, right: -18, top: -18, bottom: -18,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        style.glowColor.withOpacity((style.glowAlpha * 1.15).clamp(0.0, 1.0)),
+                        style.glowColor.withOpacity(style.glowAlpha * 0.55),
+                        style.glowColor.withOpacity(style.glowAlpha * 0.15),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.4, 0.7, 1.0],
+                    ),
+                  ),
+                ),
               ),
-            ),
             Padding(
               padding: const EdgeInsets.all(5),
               child: asset.svgAssetPath != null
@@ -3887,6 +4511,10 @@ class SceneMapView extends StatelessWidget {
   // rozsvícených oken/luceren - jednotlivé scény si je dají podle toho, co mají na obrázku.
   final List<Offset> smokePoints;
   final List<Offset> glowPoints;
+  // Barva kouře pro každý bod v `smokePoints` (stejný index) - komíny mají různý kouř (černý
+  // z Kovárny, jedovatě zelený z Alchymie), takže jednotná bílá nebyla dost odlišující. Prázdný
+  // seznam nebo chybějící index = výchozí šedý kouř.
+  final List<Color> smokeColors;
   // Cesta ke skutečné vygenerované ilustraci scény (viz konverzace o Copilot promptech) - pokud
   // je zadaná, nahradí procedurální _SceneBackdropPainter. Zůstává null, dokud daná scéna nemá
   // hotový obrázek - pak se použije starý procedurální fallback, nic dalšího se měnit nemusí.
@@ -3894,7 +4522,7 @@ class SceneMapView extends StatelessWidget {
   // Většina scén chce nadpis + ikonu nad malovanou mapou (viz Row níž), ale Dobrodružství ho
   // nechce vůbec - nastavuje false na svém volání.
   final bool showTitle;
-  const SceneMapView({super.key, required this.title, required this.titleIcon, required this.titleAccent, required this.danger, required this.buildings, this.smokePoints = const [], this.glowPoints = const [], this.backgroundImage, this.showTitle = true});
+  const SceneMapView({super.key, required this.title, required this.titleIcon, required this.titleAccent, required this.danger, required this.buildings, this.smokePoints = const [], this.smokeColors = const [], this.glowPoints = const [], this.backgroundImage, this.showTitle = true});
 
   @override
   Widget build(BuildContext context) {
@@ -3903,13 +4531,13 @@ class SceneMapView extends StatelessWidget {
         gradient: RadialGradient(center: Alignment.topCenter, radius: 1.3, colors: [Color(0xFF241C30), FantasyColors2.obsidian]),
       ),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        padding: const EdgeInsets.only(top: 16, bottom: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (showTitle)
               Padding(
-                padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
                 child: Row(children: [
                   Icon(titleIcon, color: titleAccent, size: 20),
                   const SizedBox(width: 8),
@@ -3918,11 +4546,15 @@ class SceneMapView extends StatelessWidget {
                   Expanded(child: Container(height: 1, color: titleAccent.withOpacity(.35))),
                 ]),
               ),
+            // Full-bleed scéna - obrázek jde od kraje ke kraji displeje (žádný boční padding),
+            // zaoblené jsou jen spodní rohy (nahoře navazuje na resource bar/appbar nad ní) a
+            // rámeček je zúžený na tenkou linku dole místo obrysu kolem celé karty - dřív to
+            // opticky uzavíralo scénu dovnitř karty, teď působí jako plnokrevná hero ilustrace.
             ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(18), bottomRight: Radius.circular(18)),
               child: Container(
-                height: 560,
-                decoration: BoxDecoration(border: Border.all(color: titleAccent.withOpacity(.35))),
+                height: 600,
+                decoration: BoxDecoration(border: Border(bottom: BorderSide(color: titleAccent.withOpacity(.35), width: 1))),
                 child: LayoutBuilder(builder: (context, constraints) {
                   final size = Size(constraints.maxWidth, constraints.maxHeight);
                   return Stack(
@@ -3932,7 +4564,7 @@ class SceneMapView extends StatelessWidget {
                             ? Image.asset(backgroundImage!, fit: BoxFit.cover)
                             : CustomPaint(painter: _SceneBackdropPainter(danger: danger, nodePositions: buildings.map((b) => Offset(b.dx, b.dy)).toList())),
                       ),
-                      Positioned.fill(child: _SceneLifeOverlay(danger: danger, smokePoints: smokePoints, glowPoints: glowPoints)),
+                      Positioned.fill(child: _SceneLifeOverlay(danger: danger, smokePoints: smokePoints, smokeColors: smokeColors, glowPoints: glowPoints)),
                       for (final b in buildings)
                         Positioned(
                           left: (b.dx * size.width - (b.tapWidth * b.prominence) / 2).clamp(0.0, size.width - b.tapWidth * b.prominence),
@@ -3957,8 +4589,9 @@ class SceneMapView extends StatelessWidget {
 class _SceneLifeOverlay extends StatefulWidget {
   final bool danger;
   final List<Offset> smokePoints;
+  final List<Color> smokeColors;
   final List<Offset> glowPoints;
-  const _SceneLifeOverlay({required this.danger, required this.smokePoints, required this.glowPoints});
+  const _SceneLifeOverlay({required this.danger, required this.smokePoints, this.smokeColors = const [], required this.glowPoints});
 
   @override
   State<_SceneLifeOverlay> createState() => _SceneLifeOverlayState();
@@ -3986,7 +4619,7 @@ class _SceneLifeOverlayState extends State<_SceneLifeOverlay> with SingleTickerP
       child: AnimatedBuilder(
         animation: _c,
         builder: (context, _) => CustomPaint(
-          painter: _SceneLifePainter(t: _c.value, danger: widget.danger, smokePoints: widget.smokePoints, glowPoints: widget.glowPoints),
+          painter: _SceneLifePainter(t: _c.value, danger: widget.danger, smokePoints: widget.smokePoints, smokeColors: widget.smokeColors, glowPoints: widget.glowPoints),
           size: Size.infinite,
         ),
       ),
@@ -3998,8 +4631,9 @@ class _SceneLifePainter extends CustomPainter {
   final double t;
   final bool danger;
   final List<Offset> smokePoints;
+  final List<Color> smokeColors;
   final List<Offset> glowPoints;
-  _SceneLifePainter({required this.t, required this.danger, required this.smokePoints, required this.glowPoints});
+  _SceneLifePainter({required this.t, required this.danger, required this.smokePoints, this.smokeColors = const [], required this.glowPoints});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -4264,13 +4898,18 @@ class _SceneLifePainter extends CustomPainter {
     }
     for (int p = 0; p < smokePoints.length; p++) {
       final base = Offset(smokePoints[p].dx * size.width, smokePoints[p].dy * size.height);
-      for (int i = 0; i < 3; i++) {
-        final phase = (t + i / 3 + p * 0.37) % 1.0;
-        final dy = -phase * 46;
-        final dx = sin(phase * pi * 2 + p) * 6;
-        final r = 3 + phase * 6;
-        final opacity = (1 - phase) * 0.30;
-        canvas.drawCircle(base + Offset(dx, dy), r, Paint()..color = Colors.white.withOpacity(opacity)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
+      final smokeColor = p < smokeColors.length ? smokeColors[p] : const Color(0xFF8A8A8A);
+      // 5 obláčků místo dřívějších 3, stoupají výš (až -95px místo -46px) a cestou "bytní"
+      // (rostoucí poloměr) jako skutečný kouř místo stejně velkých teček. Vyšší opacita
+      // (až 0.55) a barva podle zdroje (černý kovárenský/zelený alchymistický), ať se kouř
+      // reálně odliší od pozadí místo skoro neviditelných bílých teček.
+      for (int i = 0; i < 5; i++) {
+        final phase = (t + i / 5 + p * 0.37) % 1.0;
+        final dy = -phase * 95;
+        final dx = sin(phase * pi * 2.2 + p) * 10 + phase * 8;
+        final r = 4 + phase * 15;
+        final opacity = (1 - phase) * 0.55 * (1 - phase * 0.3);
+        canvas.drawCircle(base + Offset(dx, dy), r, Paint()..color = smokeColor.withOpacity(opacity.clamp(0.0, 1.0))..maskFilter = MaskFilter.blur(BlurStyle.normal, 4 + phase * 4));
       }
     }
     // Blikající světla (okna/lucerny) - teplá záře, jas jemně kolísá v různé fázi u každého.
@@ -4615,9 +5254,11 @@ class CityScreen extends StatelessWidget {
         danger: false,
         buildings: buildings,
         backgroundImage: 'assets/images/scenes/town_bg.png',
-        // Kouř z komína Kovárny (černý/žhavý) + zelenkavý dým Alchymie - přesně jak jsou
-        // namalované na skutečném obrázku.
-        smokePoints: const [Offset(0.48, 0.58), Offset(0.13, 0.42)],
+        // Kouř z komína Kovárny (černý/žhavý) + zelenkavý dým Alchymie - pozice přeměřeny přímo
+        // ze screenshotu hry (vrchol komínů, ne střecha budovy jako dřív) + barva ať se kouř
+        // reálně odliší podle zdroje.
+        smokePoints: const [Offset(0.503, 0.40), Offset(0.115, 0.325)],
+        smokeColors: const [Color(0xFF4A4A4A), Color(0xFF6FCF50)],
         // Blikající okénka podle skutečných světel na obrázku - Runový Čaroděj (modrá záře),
         // Runový Kovář (rudá záře), Banka (modré dveře vzadu), Kronika (prosvětlené okno věže),
         // tržní lucerničky.
@@ -4733,7 +5374,32 @@ class _RuneWizardScreenState extends State<RuneWizardScreen> with SingleTickerPr
                 labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
                 tabs: [
                   Tab(icon: const Icon(Icons.auto_awesome, size: 16), text: tr('Runy', 'Runes')),
-                  Tab(icon: Icon(state.metMaTus ? Icons.auto_stories : Icons.lock, size: 16), text: state.metMaTus ? tr('Osudové volby', 'Fate Choices') : '???'),
+                  Tab(
+                    // Zamčená druhá záložka dřív byla jen plovoucí ikona+text bez tvaru -
+                    // teď dostane stejně tvarovanou pilulku jako aktivní "Runy" (stejný
+                    // borderRadius/padding jako `indicator` výš), ale průhlednou/ztlumenou -
+                    // čitelně vypadá jako tlačítko, jen zjevně neaktivní/zamčené.
+                    child: Opacity(
+                      opacity: state.metMaTus ? 1.0 : 0.45,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: state.metMaTus
+                            ? null
+                            : BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: FantasyColors2.runeMuted.withOpacity(.5)),
+                              ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(state.metMaTus ? Icons.auto_stories : Icons.lock, size: 16),
+                            const SizedBox(width: 6),
+                            Text(state.metMaTus ? tr('Osudové volby', 'Fate Choices') : '???', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -5979,7 +6645,11 @@ class SpellVisual {
   final String name;
   final IconData icon;
   final Color color;
-  const SpellVisual(this.name, this.icon, this.color);
+  // Volitelný vlastní vykreslovač ikony (viz SpecRelicIconPainter výš) - když je zadaný,
+  // SpellIconButton ho použije místo generické Material ikony `icon` (ta zůstává jen jako
+  // fallback pro dlouhé podržení/dialog, kde vlastní kreslení zatím nemá smysl duplikovat).
+  final Widget Function(Color color, double size)? customIcon;
+  const SpellVisual(this.name, this.icon, this.color, {this.customIcon});
 }
 
 // Jednotná signální barva pro danou třídu — používá se pro VŠECHNY její
@@ -6005,17 +6675,17 @@ Color classSignatureColor(HeroClass c) {
 // Tier 1 — Paragon 10, "Pokročilá třída" (isBerserk/isAssassin/...).
 SpellVisual spellVisualTier1(HeroClass c) {
   switch (c) {
-    case HeroClass.warrior: return SpellVisual('Mocný úder', Icons.fitness_center, classSignatureColor(HeroClass.warrior));
-    case HeroClass.hunter: return SpellVisual('Skrytý úder', Icons.visibility_off, classSignatureColor(HeroClass.hunter));
-    case HeroClass.healer: return SpellVisual('Boží požehnání', Icons.wb_sunny, classSignatureColor(HeroClass.healer));
-    case HeroClass.deathknight: return SpellVisual('Prokletý úder', Icons.dark_mode, classSignatureColor(HeroClass.deathknight));
-    case HeroClass.mage: return SpellVisual('Elementální výbuch', Icons.local_fire_department, classSignatureColor(HeroClass.mage));
-    case HeroClass.duelist: return SpellVisual('Rychlé combo', Icons.flash_on, classSignatureColor(HeroClass.duelist));
-    case HeroClass.monk: return SpellVisual('Úder tisíce dlaní', Icons.sports_martial_arts, classSignatureColor(HeroClass.monk));
-    case HeroClass.druid: return SpellVisual('Divoký spár', Icons.eco, classSignatureColor(HeroClass.druid));
-    case HeroClass.paladin: return SpellVisual('Úder Spravedlnosti', Icons.gavel, classSignatureColor(HeroClass.paladin));
-    case HeroClass.demonhunter: return SpellVisual('Rozseknutí čepelemi', Icons.content_cut, classSignatureColor(HeroClass.demonhunter));
-    case HeroClass.necromancer: return SpellVisual('Kostěný Sluha', Icons.person_outline, classSignatureColor(HeroClass.necromancer));
+    case HeroClass.warrior: return SpellVisual('Mocný úder', Icons.fitness_center, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier1', col, size: sz));
+    case HeroClass.hunter: return SpellVisual('Skrytý úder', Icons.visibility_off, classSignatureColor(HeroClass.hunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.hunter, 'tier1', col, size: sz));
+    case HeroClass.healer: return SpellVisual('Boží požehnání', Icons.wb_sunny, classSignatureColor(HeroClass.healer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.healer, 'tier1', col, size: sz));
+    case HeroClass.deathknight: return SpellVisual('Prokletý úder', Icons.dark_mode, classSignatureColor(HeroClass.deathknight), customIcon: (col, sz) => classSpellIconWidget(HeroClass.deathknight, 'tier1', col, size: sz));
+    case HeroClass.mage: return SpellVisual('Elementální výbuch', Icons.local_fire_department, classSignatureColor(HeroClass.mage), customIcon: (col, sz) => classSpellIconWidget(HeroClass.mage, 'tier1', col, size: sz));
+    case HeroClass.duelist: return SpellVisual('Rychlé combo', Icons.flash_on, classSignatureColor(HeroClass.duelist), customIcon: (col, sz) => classSpellIconWidget(HeroClass.duelist, 'tier1', col, size: sz));
+    case HeroClass.monk: return SpellVisual('Úder tisíce dlaní', Icons.sports_martial_arts, classSignatureColor(HeroClass.monk), customIcon: (col, sz) => classSpellIconWidget(HeroClass.monk, 'tier1', col, size: sz));
+    case HeroClass.druid: return SpellVisual('Divoký spár', Icons.eco, classSignatureColor(HeroClass.druid), customIcon: (col, sz) => classSpellIconWidget(HeroClass.druid, 'tier1', col, size: sz));
+    case HeroClass.paladin: return SpellVisual('Úder Spravedlnosti', Icons.gavel, classSignatureColor(HeroClass.paladin), customIcon: (col, sz) => classSpellIconWidget(HeroClass.paladin, 'tier1', col, size: sz));
+    case HeroClass.demonhunter: return SpellVisual('Rozseknutí čepelemi', Icons.content_cut, classSignatureColor(HeroClass.demonhunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.demonhunter, 'tier1', col, size: sz));
+    case HeroClass.necromancer: return SpellVisual('Kostěný Sluha', Icons.person_outline, classSignatureColor(HeroClass.necromancer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.necromancer, 'tier1', col, size: sz));
     default: return const SpellVisual('Schopnost 1', Icons.auto_awesome, Colors.grey);
   }
 }
@@ -6023,17 +6693,17 @@ SpellVisual spellVisualTier1(HeroClass c) {
 // Tier 2 — Paragon 40, "Ultimátní třída" (isWarlord/isShadowMaster/...).
 SpellVisual spellVisualTier2(HeroClass c) {
   switch (c) {
-    case HeroClass.warrior: return SpellVisual('Rozdrcení světa', Icons.public, classSignatureColor(HeroClass.warrior));
-    case HeroClass.hunter: return SpellVisual('Stínová poprava', Icons.gps_fixed, classSignatureColor(HeroClass.hunter));
-    case HeroClass.healer: return SpellVisual('Boží soud', Icons.gavel, classSignatureColor(HeroClass.healer));
-    case HeroClass.deathknight: return SpellVisual('Exploze prokletí', Icons.whatshot, classSignatureColor(HeroClass.deathknight));
-    case HeroClass.mage: return SpellVisual('Arkánový nával', Icons.blur_on, classSignatureColor(HeroClass.mage));
-    case HeroClass.duelist: return SpellVisual('Precizní výpad', Icons.gps_not_fixed, classSignatureColor(HeroClass.duelist));
-    case HeroClass.monk: return SpellVisual('Dračí kop', Icons.sports_kabaddi, classSignatureColor(HeroClass.monk));
-    case HeroClass.druid: return SpellVisual('Hvězdný pád', Icons.nightlight_round, classSignatureColor(HeroClass.druid));
-    case HeroClass.paladin: return SpellVisual('Boží Trest', Icons.flash_on, classSignatureColor(HeroClass.paladin));
-    case HeroClass.demonhunter: return SpellVisual('Metamorfóza', Icons.auto_fix_high, classSignatureColor(HeroClass.demonhunter));
-    case HeroClass.necromancer: return SpellVisual('Volání Nemrtvých', Icons.groups, classSignatureColor(HeroClass.necromancer));
+    case HeroClass.warrior: return SpellVisual('Rozdrcení světa', Icons.public, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier2', col, size: sz));
+    case HeroClass.hunter: return SpellVisual('Stínová poprava', Icons.gps_fixed, classSignatureColor(HeroClass.hunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.hunter, 'tier2', col, size: sz));
+    case HeroClass.healer: return SpellVisual('Boží soud', Icons.gavel, classSignatureColor(HeroClass.healer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.healer, 'tier2', col, size: sz));
+    case HeroClass.deathknight: return SpellVisual('Exploze prokletí', Icons.whatshot, classSignatureColor(HeroClass.deathknight), customIcon: (col, sz) => classSpellIconWidget(HeroClass.deathknight, 'tier2', col, size: sz));
+    case HeroClass.mage: return SpellVisual('Arkánový nával', Icons.blur_on, classSignatureColor(HeroClass.mage), customIcon: (col, sz) => classSpellIconWidget(HeroClass.mage, 'tier2', col, size: sz));
+    case HeroClass.duelist: return SpellVisual('Precizní výpad', Icons.gps_not_fixed, classSignatureColor(HeroClass.duelist), customIcon: (col, sz) => classSpellIconWidget(HeroClass.duelist, 'tier2', col, size: sz));
+    case HeroClass.monk: return SpellVisual('Dračí kop', Icons.sports_kabaddi, classSignatureColor(HeroClass.monk), customIcon: (col, sz) => classSpellIconWidget(HeroClass.monk, 'tier2', col, size: sz));
+    case HeroClass.druid: return SpellVisual('Hvězdný pád', Icons.nightlight_round, classSignatureColor(HeroClass.druid), customIcon: (col, sz) => classSpellIconWidget(HeroClass.druid, 'tier2', col, size: sz));
+    case HeroClass.paladin: return SpellVisual('Boží Trest', Icons.flash_on, classSignatureColor(HeroClass.paladin), customIcon: (col, sz) => classSpellIconWidget(HeroClass.paladin, 'tier2', col, size: sz));
+    case HeroClass.demonhunter: return SpellVisual('Metamorfóza', Icons.auto_fix_high, classSignatureColor(HeroClass.demonhunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.demonhunter, 'tier2', col, size: sz));
+    case HeroClass.necromancer: return SpellVisual('Volání Nemrtvých', Icons.groups, classSignatureColor(HeroClass.necromancer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.necromancer, 'tier2', col, size: sz));
     default: return const SpellVisual('Schopnost 2', Icons.auto_awesome, Colors.grey);
   }
 }
@@ -6041,17 +6711,17 @@ SpellVisual spellVisualTier2(HeroClass c) {
 // Tier 3 — Paragon 75, "Boží třída" (isValhallaWarrior/isVoidStalker/...).
 SpellVisual spellVisualTier3(HeroClass c) {
   switch (c) {
-    case HeroClass.warrior: return SpellVisual('Boží hněv', Icons.flash_on, classSignatureColor(HeroClass.warrior));
-    case HeroClass.hunter: return SpellVisual('Prázdnotová bouře', Icons.blur_circular, classSignatureColor(HeroClass.hunter));
-    case HeroClass.healer: return SpellVisual('Nebeský rozsudek', Icons.brightness_7, classSignatureColor(HeroClass.healer));
-    case HeroClass.deathknight: return SpellVisual('Úder smrti', Icons.favorite_border, classSignatureColor(HeroClass.deathknight));
-    case HeroClass.mage: return SpellVisual('Archmágův příval', Icons.auto_awesome, classSignatureColor(HeroClass.mage));
-    case HeroClass.duelist: return SpellVisual('Bouře čepelí', Icons.change_history, classSignatureColor(HeroClass.duelist));
-    case HeroClass.monk: return SpellVisual('Nebeská Harmonie', Icons.spa, classSignatureColor(HeroClass.monk));
-    case HeroClass.druid: return SpellVisual('Srdce Lesa', Icons.forest, classSignatureColor(HeroClass.druid));
-    case HeroClass.paladin: return SpellVisual('Posvátný Val', Icons.security, classSignatureColor(HeroClass.paladin));
-    case HeroClass.demonhunter: return SpellVisual('Pekelný Žár', Icons.local_fire_department, classSignatureColor(HeroClass.demonhunter));
-    case HeroClass.necromancer: return SpellVisual('Rituál Krve a Kostí', Icons.bloodtype, classSignatureColor(HeroClass.necromancer));
+    case HeroClass.warrior: return SpellVisual('Boží hněv', Icons.flash_on, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier3', col, size: sz));
+    case HeroClass.hunter: return SpellVisual('Prázdnotová bouře', Icons.blur_circular, classSignatureColor(HeroClass.hunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.hunter, 'tier3', col, size: sz));
+    case HeroClass.healer: return SpellVisual('Nebeský rozsudek', Icons.brightness_7, classSignatureColor(HeroClass.healer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.healer, 'tier3', col, size: sz));
+    case HeroClass.deathknight: return SpellVisual('Úder smrti', Icons.favorite_border, classSignatureColor(HeroClass.deathknight), customIcon: (col, sz) => classSpellIconWidget(HeroClass.deathknight, 'tier3', col, size: sz));
+    case HeroClass.mage: return SpellVisual('Archmágův příval', Icons.auto_awesome, classSignatureColor(HeroClass.mage), customIcon: (col, sz) => classSpellIconWidget(HeroClass.mage, 'tier3', col, size: sz));
+    case HeroClass.duelist: return SpellVisual('Bouře čepelí', Icons.change_history, classSignatureColor(HeroClass.duelist), customIcon: (col, sz) => classSpellIconWidget(HeroClass.duelist, 'tier3', col, size: sz));
+    case HeroClass.monk: return SpellVisual('Nebeská Harmonie', Icons.spa, classSignatureColor(HeroClass.monk), customIcon: (col, sz) => classSpellIconWidget(HeroClass.monk, 'tier3', col, size: sz));
+    case HeroClass.druid: return SpellVisual('Srdce Lesa', Icons.forest, classSignatureColor(HeroClass.druid), customIcon: (col, sz) => classSpellIconWidget(HeroClass.druid, 'tier3', col, size: sz));
+    case HeroClass.paladin: return SpellVisual('Posvátný Val', Icons.security, classSignatureColor(HeroClass.paladin), customIcon: (col, sz) => classSpellIconWidget(HeroClass.paladin, 'tier3', col, size: sz));
+    case HeroClass.demonhunter: return SpellVisual('Pekelný Žár', Icons.local_fire_department, classSignatureColor(HeroClass.demonhunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.demonhunter, 'tier3', col, size: sz));
+    case HeroClass.necromancer: return SpellVisual('Rituál Krve a Kostí', Icons.bloodtype, classSignatureColor(HeroClass.necromancer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.necromancer, 'tier3', col, size: sz));
     default: return const SpellVisual('Schopnost 3', Icons.auto_awesome, Colors.grey);
   }
 }
@@ -6060,49 +6730,49 @@ SpellVisual spellVisualTier3(HeroClass c) {
 SpellVisual spellVisualTier4(HeroClass c, int choice) {
   switch (c) {
     case HeroClass.warrior:
-      if (choice == 1) return SpellVisual('Patář světa', Icons.terrain, classSignatureColor(HeroClass.warrior));
-      if (choice == 2) return SpellVisual('Nezničitelný úder', Icons.security, classSignatureColor(HeroClass.warrior));
-      return SpellVisual('Válečný vládce', Icons.shield, classSignatureColor(HeroClass.warrior));
+      if (choice == 1) return SpellVisual('Patář světa', Icons.terrain, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Nezničitelný úder', Icons.security, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Válečný vládce', Icons.shield, classSignatureColor(HeroClass.warrior), customIcon: (col, sz) => classSpellIconWidget(HeroClass.warrior, 'tier4', col, choice: 3, size: sz));
     case HeroClass.hunter:
-      if (choice == 1) return SpellVisual('Mistrovská poprava', Icons.gps_fixed, classSignatureColor(HeroClass.hunter));
-      if (choice == 2) return SpellVisual('Přízračný skok', Icons.visibility_off, classSignatureColor(HeroClass.hunter));
-      return SpellVisual('Kosmická bouře', Icons.rocket_launch, classSignatureColor(HeroClass.hunter));
+      if (choice == 1) return SpellVisual('Mistrovská poprava', Icons.gps_fixed, classSignatureColor(HeroClass.hunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.hunter, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Přízračný skok', Icons.visibility_off, classSignatureColor(HeroClass.hunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.hunter, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Kosmická bouře', Icons.rocket_launch, classSignatureColor(HeroClass.hunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.hunter, 'tier4', col, choice: 3, size: sz));
     case HeroClass.healer:
-      if (choice == 1) return SpellVisual('Astrální výbuch', Icons.auto_awesome, classSignatureColor(HeroClass.healer));
-      if (choice == 2) return SpellVisual('Věčný život', Icons.favorite, classSignatureColor(HeroClass.healer));
-      return SpellVisual('Boží paprsek', Icons.wb_sunny, classSignatureColor(HeroClass.healer));
+      if (choice == 1) return SpellVisual('Astrální výbuch', Icons.auto_awesome, classSignatureColor(HeroClass.healer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.healer, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Věčný život', Icons.favorite, classSignatureColor(HeroClass.healer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.healer, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Boží paprsek', Icons.wb_sunny, classSignatureColor(HeroClass.healer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.healer, 'tier4', col, choice: 3, size: sz));
     case HeroClass.deathknight:
-      if (choice == 1) return SpellVisual('Kostěný Lich', Icons.dark_mode, classSignatureColor(HeroClass.deathknight));
-      if (choice == 2) return SpellVisual('Temný Reaper', Icons.dangerous, classSignatureColor(HeroClass.deathknight));
-      return SpellVisual('Pán Duší', Icons.blur_on, classSignatureColor(HeroClass.deathknight));
+      if (choice == 1) return SpellVisual('Kostěný Lich', Icons.dark_mode, classSignatureColor(HeroClass.deathknight), customIcon: (col, sz) => classSpellIconWidget(HeroClass.deathknight, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Temný Reaper', Icons.dangerous, classSignatureColor(HeroClass.deathknight), customIcon: (col, sz) => classSpellIconWidget(HeroClass.deathknight, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Pán Duší', Icons.blur_on, classSignatureColor(HeroClass.deathknight), customIcon: (col, sz) => classSpellIconWidget(HeroClass.deathknight, 'tier4', col, choice: 3, size: sz));
     case HeroClass.mage:
-      if (choice == 1) return SpellVisual('Pyromancer', Icons.local_fire_department, classSignatureColor(HeroClass.mage));
-      if (choice == 2) return SpellVisual('Cryomancer', Icons.severe_cold, classSignatureColor(HeroClass.mage));
-      return SpellVisual('Chronomancer', Icons.hourglass_bottom, classSignatureColor(HeroClass.mage));
+      if (choice == 1) return SpellVisual('Pyromancer', Icons.local_fire_department, classSignatureColor(HeroClass.mage), customIcon: (col, sz) => classSpellIconWidget(HeroClass.mage, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Cryomancer', Icons.severe_cold, classSignatureColor(HeroClass.mage), customIcon: (col, sz) => classSpellIconWidget(HeroClass.mage, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Chronomancer', Icons.hourglass_bottom, classSignatureColor(HeroClass.mage), customIcon: (col, sz) => classSpellIconWidget(HeroClass.mage, 'tier4', col, choice: 3, size: sz));
     case HeroClass.duelist:
-      if (choice == 1) return SpellVisual('Nemesis', Icons.gps_fixed, classSignatureColor(HeroClass.duelist));
-      if (choice == 2) return SpellVisual('Tanečník Čepelí', Icons.switch_access_shortcut, classSignatureColor(HeroClass.duelist));
-      return SpellVisual('Bleskový Mistr', Icons.bolt, classSignatureColor(HeroClass.duelist));
+      if (choice == 1) return SpellVisual('Nemesis', Icons.gps_fixed, classSignatureColor(HeroClass.duelist), customIcon: (col, sz) => classSpellIconWidget(HeroClass.duelist, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Tanečník Čepelí', Icons.switch_access_shortcut, classSignatureColor(HeroClass.duelist), customIcon: (col, sz) => classSpellIconWidget(HeroClass.duelist, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Bleskový Mistr', Icons.bolt, classSignatureColor(HeroClass.duelist), customIcon: (col, sz) => classSpellIconWidget(HeroClass.duelist, 'tier4', col, choice: 3, size: sz));
     case HeroClass.monk:
-      if (choice == 1) return SpellVisual('Pěst tisíce bouří', Icons.sports_martial_arts, classSignatureColor(HeroClass.monk));
-      if (choice == 2) return SpellVisual('Kamenný Strážce', Icons.shield, classSignatureColor(HeroClass.monk));
-      return SpellVisual('Probuzení Ducha', Icons.spa, classSignatureColor(HeroClass.monk));
+      if (choice == 1) return SpellVisual('Pěst tisíce bouří', Icons.sports_martial_arts, classSignatureColor(HeroClass.monk), customIcon: (col, sz) => classSpellIconWidget(HeroClass.monk, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Kamenný Strážce', Icons.shield, classSignatureColor(HeroClass.monk), customIcon: (col, sz) => classSpellIconWidget(HeroClass.monk, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Probuzení Ducha', Icons.spa, classSignatureColor(HeroClass.monk), customIcon: (col, sz) => classSpellIconWidget(HeroClass.monk, 'tier4', col, choice: 3, size: sz));
     case HeroClass.druid:
-      if (choice == 1) return SpellVisual('Avatar Rovnováhy', Icons.brightness_4, classSignatureColor(HeroClass.druid));
-      if (choice == 2) return SpellVisual('Forma Medvěda', Icons.pets, classSignatureColor(HeroClass.druid));
-      return SpellVisual('Zázrak Přírody', Icons.local_florist, classSignatureColor(HeroClass.druid));
+      if (choice == 1) return SpellVisual('Avatar Rovnováhy', Icons.brightness_4, classSignatureColor(HeroClass.druid), customIcon: (col, sz) => classSpellIconWidget(HeroClass.druid, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Forma Medvěda', Icons.pets, classSignatureColor(HeroClass.druid), customIcon: (col, sz) => classSpellIconWidget(HeroClass.druid, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Zázrak Přírody', Icons.local_florist, classSignatureColor(HeroClass.druid), customIcon: (col, sz) => classSpellIconWidget(HeroClass.druid, 'tier4', col, choice: 3, size: sz));
     case HeroClass.paladin:
-      if (choice == 1) return SpellVisual('Věčný Strážce', Icons.shield_moon, classSignatureColor(HeroClass.paladin));
-      if (choice == 2) return SpellVisual('Boží Meč', Icons.gavel, classSignatureColor(HeroClass.paladin));
-      return SpellVisual('Posvěcení', Icons.wb_sunny, classSignatureColor(HeroClass.paladin));
+      if (choice == 1) return SpellVisual('Věčný Strážce', Icons.shield_moon, classSignatureColor(HeroClass.paladin), customIcon: (col, sz) => classSpellIconWidget(HeroClass.paladin, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Boží Meč', Icons.gavel, classSignatureColor(HeroClass.paladin), customIcon: (col, sz) => classSpellIconWidget(HeroClass.paladin, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Posvěcení', Icons.wb_sunny, classSignatureColor(HeroClass.paladin), customIcon: (col, sz) => classSpellIconWidget(HeroClass.paladin, 'tier4', col, choice: 3, size: sz));
     case HeroClass.demonhunter:
-      if (choice == 1) return SpellVisual('Čepele Zkázy', Icons.content_cut, classSignatureColor(HeroClass.demonhunter));
-      if (choice == 2) return SpellVisual('Pomsta Propasti', Icons.shield, classSignatureColor(HeroClass.demonhunter));
-      return SpellVisual('Fel Zúčtování', Icons.whatshot, classSignatureColor(HeroClass.demonhunter));
+      if (choice == 1) return SpellVisual('Čepele Zkázy', Icons.content_cut, classSignatureColor(HeroClass.demonhunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.demonhunter, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Pomsta Propasti', Icons.shield, classSignatureColor(HeroClass.demonhunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.demonhunter, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Fel Zúčtování', Icons.whatshot, classSignatureColor(HeroClass.demonhunter), customIcon: (col, sz) => classSpellIconWidget(HeroClass.demonhunter, 'tier4', col, choice: 3, size: sz));
     case HeroClass.necromancer:
-      if (choice == 1) return SpellVisual('Armáda Nemrtvých', Icons.groups_2, classSignatureColor(HeroClass.necromancer));
-      if (choice == 2) return SpellVisual('Vládce Rozkladu', Icons.coronavirus, classSignatureColor(HeroClass.necromancer));
-      return SpellVisual('Pakt s Podsvětím', Icons.dark_mode, classSignatureColor(HeroClass.necromancer));
+      if (choice == 1) return SpellVisual('Armáda Nemrtvých', Icons.groups_2, classSignatureColor(HeroClass.necromancer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.necromancer, 'tier4', col, choice: 1, size: sz));
+      if (choice == 2) return SpellVisual('Vládce Rozkladu', Icons.coronavirus, classSignatureColor(HeroClass.necromancer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.necromancer, 'tier4', col, choice: 2, size: sz));
+      return SpellVisual('Pakt s Podsvětím', Icons.dark_mode, classSignatureColor(HeroClass.necromancer), customIcon: (col, sz) => classSpellIconWidget(HeroClass.necromancer, 'tier4', col, choice: 3, size: sz));
     default:
       return const SpellVisual('Rank 100', Icons.auto_awesome, Colors.grey);
   }
@@ -6110,7 +6780,7 @@ SpellVisual spellVisualTier4(HeroClass c, int choice) {
 
 // Základní útok - ikona/barva podle typu útoku, nebo signature (Paragon 150).
 SpellVisual basicAttackVisual(GameState s) {
-  if (s.hasParagon150) return SpellVisual(s.signatureAttackLabel, Icons.auto_awesome, classSignatureColor(s.heroClass));
+  if (s.hasParagon150) return SpellVisual(s.signatureAttackLabel, Icons.auto_awesome, classSignatureColor(s.heroClass), customIcon: (col, sz) => classSpellIconWidget(s.heroClass, 'signature', col, size: sz));
   return s.classIsMagicAttack
       ? SpellVisual('Magický útok', Icons.flash_on, classSignatureColor(s.heroClass))
       : SpellVisual('Fyzický útok', Icons.gavel, classSignatureColor(s.heroClass));
@@ -6938,7 +7608,7 @@ class SpellIconButton extends StatelessWidget {
                   ],
                 ),
                 child: Stack(alignment: Alignment.center, children: [
-                  Icon(visual.icon, color: effColor, size: size * 0.46),
+                  visual.customIcon != null ? visual.customIcon!(effColor, size * 0.5) : Icon(visual.icon, color: effColor, size: size * 0.46),
                   // Rohové ornamenty (echo FantasyIconFrame legendary/artifact stylu) - taky jen
                   // u ready spellů, ať not-ready působí opravdu "vypnutě".
                   if (!disabled)
@@ -7231,7 +7901,7 @@ class ArenaScreen extends StatelessWidget {
                   : lockedTier4Slot(state),
               relic: state.currentSpecRelicUnlocked
                   ? SpellIconButton(
-                      visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color),
+                      visual: SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz)),
                       costLabel: state.isSpecRelicEquipped
                           ? (state.heroClass == HeroClass.deathknight ? tr('Uvolnit duše', 'Release Souls') : 'Relic spell')
                           : tr('Nutno nasadit v Inventáři!', 'Must be equipped in Inventory!'),
@@ -7475,7 +8145,7 @@ class SpellbookScreen extends StatelessWidget {
         if (state.hasGodClass) _SpellbookEntry(spellVisualTier3(c), '${spellShortDesc(c, 3)} (${state.spellLiveEffectText(3)})'),
         if (state.hasRank100Class) _SpellbookEntry(spellVisualTier4(c, state.rank100Choice), '${spellShortDesc(c, 4, choice: state.rank100Choice)} (${state.spellLiveEffectText(4, choice: state.rank100Choice)})'),
         if (state.currentSpecRelicUnlocked) _SpellbookEntry(
-          SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color),
+          SpellVisual('Relic: ${state.currentSpecRelic.spell}', state.currentSpecRelic.icon, state.currentSpecRelic.color, customIcon: (c, sz) => specRelicIconWidget(state.currentSpecRelic.kind, c, size: sz)),
           state.currentSpecRelic.effects.isNotEmpty ? state.currentSpecRelic.effects.first.description : 'Speciální spell ze specializačního Relicu.',
         ),
       ];
