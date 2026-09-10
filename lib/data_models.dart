@@ -951,6 +951,11 @@ class AchievementDef {
   final String title; // kosmetický titul udělený po odemčení
   final int rewardGold;
   final int rewardDust;
+  // Volitelná odměna navíc - odemkne konkrétní barvu pro Skin tlačítek spellů (per-slot picker,
+  // viz kSelectableButtonColors) - klíč musí přesně sedět s klíčem v té mapě. Na rozdíl od
+  // ostatních barev, co jdou koupit za zlato, tyhle 4 (vázané na Ascension I-IV) jdou získat
+  // JEN dosažením achievementu - viz konverzace "každá barva se musí odemknout".
+  final String? rewardButtonColor;
   const AchievementDef({
     required this.id,
     required this.name,
@@ -958,6 +963,7 @@ class AchievementDef {
     required this.title,
     this.rewardGold = 0,
     this.rewardDust = 0,
+    this.rewardButtonColor,
   });
 }
 
@@ -2008,7 +2014,7 @@ const Map<TutorialTipId, TutorialTipDef> kTutorialTips = {
 // koupi navíc k těm z BP - id 'battlepass_frame'/'battlepass_attack_skin' tu záměrně nejsou,
 // ty se dají získat jen skrz Battle Pass). Aury a skiny tlačítek jsou nové kategorie, dostupné
 // JEN tady.
-enum CosmeticCategory { frame, attackSkin, aura, buttonSkin }
+enum CosmeticCategory { frame, attackSkin, aura, buttonSkin, cardBackground }
 
 class CosmeticShopItem {
   final String id;
@@ -2064,6 +2070,17 @@ const List<CosmeticShopItem> kCosmeticShopCatalog = [
   CosmeticShopItem(id: 'btn_gold', category: CosmeticCategory.buttonSkin, name: 'Zlatý majestát', description: 'Tmavě zlatá tlačítka se zářivě žlutou svatozáří.', accent: Color(0xFFB8860B), crystalPrice: 80),
   CosmeticShopItem(id: 'btn_shadow', category: CosmeticCategory.buttonSkin, name: 'Stínový symbol', description: 'Téměř černá tlačítka s fialovou přízračnou září.', accent: Color(0xFF311B4D), crystalPrice: 160),
   CosmeticShopItem(id: 'btn_cosmic', category: CosmeticCategory.buttonSkin, name: 'Kosmický vzor', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFF1A237E), isPremiumOnly: true),
+  // ----- POZADÍ KARTY (barva pozadí uvnitř rámu portrétu v boji - viz konverzace: "vlevo je
+  // černá, za mě hezky základní, vpravo fialová, ne vždy se hodící" - dřív se pozadí VŽDY
+  // odvozovalo od barvy třídy (heroAccent), takže si hráč nemohl vybrat neutrální/jinou barvu,
+  // i když se mu barva jeho třídy do daného pozadí nehodila) -----
+  CosmeticShopItem(id: 'bg_obsidian', category: CosmeticCategory.cardBackground, name: 'Obsidiánové pozadí', description: 'Čistě tmavé pozadí bez barevného nádechu třídy.', accent: Color(0xFF1A1A1E), goldPrice: 800),
+  CosmeticShopItem(id: 'bg_navy', category: CosmeticCategory.cardBackground, name: 'Temně modré pozadí', description: 'Chladné tmavě modré pozadí.', accent: Color(0xFF16233D), goldPrice: 800),
+  CosmeticShopItem(id: 'bg_forest', category: CosmeticCategory.cardBackground, name: 'Lesní pozadí', description: 'Tlumené tmavě zelené pozadí.', accent: Color(0xFF14311F), goldPrice: 1600, crystalPrice: 10),
+  CosmeticShopItem(id: 'bg_crimson', category: CosmeticCategory.cardBackground, name: 'Karmínové pozadí', description: 'Temně rudé pozadí.', accent: Color(0xFF3A1414), crystalPrice: 60),
+  CosmeticShopItem(id: 'bg_royal', category: CosmeticCategory.cardBackground, name: 'Královsky fialové pozadí', description: 'Sytě fialové pozadí (pro ty, komu se fialová hodí).', accent: Color(0xFF2A1B3D), crystalPrice: 60),
+  CosmeticShopItem(id: 'bg_gold', category: CosmeticCategory.cardBackground, name: 'Zlaté pozadí', description: 'Teplé tmavě zlaté pozadí.', accent: Color(0xFF3A2E14), crystalPrice: 120),
+  CosmeticShopItem(id: 'bg_void', category: CosmeticCategory.cardBackground, name: 'Pozadí Prázdnoty', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFF0A0A0C), isPremiumOnly: true),
 ];
 
 // Vzhled skinu tlačítek spellů - barva pozadí/okraje tlačítka, barva záře (glow) a ikona, co

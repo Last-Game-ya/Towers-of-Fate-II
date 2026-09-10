@@ -3036,47 +3036,50 @@ void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent
       canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(c.dx - s * 0.08, c.dy + s * 0.10), width: s * 0.11, height: s * 0.06), Radius.circular(s * 0.03)), Paint()..color = light);
       break;
     case _SpecAccent.vampireFangs:
-      // Upíří tesáky - zaoblená "dáseň" nahoře, dva ostré špičaté zuby dole. Jednoduchý,
-      // okamžitě čitelný symbol i v malém měřítku.
+      // Upíří tesáky - PŘEPRACOVÁNO: vnitřní zakřivení dásně bylo dřív mnohem mělčí než vnější,
+      // takže dáseň vypadala jako tlustý flek místo tenkého pásu. Teď je vnitřní křivka skoro
+      // stejně hluboká jako vnější (tenký srpek dásně) a zuby na ni nasedají zaobleně
+      // (quadraticBezierTo místo ostré rovné hrany), ať navazují plynule, ne jako přilepené.
       final gum = Path()
-        ..moveTo(c.dx - s * 0.14, c.dy - s * 0.04)
-        ..quadraticBezierTo(c.dx, c.dy - s * 0.15, c.dx + s * 0.14, c.dy - s * 0.04)
-        ..lineTo(c.dx + s * 0.14, c.dy + s * 0.01)
-        ..quadraticBezierTo(c.dx, c.dy - s * 0.08, c.dx - s * 0.14, c.dy + s * 0.01)
+        ..moveTo(c.dx - s * 0.15, c.dy - s * 0.03)
+        ..quadraticBezierTo(c.dx, c.dy - s * 0.16, c.dx + s * 0.15, c.dy - s * 0.03)
+        ..quadraticBezierTo(c.dx, c.dy - s * 0.10, c.dx - s * 0.15, c.dy - s * 0.03)
         ..close();
       canvas.drawPath(gum, p);
       final fangL = Path()
-        ..moveTo(c.dx - s * 0.085, c.dy - s * 0.005)
-        ..lineTo(c.dx - s * 0.10, c.dy + s * 0.14)
-        ..lineTo(c.dx - s * 0.045, c.dy - s * 0.005)
+        ..moveTo(c.dx - s * 0.095, c.dy - s * 0.015)
+        ..quadraticBezierTo(c.dx - s * 0.115, c.dy + s * 0.06, c.dx - s * 0.095, c.dy + s * 0.145)
+        ..quadraticBezierTo(c.dx - s * 0.065, c.dy + s * 0.05, c.dx - s * 0.04, c.dy - s * 0.015)
         ..close();
       final fangR = Path()
-        ..moveTo(c.dx + s * 0.085, c.dy - s * 0.005)
-        ..lineTo(c.dx + s * 0.10, c.dy + s * 0.14)
-        ..lineTo(c.dx + s * 0.045, c.dy - s * 0.005)
+        ..moveTo(c.dx + s * 0.095, c.dy - s * 0.015)
+        ..quadraticBezierTo(c.dx + s * 0.115, c.dy + s * 0.06, c.dx + s * 0.095, c.dy + s * 0.145)
+        ..quadraticBezierTo(c.dx + s * 0.065, c.dy + s * 0.05, c.dx + s * 0.04, c.dy - s * 0.015)
         ..close();
       canvas.drawPath(fangL, p);
       canvas.drawPath(fangR, p);
-      canvas.drawCircle(Offset(c.dx - s * 0.10, c.dy + s * 0.13), s * 0.012, Paint()..color = Colors.white.withOpacity(.7));
-      canvas.drawCircle(Offset(c.dx + s * 0.10, c.dy + s * 0.13), s * 0.012, Paint()..color = Colors.white.withOpacity(.7));
+      canvas.drawCircle(Offset(c.dx - s * 0.095, c.dy + s * 0.13), s * 0.012, Paint()..color = Colors.white.withOpacity(.7));
+      canvas.drawCircle(Offset(c.dx + s * 0.095, c.dy + s * 0.13), s * 0.012, Paint()..color = Colors.white.withOpacity(.7));
       break;
     case _SpecAccent.wolfHead:
-      // Vlčí hlava z profilu (dívá se doprava) - špičaté ucho, svažující se čelo, protáhlý
-      // čenich, náznak tlamy a jedno oko. Stylizovaná jednotahová silueta, ne realistická kresba.
+      // Vlčí hlava z profilu (dívá se doprava) - PŘEPRACOVÁNO (viz konverzace o kvalitě křivek):
+      // dřív byla poskládaná jen z rovných úseček (10 lineTo), takže působila hranatě/lámaně a
+      // čenich byl tak tenký, že vypadal jako trn místo čumáku. Teď střídá organické křivky
+      // (zátylek, čelo, čenich, čelist) s VĚDOMĚ ponechanými rovnými hranami jen na uchu (uši
+      // jsou přirozeně špičaté/rovné, ne oblé) - kontrast mezi obojím dělá siluetu čitelnější.
       final head = Path()
-        ..moveTo(c.dx - s * 0.12, c.dy + s * 0.14)
-        ..lineTo(c.dx - s * 0.13, c.dy - s * 0.04)
-        ..lineTo(c.dx - s * 0.02, c.dy - s * 0.20)
-        ..lineTo(c.dx + s * 0.015, c.dy - s * 0.07)
-        ..lineTo(c.dx + s * 0.15, c.dy - s * 0.03)
-        ..lineTo(c.dx + s * 0.20, c.dy + s * 0.025)
-        ..lineTo(c.dx + s * 0.13, c.dy + s * 0.055)
-        ..lineTo(c.dx + s * 0.095, c.dy + s * 0.025)
-        ..lineTo(c.dx + s * 0.01, c.dy + s * 0.10)
-        ..lineTo(c.dx - s * 0.04, c.dy + s * 0.13)
+        ..moveTo(c.dx - s * 0.11, c.dy + s * 0.15)
+        ..quadraticBezierTo(c.dx - s * 0.16, c.dy + s * 0.02, c.dx - s * 0.11, c.dy - s * 0.08)
+        ..quadraticBezierTo(c.dx - s * 0.09, c.dy - s * 0.17, c.dx - s * 0.015, c.dy - s * 0.205)
+        ..lineTo(c.dx + s * 0.02, c.dy - s * 0.095) // vnitřní hrana ucha - záměrně rovná
+        ..quadraticBezierTo(c.dx + s * 0.08, c.dy - s * 0.085, c.dx + s * 0.17, c.dy - s * 0.045)
+        ..quadraticBezierTo(c.dx + s * 0.225, c.dy - s * 0.015, c.dx + s * 0.19, c.dy + s * 0.025)
+        ..quadraticBezierTo(c.dx + s * 0.12, c.dy + s * 0.05, c.dx + s * 0.065, c.dy + s * 0.02)
+        ..quadraticBezierTo(c.dx + s * 0.02, c.dy + s * 0.075, c.dx - s * 0.02, c.dy + s * 0.125)
+        ..quadraticBezierTo(c.dx - s * 0.06, c.dy + s * 0.165, c.dx - s * 0.11, c.dy + s * 0.15)
         ..close();
       canvas.drawPath(head, p);
-      canvas.drawCircle(Offset(c.dx + s * 0.015, c.dy - s * 0.015), s * 0.016, Paint()..color = const Color(0xFF14181C));
+      canvas.drawCircle(Offset(c.dx + s * 0.02, c.dy - s * 0.02), s * 0.016, Paint()..color = const Color(0xFF14181C));
       break;
     case _SpecAccent.eye:
       // Samostatné oko - mandlový obrys, duhovka v barvě skinu, tmavá zornice a malý lesk.
@@ -3142,21 +3145,24 @@ void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent
       miniDagger(-pi * 0.25);
       break;
     case _SpecAccent.pillow:
-      // Polštář - měkký zaoblený obrys se zvlněnými hranami (mírně "nafouklý" tvar, ne ostrý
-      // obdélník) + prošívaný knoflík uprostřed se čtyřmi stehy do rohů.
+      // Polštář - PŘEPRACOVÁNO: dřív 4 stejně velké "laloky" po obvodu dělaly tvar spíš jako
+      // květinu/mrak než polštář. Teď má rovné horní/spodní hrany (jen zaoblené rohy) - mnohem
+      // čitelnější jako plochý čtvercový polštář - plus prošívaný knoflík s viditelným prstencem
+      // (ne jen tečka) a stehy, co míří přesně do rohů zaoblení.
       final pillow = Path()
-        ..moveTo(c.dx - s * 0.16, c.dy - s * 0.10)
-        ..quadraticBezierTo(c.dx - s * 0.06, c.dy - s * 0.16, c.dx, c.dy - s * 0.10)
-        ..quadraticBezierTo(c.dx + s * 0.06, c.dy - s * 0.16, c.dx + s * 0.16, c.dy - s * 0.10)
-        ..quadraticBezierTo(c.dx + s * 0.10, c.dy, c.dx + s * 0.16, c.dy + s * 0.10)
-        ..quadraticBezierTo(c.dx + s * 0.06, c.dy + s * 0.16, c.dx, c.dy + s * 0.10)
-        ..quadraticBezierTo(c.dx - s * 0.06, c.dy + s * 0.16, c.dx - s * 0.16, c.dy + s * 0.10)
-        ..quadraticBezierTo(c.dx - s * 0.10, c.dy, c.dx - s * 0.16, c.dy - s * 0.10)
+        ..moveTo(c.dx - s * 0.17, c.dy - s * 0.02)
+        ..quadraticBezierTo(c.dx - s * 0.185, c.dy - s * 0.13, c.dx - s * 0.06, c.dy - s * 0.14)
+        ..lineTo(c.dx + s * 0.06, c.dy - s * 0.14)
+        ..quadraticBezierTo(c.dx + s * 0.185, c.dy - s * 0.13, c.dx + s * 0.17, c.dy - s * 0.02)
+        ..quadraticBezierTo(c.dx + s * 0.15, c.dy + s * 0.095, c.dx + s * 0.05, c.dy + s * 0.135)
+        ..lineTo(c.dx - s * 0.05, c.dy + s * 0.135)
+        ..quadraticBezierTo(c.dx - s * 0.15, c.dy + s * 0.095, c.dx - s * 0.17, c.dy - s * 0.02)
         ..close();
       canvas.drawPath(pillow, p);
-      canvas.drawCircle(c, s * 0.022, Paint()..color = color.withOpacity(.6));
-      for (final d in [const Offset(-1, -0.6), Offset(1, -0.6), const Offset(-1, 0.6), Offset(1, 0.6)]) {
-        canvas.drawLine(c, c + Offset(d.dx * s * 0.10, d.dy * s * 0.10), Paint()..color = color.withOpacity(.35)..strokeWidth = s * 0.006);
+      canvas.drawCircle(c, s * 0.026, Paint()..color = color.withOpacity(.75));
+      canvas.drawCircle(c, s * 0.026, Paint()..style = PaintingStyle.stroke..strokeWidth = s * 0.006..color = Colors.black.withOpacity(.3));
+      for (final d in [const Offset(-1, -0.75), Offset(1, -0.75), const Offset(-1, 0.75), Offset(1, 0.75)]) {
+        canvas.drawLine(c, c + Offset(d.dx * s * 0.11, d.dy * s * 0.09), Paint()..color = color.withOpacity(.35)..strokeWidth = s * 0.006);
       }
       break;
     case _SpecAccent.football:
@@ -3180,7 +3186,7 @@ void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent
       for (int i = 0; i < 5; i++) {
         final a = -pi / 2 + i * (2 * pi / 5);
         final outer = c + Offset(cos(a), sin(a)) * s * 0.16;
-        canvas.drawLine(pentaPts[i], outer, Paint()..color = const Color(0xFF14181C)..strokeWidth = s * 0.012);
+        canvas.drawLine(pentaPts[i], outer, Paint()..color = const Color(0xFF14181C)..strokeWidth = s * 0.016..strokeCap = StrokeCap.round);
       }
       break;
   }
@@ -5481,9 +5487,11 @@ class _SceneLifePainter extends CustomPainter {
         canvas.drawLine(bottom, headPoint, Paint()..color = runeRiseColor.withOpacity(0.55 * glowOpacity)..strokeWidth = 3..strokeCap = StrokeCap.round..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
       }
       // Jasná "hlava" stoupajícího světla - jen během stoupání (cycle < 0.55), ne během držení.
+      // Čistě modrá (runeRiseColor), bez bílého jádra uprostřed - to dřív "ředilo" barvu a
+      // působilo to jako bílá tečka s modrým okrajem místo jednolitého modrého světla.
       if (cycle < 0.55) {
-        canvas.drawCircle(headPoint, 6, Paint()..color = runeRiseColor.withOpacity(0.9)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
-        canvas.drawCircle(headPoint, 2.2, Paint()..color = Colors.white.withOpacity(0.85));
+        canvas.drawCircle(headPoint, 7, Paint()..color = runeRiseColor.withOpacity(0.95)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+        canvas.drawCircle(headPoint, 2.6, Paint()..color = runeRiseColor);
       }
     }
     // Poletující světlušky/jiskry napříč celou scénou - teplá barva u Města, ohnivější u Dobrodružství.
@@ -5838,7 +5846,9 @@ class CityScreen extends StatelessWidget {
         // dole) - pozice přeměřeny detekcí modrých pixelů přímo ze screenshotu. Modré světlo
         // po nich postupně stoupá zdola nahoru (viz _SceneLifePainter).
         runeRiseLines: const [
-          [Offset(0.140, 0.818), Offset(0.140, 0.680)],
+          // Levá linie přeměřena přesně na skutečnou pozici run ze screenshotu (detekce
+          // modrých pixelů) - dřív mířila moc doprava/dolů, mimo skutečnou runovou kresbu.
+          [Offset(0.126, 0.775), Offset(0.126, 0.675)],
           [Offset(0.190, 0.818), Offset(0.190, 0.680)],
         ],
         runeRiseColor: const Color(0xFF6FC8FF),

@@ -714,9 +714,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         "equippedAura": equippedAura,
         "unlockedButtonSkins": unlockedButtonSkins.toList(),
         "equippedButtonSkin": equippedButtonSkin,
+        "unlockedCardBackgrounds": unlockedCardBackgrounds.toList(),
+        "equippedCardBackground": equippedCardBackground,
         "customSlotIcon": customSlotIcon,
         "customSlotButtonColor": customSlotButtonColor,
         "customSlotGlowColor": customSlotGlowColor,
+        "unlockedButtonIcons": unlockedButtonIcons.toList(),
+        "unlockedButtonColorNames": unlockedButtonColorNames.toList(),
         "redeemedPromoCodes": redeemedPromoCodes.toList(),
         "introSeen": introSeen,
         "introTutorialDone": introTutorialDone,
@@ -912,9 +916,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     unlockedButtonSkins = Set<String>.from((json["unlockedButtonSkins"] as List?) ?? const ['default']);
     if (unlockedButtonSkins.isEmpty) unlockedButtonSkins.add('default');
     equippedButtonSkin = json["equippedButtonSkin"] as String? ?? 'default';
+    unlockedCardBackgrounds = Set<String>.from((json["unlockedCardBackgrounds"] as List?) ?? const ['default']);
+    if (unlockedCardBackgrounds.isEmpty) unlockedCardBackgrounds.add('default');
+    equippedCardBackground = json["equippedCardBackground"] as String? ?? 'default';
     customSlotIcon = Map<String, String>.from((json["customSlotIcon"] as Map?) ?? const {});
     customSlotButtonColor = Map<String, int>.from((json["customSlotButtonColor"] as Map?) ?? const {});
     customSlotGlowColor = Map<String, int>.from((json["customSlotGlowColor"] as Map?) ?? const {});
+    unlockedButtonIcons = Set<String>.from((json["unlockedButtonIcons"] as List?) ?? const ['default']);
+    if (unlockedButtonIcons.isEmpty) unlockedButtonIcons.add('default');
+    unlockedButtonColorNames = Set<String>.from((json["unlockedButtonColorNames"] as List?) ?? const ['Výchozí']);
+    if (unlockedButtonColorNames.isEmpty) unlockedButtonColorNames.add('Výchozí');
     redeemedPromoCodes = Set<String>.from((json["redeemedPromoCodes"] as List?) ?? const []);
     introSeen = json["introSeen"] as bool? ?? false;
     introTutorialDone = json["introTutorialDone"] as bool? ?? true;
@@ -1754,6 +1765,24 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   // permanentně, dokud je boj otevřený - viz kButtonSkinStyles a SpellIconButton.
   Set<String> unlockedButtonSkins = {'default'};
   String equippedButtonSkin = 'default';
+  // Pozadí karty (uvnitř rámu portrétu v boji) - nezávislé na barvě třídy. 'default' = staré
+  // chování (pozadí odvozené z heroAccent).
+  Set<String> unlockedCardBackgrounds = {'default'};
+  String equippedCardBackground = 'default';
+
+  void equipCardBackground(String id) {
+    if (!unlockedCardBackgrounds.contains(id)) return;
+    equippedCardBackground = id;
+    notifyListeners();
+  }
+
+  Color? get equippedCardBackgroundColor {
+    if (equippedCardBackground == 'default') return null;
+    for (final c in kCosmeticShopCatalog) {
+      if (c.id == equippedCardBackground) return c.accent;
+    }
+    return null;
+  }
   // Ruční volba PO JEDNOTLIVÝCH SLOTECH (viz konverzace: "meč pro spell 1, kapka pro spell 2,
   // každý svojí barvou") - klíč je 'basicAttack'/'tier1'/'tier2'/'tier3'/'tier4'/'relic' (viz
   // SpellVisual.slotKey). Nezávislé na equippedButtonSkin výš a má PŘEDNOST před ním, pokud je
@@ -1763,6 +1792,53 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   Map<String, String> customSlotIcon = {};
   Map<String, int> customSlotButtonColor = {};
   Map<String, int> customSlotGlowColor = {};
+  // Odemykání SAMOTNÝCH symbolů/barev pro picker výš (viz konverzace: "každá ikona a každá
+  // barva se musí odemknout") - odděleno od toho, co si hráč zrovna NASADIL do daného slotu
+  // (customSlotIcon/Color výš). 'default'/'Výchozí' jsou vždycky odemčené zdarma. Zbytek
+  // symbolů a 14 z 18 barev jde koupit za zlato (viz unlockButtonIconWithGold/
+  // unlockButtonColorWithGold) - zbylé 4 barvy (Bílá/Červená/Oranžová/Černá) NEJDOU koupit,
+  // jen je dá odemknutí Ascension I-IV (viz kAscensionButtonColors a _unlockAchievement).
+  Set<String> unlockedButtonIcons = {'default'};
+  Set<String> unlockedButtonColorNames = {'Výchozí'};
+  static const int buttonIconUnlockPrice = 150;
+  static const int buttonColorUnlockPrice = 120;
+  // Tyhle 4 barvy jsou vyhrazené pro achievementy (Ascension I-IV) - i kdyby měl hráč dost
+  // zlata, nejdou koupit v pickeru, jen se zobrazí požadavek na achievement.
+  static const Set<String> achievementOnlyButtonColors = {'Bílá', 'Červená', 'Oranžová', 'Černá'};
+
+  bool isButtonIconUnlocked(String accentName) => accentName == 'default' || unlockedButtonIcons.contains(accentName);
+  bool isButtonColorUnlocked(String colorName) => colorName == 'Výchozí' || unlockedButtonColorNames.contains(colorName);
+
+  void unlockButtonIconWithGold(String accentName) {
+    if (isButtonIconUnlocked(accentName)) return;
+    if (gold < buttonIconUnlockPrice) {
+      message = tr("Nedostatek zlata (potřeba: $buttonIconUnlockPrice 🪙).", "Not enough gold (need: $buttonIconUnlockPrice 🪙).");
+      notifyListeners();
+      return;
+    }
+    gold -= buttonIconUnlockPrice;
+    unlockedButtonIcons.add(accentName);
+    message = tr("✨ Symbol odemčen!", "✨ Symbol unlocked!");
+    notifyListeners();
+  }
+
+  void unlockButtonColorWithGold(String colorName) {
+    if (isButtonColorUnlocked(colorName)) return;
+    if (achievementOnlyButtonColors.contains(colorName)) {
+      message = tr("Tuhle barvu odemkne jen achievement Ascension.", "This color only unlocks via the Ascension achievement.");
+      notifyListeners();
+      return;
+    }
+    if (gold < buttonColorUnlockPrice) {
+      message = tr("Nedostatek zlata (potřeba: $buttonColorUnlockPrice 🪙).", "Not enough gold (need: $buttonColorUnlockPrice 🪙).");
+      notifyListeners();
+      return;
+    }
+    gold -= buttonColorUnlockPrice;
+    unlockedButtonColorNames.add(colorName);
+    message = tr("✨ Barva odemčena!", "✨ Color unlocked!");
+    notifyListeners();
+  }
 
   void setCustomSlotIcon(String slot, _SpecAccent? accent) {
     if (accent == null) {
@@ -1849,6 +1925,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       CosmeticCategory.attackSkin => unlockedAttackSkins.contains(id),
       CosmeticCategory.aura => unlockedAuras.contains(id),
       CosmeticCategory.buttonSkin => unlockedButtonSkins.contains(id),
+      CosmeticCategory.cardBackground => unlockedCardBackgrounds.contains(id),
     };
     if (owned) return;
     if (item.crystalPrice > 0) {
@@ -1871,6 +1948,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       case CosmeticCategory.attackSkin: unlockedAttackSkins.add(id);
       case CosmeticCategory.aura: unlockedAuras.add(id);
       case CosmeticCategory.buttonSkin: unlockedButtonSkins.add(id);
+      case CosmeticCategory.cardBackground: unlockedCardBackgrounds.add(id);
     }
     message = tr("✨ Koupeno: ${item.name}!", "✨ Purchased: ${item.name}!");
     _checkAchievements();
@@ -8047,10 +8125,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     AchievementId.arenaGladiator: AchievementDef(id: AchievementId.arenaGladiator, name: tr("Gladiátor", "Gladiator"), description: tr("Dokonči úplně všechny ligy Arény a vstup do endless Gladiátorské ligy (rating bez stropu).", "Complete every Arena league and enter the endless Gladiator league (uncapped rating)."), title: tr("Gladiátor", "Gladiator"), rewardGold: 20000, rewardDust: 20000),
     AchievementId.arenaRating2500: AchievementDef(id: AchievementId.arenaRating2500, name: tr("Aréna: Rating 2500", "Arena: Rating 2500"), description: tr("Dosáhni Gladiátorského ratingu 2500 (aktuální sezóna platí jako popisek titulu).", "Reach Gladiator rating 2500 (the current season serves as the title's descriptor)."), title: tr("Nezničitelný", "Indestructible"), rewardGold: 15000, rewardDust: 15000),
     AchievementId.arenaRating5000: AchievementDef(id: AchievementId.arenaRating5000, name: tr("Aréna: Rating 5000", "Arena: Rating 5000"), description: tr("Dosáhni Gladiátorského ratingu 5000 - stropu bonusové síly soupeřů.", "Reach Gladiator rating 5000 - the cap on opponents' bonus strength."), title: tr("God of Arena", "God of Arena"), rewardGold: 30000, rewardDust: 30000),
-    AchievementId.ascensionHardcore: AchievementDef(id: AchievementId.ascensionHardcore, name: tr("Ascension I: Probuzení", "Ascension I: Awakening"), description: tr("Poraz bosse na patře 100 v Normal Lairu a odemkni Hardcore Mode (Ascension level 1).", "Defeat the boss on floor 100 in the Normal Lair and unlock Hardcore Mode (Ascension level 1)."), title: tr("Povznesený I", "Ascended I"), rewardDust: 2000),
-    AchievementId.ascensionPredpekli: AchievementDef(id: AchievementId.ascensionPredpekli, name: tr("Ascension II: Předpeklí", "Ascension II: Netherworld"), description: tr("Odemkni Předpeklí (Ascension level 2).", "Unlock the Netherworld (Ascension level 2)."), title: tr("Povznesený II", "Ascended II"), rewardDust: 6000),
-    AchievementId.ascensionPeklo: AchievementDef(id: AchievementId.ascensionPeklo, name: tr("Ascension III: Peklo", "Ascension III: Hell"), description: tr("Odemkni Peklo (Ascension level 3).", "Unlock Hell (Ascension level 3)."), title: tr("Povznesený III", "Ascended III"), rewardDust: 15000),
-    AchievementId.ascensionComplete: AchievementDef(id: AchievementId.ascensionComplete, name: tr("Ascension IV: Za hranicí Pekla", "Ascension IV: Beyond Hell"), description: tr("Poraz bosse na patře 100 v Peklu (Ascension level 4) - odemkni Endless Scale.", "Defeat the boss on floor 100 in Hell (Ascension level 4) - unlock Endless Scale."), title: tr("Povznesený", "Ascended"), rewardGold: 10000, rewardDust: 30000),
+    AchievementId.ascensionHardcore: AchievementDef(id: AchievementId.ascensionHardcore, name: tr("Ascension I: Probuzení", "Ascension I: Awakening"), description: tr("Poraz bosse na patře 100 v Normal Lairu a odemkni Hardcore Mode (Ascension level 1).", "Defeat the boss on floor 100 in the Normal Lair and unlock Hardcore Mode (Ascension level 1)."), title: tr("Povznesený I", "Ascended I"), rewardDust: 2000, rewardButtonColor: 'Bílá'),
+    AchievementId.ascensionPredpekli: AchievementDef(id: AchievementId.ascensionPredpekli, name: tr("Ascension II: Předpeklí", "Ascension II: Netherworld"), description: tr("Odemkni Předpeklí (Ascension level 2).", "Unlock the Netherworld (Ascension level 2)."), title: tr("Povznesený II", "Ascended II"), rewardDust: 6000, rewardButtonColor: 'Červená'),
+    AchievementId.ascensionPeklo: AchievementDef(id: AchievementId.ascensionPeklo, name: tr("Ascension III: Peklo", "Ascension III: Hell"), description: tr("Odemkni Peklo (Ascension level 3).", "Unlock Hell (Ascension level 3)."), title: tr("Povznesený III", "Ascended III"), rewardDust: 15000, rewardButtonColor: 'Oranžová'),
+    AchievementId.ascensionComplete: AchievementDef(id: AchievementId.ascensionComplete, name: tr("Ascension IV: Za hranicí Pekla", "Ascension IV: Beyond Hell"), description: tr("Poraz bosse na patře 100 v Peklu (Ascension level 4) - odemkni Endless Scale.", "Defeat the boss on floor 100 in Hell (Ascension level 4) - unlock Endless Scale."), title: tr("Povznesený", "Ascended"), rewardGold: 10000, rewardDust: 30000, rewardButtonColor: 'Černá'),
     AchievementId.soulDemonFirstBlood: AchievementDef(id: AchievementId.soulDemonFirstBlood, name: tr("Lovec duší", "Soul Hunter"), description: tr("Poraz Soul Demona v Endless Scale poprvé.", "Defeat the Soul Demon in Endless Scale for the first time."), title: tr("Lovec duší", "Soul Hunter"), rewardDust: 2000),
     AchievementId.soulDemonSlayer: AchievementDef(id: AchievementId.soulDemonSlayer, name: tr("Vyvraždění duší", "Slaughter of Souls"), description: tr("Poraz Soul Demona 50×.", "Defeat the Soul Demon 50 times."), title: tr("Vyvraždění duší", "Slaughter of Souls"), rewardDust: 15000, rewardGold: 5000),
     AchievementId.artifactForged: AchievementDef(id: AchievementId.artifactForged, name: tr("Kovář artefaktu", "Artifact Smith"), description: tr("Vylepši svou artefaktovou zbraň v Runovém kováři obětováním silnější zbraně.", "Upgrade your artifact weapon at the Rune Blacksmith by sacrificing a stronger weapon."), title: tr("Kovář artefaktu", "Artifact Smith"), rewardDust: 3000),
@@ -8202,6 +8280,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final def = achievementDefs[id]!;
     gold += def.rewardGold;
     magicDust += def.rewardDust;
+    if (def.rewardButtonColor != null) unlockedButtonColorNames.add(def.rewardButtonColor!);
     activeTitle ??= id; // první odemčený achievement se rovnou nastaví jako aktivní titul
     message = tr("🏆 Achievement odemčen: ${def.name}! Titul „${def.title}“ k dispozici.", "🏆 Achievement unlocked: ${def.name}! Title \u201e${def.title}\u201c now available.");
     _triggerCelebration('ACHIEVEMENT!', subtitle: def.name, icon: Icons.emoji_events, color: const Color(0xFFFFD700));
@@ -8360,7 +8439,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (gearScore >= 6000) _unlockAchievement(AchievementId.gearScoreLegend);
     if (totalDeaths >= 250) _unlockAchievement(AchievementId.survivor250);
     if (heroClass == HeroClass.necromancer && floor >= 5) _unlockAchievement(AchievementId.necromancerPioneer);
-    final ownedCosmetics = (unlockedFrames.length - 1) + (unlockedAttackSkins.length - 1) + (unlockedAuras.length - 1) + (unlockedButtonSkins.length - 1);
+    final ownedCosmetics = (unlockedFrames.length - 1) + (unlockedAttackSkins.length - 1) + (unlockedAuras.length - 1) + (unlockedButtonSkins.length - 1) + (unlockedCardBackgrounds.length - 1);
     if (ownedCosmetics >= 5) _unlockAchievement(AchievementId.cosmeticCollector);
     if (ownedCosmetics >= 15) _unlockAchievement(AchievementId.cosmeticConnoisseur);
   }
