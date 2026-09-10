@@ -988,6 +988,7 @@ class PromoCodeDef {
   final int rewardLegendaryEssence;
   final int rewardMaterials;
   final int rewardConquerorCoins;
+  final int rewardCosmeticSparks;
   final int requiredLevel; // 0 = bez omezení, jinak minimální level hrdiny pro uplatnění
   const PromoCodeDef({
     required this.code,
@@ -1000,6 +1001,7 @@ class PromoCodeDef {
     this.rewardLegendaryEssence = 0,
     this.rewardMaterials = 0,
     this.rewardConquerorCoins = 0,
+    this.rewardCosmeticSparks = 0,
     this.requiredLevel = 0,
   });
 }
@@ -2022,8 +2024,10 @@ class CosmeticShopItem {
   final String name;
   final String description;
   final Color accent;
-  final int goldPrice; // 0 = neprodává se za zlato (viz crystalPrice/isPremiumOnly)
-  final int crystalPrice; // 0 = neprodává se za krystaly
+  // Kosmetika se kupuje VÝHRADNĚ za Jiskry (viz cosmeticSparks v GameState) - vlastní měna
+  // oddělená od zlata/krystalů, viz konverzace "vytvoř currency pro nákup kosmetiky, zruš
+  // crystal a goldy". 0 = neprodává se za Jiskry (viz isPremiumOnly).
+  final int sparkPrice;
   final bool isPremiumOnly; // true = zatím jen placeholder pro budoucí reálnou platbu, nejde koupit za herní měnu
   const CosmeticShopItem({
     required this.id,
@@ -2031,55 +2035,54 @@ class CosmeticShopItem {
     required this.name,
     required this.description,
     required this.accent,
-    this.goldPrice = 0,
-    this.crystalPrice = 0,
+    this.sparkPrice = 0,
     this.isPremiumOnly = false,
   });
 }
 
 const List<CosmeticShopItem> kCosmeticShopCatalog = [
   // ----- RÁMY PORTRÉTU -----
-  CosmeticShopItem(id: 'frame_bronze', category: CosmeticCategory.frame, name: 'Bronzový rám', description: 'Prostý bronzový lem kolem portrétu.', accent: Color(0xFFCD7F32), goldPrice: 800),
-  CosmeticShopItem(id: 'frame_silver', category: CosmeticCategory.frame, name: 'Stříbrný rám', description: 'Leštěné stříbro s jemným leskem.', accent: Color(0xFFC0C0C0), goldPrice: 2000),
-  CosmeticShopItem(id: 'frame_emerald', category: CosmeticCategory.frame, name: 'Smaragdový rám', description: 'Zdobený rám s vsazenými smaragdy.', accent: Color(0xFF2ECC71), goldPrice: 5000, crystalPrice: 20),
-  CosmeticShopItem(id: 'frame_sapphire', category: CosmeticCategory.frame, name: 'Safírový rám', description: 'Chladně modrý, jako led co nikdy nepoleví.', accent: Color(0xFF3498DB), crystalPrice: 60),
-  CosmeticShopItem(id: 'frame_ember', category: CosmeticCategory.frame, name: 'Žhnoucí rám', description: 'Praskliny žhavé lávy pulzující pod povrchem.', accent: Color(0xFFFF5722), crystalPrice: 120),
-  CosmeticShopItem(id: 'frame_void', category: CosmeticCategory.frame, name: 'Rám Propasti', description: 'Temnota, co se dívá zpátky.', accent: Color(0xFF6A0DAD), crystalPrice: 250),
+  CosmeticShopItem(id: 'frame_bronze', category: CosmeticCategory.frame, name: 'Bronzový rám', description: 'Prostý bronzový lem kolem portrétu.', accent: Color(0xFFCD7F32), sparkPrice: 25),
+  CosmeticShopItem(id: 'frame_silver', category: CosmeticCategory.frame, name: 'Stříbrný rám', description: 'Leštěné stříbro s jemným leskem.', accent: Color(0xFFC0C0C0), sparkPrice: 50),
+  CosmeticShopItem(id: 'frame_emerald', category: CosmeticCategory.frame, name: 'Smaragdový rám', description: 'Zdobený rám s vsazenými smaragdy.', accent: Color(0xFF2ECC71), sparkPrice: 90),
+  CosmeticShopItem(id: 'frame_sapphire', category: CosmeticCategory.frame, name: 'Safírový rám', description: 'Chladně modrý, jako led co nikdy nepoleví.', accent: Color(0xFF3498DB), sparkPrice: 150),
+  CosmeticShopItem(id: 'frame_ember', category: CosmeticCategory.frame, name: 'Žhnoucí rám', description: 'Praskliny žhavé lávy pulzující pod povrchem.', accent: Color(0xFFFF5722), sparkPrice: 220),
+  CosmeticShopItem(id: 'frame_void', category: CosmeticCategory.frame, name: 'Rám Propasti', description: 'Temnota, co se dívá zpátky.', accent: Color(0xFF6A0DAD), sparkPrice: 320),
   CosmeticShopItem(id: 'frame_celestial', category: CosmeticCategory.frame, name: 'Nebeský rám', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFFFFD700), isPremiumOnly: true),
   // ----- SKINY ZÁKLADNÍHO ÚTOKU -----
-  CosmeticShopItem(id: 'skin_frost', category: CosmeticCategory.attackSkin, name: 'Mrazivý úder', description: 'Každý zásah zanechá jinovatku.', accent: Color(0xFF81D4FA), goldPrice: 1000),
-  CosmeticShopItem(id: 'skin_venom', category: CosmeticCategory.attackSkin, name: 'Jedovaté ostří', description: 'Zelený jed kane z každého úderu.', accent: Color(0xFF8BC34A), goldPrice: 2500),
-  CosmeticShopItem(id: 'skin_storm', category: CosmeticCategory.attackSkin, name: 'Bouřkový zásah', description: 'Blesky praskají při každém útoku.', accent: Color(0xFF00BCD4), crystalPrice: 50),
-  CosmeticShopItem(id: 'skin_shadow', category: CosmeticCategory.attackSkin, name: 'Stínový řez', description: 'Útok se na okamžik rozpustí ve stínu.', accent: Color(0xFF5E35B1), crystalPrice: 90),
-  CosmeticShopItem(id: 'skin_infernal', category: CosmeticCategory.attackSkin, name: 'Pekelný plamen', description: 'Ohnivá exploze při každém zásahu.', accent: Color(0xFFE64A19), crystalPrice: 150),
-  CosmeticShopItem(id: 'skin_radiant', category: CosmeticCategory.attackSkin, name: 'Zářný úder', description: 'Čisté zlaté světlo, oslepující nepřátele.', accent: Color(0xFFFFC107), crystalPrice: 280),
+  CosmeticShopItem(id: 'skin_frost', category: CosmeticCategory.attackSkin, name: 'Mrazivý úder', description: 'Každý zásah zanechá jinovatku.', accent: Color(0xFF81D4FA), sparkPrice: 25),
+  CosmeticShopItem(id: 'skin_venom', category: CosmeticCategory.attackSkin, name: 'Jedovaté ostří', description: 'Zelený jed kane z každého úderu.', accent: Color(0xFF8BC34A), sparkPrice: 50),
+  CosmeticShopItem(id: 'skin_storm', category: CosmeticCategory.attackSkin, name: 'Bouřkový zásah', description: 'Blesky praskají při každém útoku.', accent: Color(0xFF00BCD4), sparkPrice: 90),
+  CosmeticShopItem(id: 'skin_shadow', category: CosmeticCategory.attackSkin, name: 'Stínový řez', description: 'Útok se na okamžik rozpustí ve stínu.', accent: Color(0xFF5E35B1), sparkPrice: 150),
+  CosmeticShopItem(id: 'skin_infernal', category: CosmeticCategory.attackSkin, name: 'Pekelný plamen', description: 'Ohnivá exploze při každém zásahu.', accent: Color(0xFFE64A19), sparkPrice: 220),
+  CosmeticShopItem(id: 'skin_radiant', category: CosmeticCategory.attackSkin, name: 'Zářný úder', description: 'Čisté zlaté světlo, oslepující nepřátele.', accent: Color(0xFFFFC107), sparkPrice: 320),
   CosmeticShopItem(id: 'skin_cosmic', category: CosmeticCategory.attackSkin, name: 'Kosmický zásah', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFFE91E63), isPremiumOnly: true),
   // ----- AURY (jen v obchodě, ne přes Battle Pass) -----
-  CosmeticShopItem(id: 'aura_ember', category: CosmeticCategory.aura, name: 'Aura žhavých uhlíků', description: 'Teplá oranžová záře kolem portrétu v boji.', accent: Color(0xFFFF7043), goldPrice: 1200),
-  CosmeticShopItem(id: 'aura_frost', category: CosmeticCategory.aura, name: 'Aura mrazu', description: 'Chladná modrá záře, jemně se chvěje.', accent: Color(0xFF4FC3F7), goldPrice: 1200),
-  CosmeticShopItem(id: 'aura_verdant', category: CosmeticCategory.aura, name: 'Aura divočiny', description: 'Zelenkavý přírodní odlesk.', accent: Color(0xFF66BB6A), goldPrice: 3000, crystalPrice: 15),
-  CosmeticShopItem(id: 'aura_arcane', category: CosmeticCategory.aura, name: 'Arkánová aura', description: 'Fialová záře plná potlačené magie.', accent: Color(0xFF9575CD), crystalPrice: 70),
-  CosmeticShopItem(id: 'aura_crimson', category: CosmeticCategory.aura, name: 'Karmínová aura', description: 'Sytě rudá, pulzuje jako tlukoucí srdce.', accent: Color(0xFFD32F2F), crystalPrice: 140),
-  CosmeticShopItem(id: 'aura_golden', category: CosmeticCategory.aura, name: 'Zlatá aura', description: 'Zářivě zlatá, viditelná z dálky.', accent: Color(0xFFFFD54F), crystalPrice: 260),
+  CosmeticShopItem(id: 'aura_ember', category: CosmeticCategory.aura, name: 'Aura žhavých uhlíků', description: 'Teplá oranžová záře kolem portrétu v boji.', accent: Color(0xFFFF7043), sparkPrice: 25),
+  CosmeticShopItem(id: 'aura_frost', category: CosmeticCategory.aura, name: 'Aura mrazu', description: 'Chladná modrá záře, jemně se chvěje.', accent: Color(0xFF4FC3F7), sparkPrice: 25),
+  CosmeticShopItem(id: 'aura_verdant', category: CosmeticCategory.aura, name: 'Aura divočiny', description: 'Zelenkavý přírodní odlesk.', accent: Color(0xFF66BB6A), sparkPrice: 60),
+  CosmeticShopItem(id: 'aura_arcane', category: CosmeticCategory.aura, name: 'Arkánová aura', description: 'Fialová záře plná potlačené magie.', accent: Color(0xFF9575CD), sparkPrice: 110),
+  CosmeticShopItem(id: 'aura_crimson', category: CosmeticCategory.aura, name: 'Karmínová aura', description: 'Sytě rudá, pulzuje jako tlukoucí srdce.', accent: Color(0xFFD32F2F), sparkPrice: 180),
+  CosmeticShopItem(id: 'aura_golden', category: CosmeticCategory.aura, name: 'Zlatá aura', description: 'Zářivě zlatá, viditelná z dálky.', accent: Color(0xFFFFD54F), sparkPrice: 280),
   CosmeticShopItem(id: 'aura_void', category: CosmeticCategory.aura, name: 'Aura Propasti', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFF4A148C), isPremiumOnly: true),
   // ----- SKINY TLAČÍTEK SPELLŮ (barva tlačítka + barva záře + ikona - viz kButtonSkinStyles,
   // aplikuje se na VŠECHNA ability tlačítka najednou, ne na jeden konkrétní spell) -----
-  CosmeticShopItem(id: 'btn_crimson', category: CosmeticCategory.buttonSkin, name: 'Krvavé runy', description: 'Tmavě rudá tlačítka se žhnoucí oranžovou září.', accent: Color(0xFFB71C1C), goldPrice: 1500),
-  CosmeticShopItem(id: 'btn_frost', category: CosmeticCategory.buttonSkin, name: 'Ledový plamen', description: 'Ledově modrá tlačítka s tyrkysovou září.', accent: Color(0xFF0288D1), goldPrice: 1500),
-  CosmeticShopItem(id: 'btn_nature', category: CosmeticCategory.buttonSkin, name: 'Přírodní síla', description: 'Lesní zelená tlačítka se šťavnatě limetkovou září.', accent: Color(0xFF2E7D32), goldPrice: 3200, crystalPrice: 18),
-  CosmeticShopItem(id: 'btn_gold', category: CosmeticCategory.buttonSkin, name: 'Zlatý majestát', description: 'Tmavě zlatá tlačítka se zářivě žlutou svatozáří.', accent: Color(0xFFB8860B), crystalPrice: 80),
-  CosmeticShopItem(id: 'btn_shadow', category: CosmeticCategory.buttonSkin, name: 'Stínový symbol', description: 'Téměř černá tlačítka s fialovou přízračnou září.', accent: Color(0xFF311B4D), crystalPrice: 160),
+  CosmeticShopItem(id: 'btn_crimson', category: CosmeticCategory.buttonSkin, name: 'Krvavé runy', description: 'Tmavě rudá tlačítka se žhnoucí oranžovou září.', accent: Color(0xFFB71C1C), sparkPrice: 30),
+  CosmeticShopItem(id: 'btn_frost', category: CosmeticCategory.buttonSkin, name: 'Ledový plamen', description: 'Ledově modrá tlačítka s tyrkysovou září.', accent: Color(0xFF0288D1), sparkPrice: 30),
+  CosmeticShopItem(id: 'btn_nature', category: CosmeticCategory.buttonSkin, name: 'Přírodní síla', description: 'Lesní zelená tlačítka se šťavnatě limetkovou září.', accent: Color(0xFF2E7D32), sparkPrice: 70),
+  CosmeticShopItem(id: 'btn_gold', category: CosmeticCategory.buttonSkin, name: 'Zlatý majestát', description: 'Tmavě zlatá tlačítka se zářivě žlutou svatozáří.', accent: Color(0xFFB8860B), sparkPrice: 140),
+  CosmeticShopItem(id: 'btn_shadow', category: CosmeticCategory.buttonSkin, name: 'Stínový symbol', description: 'Téměř černá tlačítka s fialovou přízračnou září.', accent: Color(0xFF311B4D), sparkPrice: 250),
   CosmeticShopItem(id: 'btn_cosmic', category: CosmeticCategory.buttonSkin, name: 'Kosmický vzor', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFF1A237E), isPremiumOnly: true),
   // ----- POZADÍ KARTY (barva pozadí uvnitř rámu portrétu v boji - viz konverzace: "vlevo je
   // černá, za mě hezky základní, vpravo fialová, ne vždy se hodící" - dřív se pozadí VŽDY
   // odvozovalo od barvy třídy (heroAccent), takže si hráč nemohl vybrat neutrální/jinou barvu,
   // i když se mu barva jeho třídy do daného pozadí nehodila) -----
-  CosmeticShopItem(id: 'bg_obsidian', category: CosmeticCategory.cardBackground, name: 'Obsidiánové pozadí', description: 'Čistě tmavé pozadí bez barevného nádechu třídy.', accent: Color(0xFF1A1A1E), goldPrice: 800),
-  CosmeticShopItem(id: 'bg_navy', category: CosmeticCategory.cardBackground, name: 'Temně modré pozadí', description: 'Chladné tmavě modré pozadí.', accent: Color(0xFF16233D), goldPrice: 800),
-  CosmeticShopItem(id: 'bg_forest', category: CosmeticCategory.cardBackground, name: 'Lesní pozadí', description: 'Tlumené tmavě zelené pozadí.', accent: Color(0xFF14311F), goldPrice: 1600, crystalPrice: 10),
-  CosmeticShopItem(id: 'bg_crimson', category: CosmeticCategory.cardBackground, name: 'Karmínové pozadí', description: 'Temně rudé pozadí.', accent: Color(0xFF3A1414), crystalPrice: 60),
-  CosmeticShopItem(id: 'bg_royal', category: CosmeticCategory.cardBackground, name: 'Královsky fialové pozadí', description: 'Sytě fialové pozadí (pro ty, komu se fialová hodí).', accent: Color(0xFF2A1B3D), crystalPrice: 60),
-  CosmeticShopItem(id: 'bg_gold', category: CosmeticCategory.cardBackground, name: 'Zlaté pozadí', description: 'Teplé tmavě zlaté pozadí.', accent: Color(0xFF3A2E14), crystalPrice: 120),
+  CosmeticShopItem(id: 'bg_obsidian', category: CosmeticCategory.cardBackground, name: 'Obsidiánové pozadí', description: 'Čistě tmavé pozadí bez barevného nádechu třídy.', accent: Color(0xFF1A1A1E), sparkPrice: 20),
+  CosmeticShopItem(id: 'bg_navy', category: CosmeticCategory.cardBackground, name: 'Temně modré pozadí', description: 'Chladné tmavě modré pozadí.', accent: Color(0xFF16233D), sparkPrice: 20),
+  CosmeticShopItem(id: 'bg_forest', category: CosmeticCategory.cardBackground, name: 'Lesní pozadí', description: 'Tlumené tmavě zelené pozadí.', accent: Color(0xFF14311F), sparkPrice: 50),
+  CosmeticShopItem(id: 'bg_crimson', category: CosmeticCategory.cardBackground, name: 'Karmínové pozadí', description: 'Temně rudé pozadí.', accent: Color(0xFF3A1414), sparkPrice: 100),
+  CosmeticShopItem(id: 'bg_royal', category: CosmeticCategory.cardBackground, name: 'Královsky fialové pozadí', description: 'Sytě fialové pozadí (pro ty, komu se fialová hodí).', accent: Color(0xFF2A1B3D), sparkPrice: 100),
+  CosmeticShopItem(id: 'bg_gold', category: CosmeticCategory.cardBackground, name: 'Zlaté pozadí', description: 'Teplé tmavě zlaté pozadí.', accent: Color(0xFF3A2E14), sparkPrice: 180),
   CosmeticShopItem(id: 'bg_void', category: CosmeticCategory.cardBackground, name: 'Pozadí Prázdnoty', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFF0A0A0C), isPremiumOnly: true),
 ];
 

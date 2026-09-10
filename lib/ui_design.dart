@@ -2434,22 +2434,27 @@ class BattlePassFramePainter extends CustomPainter {
     }
     if (style.gems > 0) {
       final gemR = 4.5 * scale, gemR2 = 3.6 * scale, gemHighlight = 1.1 * scale;
-      // Body po obvodu obdélníku - 4 rohy vždy, zbylé klenoty rozmístěné rovnoměrně mezi nimi
-      // po obvodovém "perimetru" (jednodušší a spolehlivější než úhlová trigonometrie na
-      // obdélníku, která by u širokých karet dávala nerovnoměrné rozestupy).
+      // Body po obvodu obdélníku, rozmístěné rovnoměrně - PŘEPOČÍTÁNO (viz konverzace o rámu,
+      // co "nelícoval"): dřív rozmisťovalo klenoty podél obvodu OSTRÉHO obdélníku, ale rám se
+      // kreslí se ZAOBLENÝMI rohy (cornerRadius). Klenot, co vyšel přesně do rohu (typicky i=0
+      // vždy padl přesně na ostrý roh), tak "vlál" mimo skutečnou zaoblenou čáru rámu misto na
+      // ní. Teď se počítá jen po ROVNÝCH úsecích mezi rohy (obvod zmenšený o zaoblení v každém
+      // rohu), takže žádný klenot nikdy nepadne do zaobleného rohu samotného.
       final w = rect.width, h = rect.height;
-      final perimeter = 2 * (w + h);
+      final cr = cornerRadius.clamp(0.0, (w < h ? w : h) / 2 - 1);
+      final segTop = w - 2 * cr, segRight = h - 2 * cr, segBottom = w - 2 * cr, segLeft = h - 2 * cr;
+      final usablePerimeter = segTop + segRight + segBottom + segLeft;
       for (int i = 0; i < style.gems; i++) {
-        final dist = (i / style.gems) * perimeter;
+        final dist = (i / style.gems) * usablePerimeter;
         Offset p;
-        if (dist < w) {
-          p = Offset(rect.left + dist, rect.top);
-        } else if (dist < w + h) {
-          p = Offset(rect.right, rect.top + (dist - w));
-        } else if (dist < 2 * w + h) {
-          p = Offset(rect.right - (dist - w - h), rect.bottom);
+        if (dist < segTop) {
+          p = Offset(rect.left + cr + dist, rect.top);
+        } else if (dist < segTop + segRight) {
+          p = Offset(rect.right, rect.top + cr + (dist - segTop));
+        } else if (dist < segTop + segRight + segBottom) {
+          p = Offset(rect.right - cr - (dist - segTop - segRight), rect.bottom);
         } else {
-          p = Offset(rect.left, rect.bottom - (dist - 2 * w - h));
+          p = Offset(rect.left, rect.bottom - cr - (dist - segTop - segRight - segBottom));
         }
         canvas.drawCircle(p, gemR, Paint()..color = style.color.withOpacity(.5)..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 * scale));
         canvas.drawCircle(p, gemR2, Paint()..color = Color.lerp(style.color, Colors.white, .2)!);
@@ -3036,50 +3041,60 @@ void _paintClassIconAccent(Canvas canvas, Offset c, double s, _SpecAccent accent
       canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(c.dx - s * 0.08, c.dy + s * 0.10), width: s * 0.11, height: s * 0.06), Radius.circular(s * 0.03)), Paint()..color = light);
       break;
     case _SpecAccent.vampireFangs:
-      // Upíří tesáky - PŘEPRACOVÁNO: vnitřní zakřivení dásně bylo dřív mnohem mělčí než vnější,
-      // takže dáseň vypadala jako tlustý flek místo tenkého pásu. Teď je vnitřní křivka skoro
-      // stejně hluboká jako vnější (tenký srpek dásně) a zuby na ni nasedají zaobleně
-      // (quadraticBezierTo místo ostré rovné hrany), ať navazují plynule, ne jako přilepené.
-      final gum = Path()
-        ..moveTo(c.dx - s * 0.15, c.dy - s * 0.03)
-        ..quadraticBezierTo(c.dx, c.dy - s * 0.16, c.dx + s * 0.15, c.dy - s * 0.03)
-        ..quadraticBezierTo(c.dx, c.dy - s * 0.10, c.dx - s * 0.15, c.dy - s * 0.03)
+      // Upíří tesáky - PŘEKRESLENO podle referenčního obrázku od uživatele: jeden plynulý
+      // "stužkový" tvar (ne oddělená dáseň + dva trojúhelníky) - široký nahoře uprostřed,
+      // zužující se do dvou špiček po stranách, jako stylizovaný úsměv se dvěma tesáky. Vnější
+      // a vnitřní křivka jdou souběžně, takže pás má konzistentní tloušťku až do samotné špičky.
+      final fangs = Path()
+        ..moveTo(c.dx - s * 0.135, c.dy + s * 0.145)
+        ..quadraticBezierTo(c.dx - s * 0.165, c.dy - s * 0.02, c.dx - s * 0.07, c.dy - s * 0.065)
+        ..quadraticBezierTo(c.dx - s * 0.03, c.dy - s * 0.085, c.dx, c.dy - s * 0.085)
+        ..quadraticBezierTo(c.dx + s * 0.03, c.dy - s * 0.085, c.dx + s * 0.07, c.dy - s * 0.065)
+        ..quadraticBezierTo(c.dx + s * 0.165, c.dy - s * 0.02, c.dx + s * 0.135, c.dy + s * 0.145)
+        ..quadraticBezierTo(c.dx + s * 0.10, c.dy + s * 0.03, c.dx + s * 0.055, c.dy - s * 0.005)
+        ..quadraticBezierTo(c.dx + s * 0.025, c.dy - s * 0.03, c.dx, c.dy - s * 0.03)
+        ..quadraticBezierTo(c.dx - s * 0.025, c.dy - s * 0.03, c.dx - s * 0.055, c.dy - s * 0.005)
+        ..quadraticBezierTo(c.dx - s * 0.10, c.dy + s * 0.03, c.dx - s * 0.135, c.dy + s * 0.145)
         ..close();
-      canvas.drawPath(gum, p);
-      final fangL = Path()
-        ..moveTo(c.dx - s * 0.095, c.dy - s * 0.015)
-        ..quadraticBezierTo(c.dx - s * 0.115, c.dy + s * 0.06, c.dx - s * 0.095, c.dy + s * 0.145)
-        ..quadraticBezierTo(c.dx - s * 0.065, c.dy + s * 0.05, c.dx - s * 0.04, c.dy - s * 0.015)
-        ..close();
-      final fangR = Path()
-        ..moveTo(c.dx + s * 0.095, c.dy - s * 0.015)
-        ..quadraticBezierTo(c.dx + s * 0.115, c.dy + s * 0.06, c.dx + s * 0.095, c.dy + s * 0.145)
-        ..quadraticBezierTo(c.dx + s * 0.065, c.dy + s * 0.05, c.dx + s * 0.04, c.dy - s * 0.015)
-        ..close();
-      canvas.drawPath(fangL, p);
-      canvas.drawPath(fangR, p);
-      canvas.drawCircle(Offset(c.dx - s * 0.095, c.dy + s * 0.13), s * 0.012, Paint()..color = Colors.white.withOpacity(.7));
-      canvas.drawCircle(Offset(c.dx + s * 0.095, c.dy + s * 0.13), s * 0.012, Paint()..color = Colors.white.withOpacity(.7));
+      canvas.drawPath(fangs, p);
       break;
     case _SpecAccent.wolfHead:
-      // Vlčí hlava z profilu (dívá se doprava) - PŘEPRACOVÁNO (viz konverzace o kvalitě křivek):
-      // dřív byla poskládaná jen z rovných úseček (10 lineTo), takže působila hranatě/lámaně a
-      // čenich byl tak tenký, že vypadal jako trn místo čumáku. Teď střídá organické křivky
-      // (zátylek, čelo, čenich, čelist) s VĚDOMĚ ponechanými rovnými hranami jen na uchu (uši
-      // jsou přirozeně špičaté/rovné, ne oblé) - kontrast mezi obojím dělá siluetu čitelnější.
-      final head = Path()
-        ..moveTo(c.dx - s * 0.11, c.dy + s * 0.15)
-        ..quadraticBezierTo(c.dx - s * 0.16, c.dy + s * 0.02, c.dx - s * 0.11, c.dy - s * 0.08)
-        ..quadraticBezierTo(c.dx - s * 0.09, c.dy - s * 0.17, c.dx - s * 0.015, c.dy - s * 0.205)
-        ..lineTo(c.dx + s * 0.02, c.dy - s * 0.095) // vnitřní hrana ucha - záměrně rovná
-        ..quadraticBezierTo(c.dx + s * 0.08, c.dy - s * 0.085, c.dx + s * 0.17, c.dy - s * 0.045)
-        ..quadraticBezierTo(c.dx + s * 0.225, c.dy - s * 0.015, c.dx + s * 0.19, c.dy + s * 0.025)
-        ..quadraticBezierTo(c.dx + s * 0.12, c.dy + s * 0.05, c.dx + s * 0.065, c.dy + s * 0.02)
-        ..quadraticBezierTo(c.dx + s * 0.02, c.dy + s * 0.075, c.dx - s * 0.02, c.dy + s * 0.125)
-        ..quadraticBezierTo(c.dx - s * 0.06, c.dy + s * 0.165, c.dx - s * 0.11, c.dy + s * 0.15)
+      // Vlčí hlava ZEPŘEDU (ne z profilu) - PŘEKRESLENO podle referenčního obrázku od uživatele:
+      // symetrická přední silueta - dvě špičatá uši, klínovitá tvář se dvěma postranními trsy
+      // srsti (jagged výběžky), úzké šikmé oči a černý nos dole. Mnohem čitelnější a "vlčí" než
+      // dřívější boční profil, který byl na tomhle malém plátně těžko rozpoznatelný.
+      final earL = Path()
+        ..moveTo(c.dx - s * 0.095, c.dy - s * 0.235)
+        ..lineTo(c.dx - s * 0.17, c.dy - s * 0.075)
+        ..lineTo(c.dx - s * 0.05, c.dy - s * 0.125)
         ..close();
-      canvas.drawPath(head, p);
-      canvas.drawCircle(Offset(c.dx + s * 0.02, c.dy - s * 0.02), s * 0.016, Paint()..color = const Color(0xFF14181C));
+      final earR = Path()
+        ..moveTo(c.dx + s * 0.095, c.dy - s * 0.235)
+        ..lineTo(c.dx + s * 0.17, c.dy - s * 0.075)
+        ..lineTo(c.dx + s * 0.05, c.dy - s * 0.125)
+        ..close();
+      canvas.drawPath(earL, p);
+      canvas.drawPath(earR, p);
+      final face = Path()
+        ..moveTo(c.dx, c.dy - s * 0.105)
+        ..lineTo(c.dx - s * 0.10, c.dy - s * 0.125)
+        ..quadraticBezierTo(c.dx - s * 0.175, c.dy - s * 0.02, c.dx - s * 0.12, c.dy + s * 0.03)
+        ..quadraticBezierTo(c.dx - s * 0.09, c.dy + s * 0.10, c.dx - s * 0.03, c.dy + s * 0.155)
+        ..quadraticBezierTo(c.dx, c.dy + s * 0.225, c.dx + s * 0.03, c.dy + s * 0.155)
+        ..quadraticBezierTo(c.dx + s * 0.09, c.dy + s * 0.10, c.dx + s * 0.12, c.dy + s * 0.03)
+        ..quadraticBezierTo(c.dx + s * 0.175, c.dy - s * 0.02, c.dx + s * 0.10, c.dy - s * 0.125)
+        ..close();
+      canvas.drawPath(face, p);
+      // Oči - úzké šikmé štěrbiny.
+      canvas.drawLine(Offset(c.dx - s * 0.075, c.dy - s * 0.005), Offset(c.dx - s * 0.02, c.dy + s * 0.02), Paint()..color = const Color(0xFF14181C)..strokeWidth = s * 0.022..strokeCap = StrokeCap.round);
+      canvas.drawLine(Offset(c.dx + s * 0.075, c.dy - s * 0.005), Offset(c.dx + s * 0.02, c.dy + s * 0.02), Paint()..color = const Color(0xFF14181C)..strokeWidth = s * 0.022..strokeCap = StrokeCap.round);
+      // Nos - malý černý trojúhelník dole na špičce tváře.
+      final nose = Path()
+        ..moveTo(c.dx - s * 0.026, c.dy + s * 0.155)
+        ..lineTo(c.dx + s * 0.026, c.dy + s * 0.155)
+        ..lineTo(c.dx, c.dy + s * 0.185)
+        ..close();
+      canvas.drawPath(nose, Paint()..color = const Color(0xFF14181C));
       break;
     case _SpecAccent.eye:
       // Samostatné oko - mandlový obrys, duhovka v barvě skinu, tmavá zornice a malý lesk.
@@ -3412,7 +3427,15 @@ class StandaloneAccentIconPainter extends CustomPainter {
     final s = size.shortestSide;
     final c = Offset(size.width / 2, size.height / 2);
     canvas.drawCircle(c, s * 0.46, Paint()..color = color.withOpacity(.22)..maskFilter = MaskFilter.blur(BlurStyle.normal, s * 0.14));
-    _paintClassIconAccent(canvas, c, s * 2.4, accent, color);
+    // Zvětšení motivu oproti jeho výchozímu měřítku "malý akcent uvnitř nosného tvaru" - PŘEČÍSLOVÁNO
+    // z 2.4 na 1.4 (viz konverzace o přesahu "Roztříštěného štítu" mimo tlačítko): tenhle painter
+    // se používá jak v pickeru (kolečko samo o sobě, kde větší násobek nevadil), TAK přímo v
+    // SpellIconButton pro ručně vybranou ikonu tlačítka - a tam už 2.4× u asymetrických motivů
+    // (roztříštěný štít má úlomek vzdálený 0.33 od středu, sekera 0.29, vlčí hlava 0.225...)
+    // protáhlo špičky až za polovinu plátna (0.33×2.4=0.79 > 0.5), tedy viditelně mimo zaoblený
+    // roh tlačítka do tmavého pozadí. 1.4× dává i nejhoršímu případu (0.33×1.4=0.462) bezpečnou
+    // rezervu pod hranicí 0.5, a pořád je to citelně větší než výchozí "malý akcent" měřítko.
+    _paintClassIconAccent(canvas, c, s * 1.4, accent, color);
   }
 
   @override
@@ -3479,6 +3502,8 @@ const Map<String, Color> kSelectableButtonColors = {
   'Oranžová': Color(0xFFE64A19),
   'Bílá': Color(0xFFF5F5F5),
   'Tyrkysová': Color(0xFF00BCD4),
+  'Hnědá': Color(0xFF795548),
+  'Šedá': Color(0xFF9E9E9E),
 };
 
 

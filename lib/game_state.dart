@@ -111,6 +111,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   int gold = 100;
   int crystals = 0;
   int magicDust = 0;
+  // Jiskry - samostatná měna VÝHRADNĚ pro Kosmetiku (rámy/skiny/aury/tlačítka/pozadí karty i
+  // ruční per-slot symboly a barvy) - viz konverzace "vytvoř currency pro nákup kosmetiky, zruš
+  // crystal a goldy". Získává se JEN zhlédnutím rewarded reklamy (+1 ks/reklama, max 10 denně -
+  // viz grantCosmeticSparkFromAd() níž a reset v _checkQuestResets()) - ne levelem, ne
+  // achievementy, ne zlatem/krystaly.
+  int cosmeticSparks = 0;
+  int cosmeticSparksFromAdsToday = 0;
+  static const int cosmeticSparksMaxPerDay = 10;
+  bool get canWatchAdForCosmeticSpark => cosmeticSparksFromAdsToday < cosmeticSparksMaxPerDay;
   int floor = 1;
   // ===== TOWER MODIFIKÁTORY — za KAŽDÉ poražené patro Věže hráč dostane náhodně JEDEN ze 4
   // bonusů (permanentní, nereseuje se smrtí jako floor/level - viz _handleEnemyDeath): +1 % Crit,
@@ -749,6 +758,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         "osudovaVolbaChoicePerClass": osudovaVolbaChoicePerClass,
         "levelMilestoneReachedAt": levelMilestoneReachedAt.map((k, v) => MapEntry(k.toString(), v.toIso8601String())),
         "gold": gold,
+        "cosmeticSparks": cosmeticSparks,
+        "cosmeticSparksFromAdsToday": cosmeticSparksFromAdsToday,
         "crystals": crystals,
         "magicDust": magicDust,
         "floor": floor,
@@ -979,6 +990,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final Map<String, dynamic> milestonesJson = json["levelMilestoneReachedAt"] != null ? Map<String, dynamic>.from(json["levelMilestoneReachedAt"] as Map) : {};
     levelMilestoneReachedAt = milestonesJson.map((k, v) => MapEntry(int.parse(k), DateTime.parse(v as String)));
     gold = json["gold"] as int? ?? 100;
+    cosmeticSparks = json["cosmeticSparks"] as int? ?? 0;
+    cosmeticSparksFromAdsToday = json["cosmeticSparksFromAdsToday"] as int? ?? 0;
     crystals = json["crystals"] as int? ?? 0;
     magicDust = json["magicDust"] as int? ?? 0;
     floor = json["floor"] as int? ?? 1;
@@ -1795,46 +1808,46 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   // Odemykání SAMOTNÝCH symbolů/barev pro picker výš (viz konverzace: "každá ikona a každá
   // barva se musí odemknout") - odděleno od toho, co si hráč zrovna NASADIL do daného slotu
   // (customSlotIcon/Color výš). 'default'/'Výchozí' jsou vždycky odemčené zdarma. Zbytek
-  // symbolů a 14 z 18 barev jde koupit za zlato (viz unlockButtonIconWithGold/
-  // unlockButtonColorWithGold) - zbylé 4 barvy (Bílá/Červená/Oranžová/Černá) NEJDOU koupit,
-  // jen je dá odemknutí Ascension I-IV (viz kAscensionButtonColors a _unlockAchievement).
+  // symbolů a 14 z 18 barev jde koupit za Jiskry (viz unlockButtonIconWithSparks/
+  // unlockButtonColorWithSparks) - zbylé 4 barvy (Bílá/Červená/Oranžová/Černá) NEJDOU koupit,
+  // jen je dá odemknutí Ascension I-IV (viz achievementOnlyButtonColors a _unlockAchievement).
   Set<String> unlockedButtonIcons = {'default'};
   Set<String> unlockedButtonColorNames = {'Výchozí'};
-  static const int buttonIconUnlockPrice = 150;
-  static const int buttonColorUnlockPrice = 120;
+  static const int buttonIconUnlockPrice = 20;
+  static const int buttonColorUnlockPrice = 15;
   // Tyhle 4 barvy jsou vyhrazené pro achievementy (Ascension I-IV) - i kdyby měl hráč dost
-  // zlata, nejdou koupit v pickeru, jen se zobrazí požadavek na achievement.
+  // Jisker, nejdou koupit v pickeru, jen se zobrazí požadavek na achievement.
   static const Set<String> achievementOnlyButtonColors = {'Bílá', 'Červená', 'Oranžová', 'Černá'};
 
   bool isButtonIconUnlocked(String accentName) => accentName == 'default' || unlockedButtonIcons.contains(accentName);
   bool isButtonColorUnlocked(String colorName) => colorName == 'Výchozí' || unlockedButtonColorNames.contains(colorName);
 
-  void unlockButtonIconWithGold(String accentName) {
+  void unlockButtonIconWithSparks(String accentName) {
     if (isButtonIconUnlocked(accentName)) return;
-    if (gold < buttonIconUnlockPrice) {
-      message = tr("Nedostatek zlata (potřeba: $buttonIconUnlockPrice 🪙).", "Not enough gold (need: $buttonIconUnlockPrice 🪙).");
+    if (cosmeticSparks < buttonIconUnlockPrice) {
+      message = tr("Nedostatek Jisker (potřeba: $buttonIconUnlockPrice ✦).", "Not enough Sparks (need: $buttonIconUnlockPrice ✦).");
       notifyListeners();
       return;
     }
-    gold -= buttonIconUnlockPrice;
+    cosmeticSparks -= buttonIconUnlockPrice;
     unlockedButtonIcons.add(accentName);
     message = tr("✨ Symbol odemčen!", "✨ Symbol unlocked!");
     notifyListeners();
   }
 
-  void unlockButtonColorWithGold(String colorName) {
+  void unlockButtonColorWithSparks(String colorName) {
     if (isButtonColorUnlocked(colorName)) return;
     if (achievementOnlyButtonColors.contains(colorName)) {
       message = tr("Tuhle barvu odemkne jen achievement Ascension.", "This color only unlocks via the Ascension achievement.");
       notifyListeners();
       return;
     }
-    if (gold < buttonColorUnlockPrice) {
-      message = tr("Nedostatek zlata (potřeba: $buttonColorUnlockPrice 🪙).", "Not enough gold (need: $buttonColorUnlockPrice 🪙).");
+    if (cosmeticSparks < buttonColorUnlockPrice) {
+      message = tr("Nedostatek Jisker (potřeba: $buttonColorUnlockPrice ✦).", "Not enough Sparks (need: $buttonColorUnlockPrice ✦).");
       notifyListeners();
       return;
     }
-    gold -= buttonColorUnlockPrice;
+    cosmeticSparks -= buttonColorUnlockPrice;
     unlockedButtonColorNames.add(colorName);
     message = tr("✨ Barva odemčena!", "✨ Color unlocked!");
     notifyListeners();
@@ -1928,21 +1941,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       CosmeticCategory.cardBackground => unlockedCardBackgrounds.contains(id),
     };
     if (owned) return;
-    if (item.crystalPrice > 0) {
-      if (crystals < item.crystalPrice) {
-        message = tr("Nedostatek krystalů (potřeba: ${item.crystalPrice} 💎).", "Not enough crystals (need: ${item.crystalPrice} 💎).");
-        notifyListeners();
-        return;
-      }
-      crystals -= item.crystalPrice;
-    } else {
-      if (gold < item.goldPrice) {
-        message = tr("Nedostatek zlata (potřeba: ${item.goldPrice} 🪙).", "Not enough gold (need: ${item.goldPrice} 🪙).");
-        notifyListeners();
-        return;
-      }
-      gold -= item.goldPrice;
+    if (cosmeticSparks < item.sparkPrice) {
+      message = tr("Nedostatek Jisker (potřeba: ${item.sparkPrice} ✦).", "Not enough Sparks (need: ${item.sparkPrice} ✦).");
+      notifyListeners();
+      return;
     }
+    cosmeticSparks -= item.sparkPrice;
     switch (item.category) {
       case CosmeticCategory.frame: unlockedFrames.add(id);
       case CosmeticCategory.attackSkin: unlockedAttackSkins.add(id);
@@ -8168,6 +8172,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   // globální jednorázovost by šla vynutit jen přes skutečný backend, který tahle hra nemá.
   static final List<PromoCodeDef> promoCodeCatalog = [
     PromoCodeDef(code: "GOLD1000", description: tr("Odměna 1000 zlata", "Reward: 1000 gold"), rewardGold: 1000, requiredLevel: 5, floatingExpiry: const Duration(days: 10)),
+    PromoCodeDef(code: "SPARK", description: tr("Odměna 1000 Jisker (na Kosmetiku)", "Reward: 1000 Sparks (for Cosmetics)"), rewardCosmeticSparks: 1000),
     // MASTER: kalibrováno přesně na Paragon 30 pro aktuální třídu. Cena ranku je flat 50 💎
     // (viz upgradeClass/rankGainMultiplierFor, main třída má multiplier 1.0) a classRanks
     // startuje na 1 (paragonLevel = classMultiplier ~/ 100), takže na Paragon 30 (classMultiplier
@@ -8252,12 +8257,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     legendaryEssence += def.rewardLegendaryEssence;
     materials += def.rewardMaterials;
     conquerorCoins += def.rewardConquerorCoins;
+    cosmeticSparks += def.rewardCosmeticSparks;
     message = tr("🎁 Kód uplatněn: ${def.description}! +${def.rewardGold} 🪙 +${def.rewardCrystals} 💎 +${def.rewardDust} Dust"
         "${def.rewardLegendaryEssence > 0 ? ' +${def.rewardLegendaryEssence} 🔥 Esence' : ''}"
-        "${def.rewardConquerorCoins > 0 ? ' +${def.rewardConquerorCoins} 🏅 Mincí dobyvatele' : ''}",
+        "${def.rewardConquerorCoins > 0 ? ' +${def.rewardConquerorCoins} 🏅 Mincí dobyvatele' : ''}"
+        "${def.rewardCosmeticSparks > 0 ? ' +${def.rewardCosmeticSparks} ✦ Jisker' : ''}",
         "🎁 Code redeemed: ${def.description}! +${def.rewardGold} 🪙 +${def.rewardCrystals} 💎 +${def.rewardDust} Dust"
         "${def.rewardLegendaryEssence > 0 ? ' +${def.rewardLegendaryEssence} 🔥 Essence' : ''}"
-        "${def.rewardConquerorCoins > 0 ? ' +${def.rewardConquerorCoins} 🏅 Conqueror Coins' : ''}");
+        "${def.rewardConquerorCoins > 0 ? ' +${def.rewardConquerorCoins} 🏅 Conqueror Coins' : ''}"
+        "${def.rewardCosmeticSparks > 0 ? ' +${def.rewardCosmeticSparks} ✦ Sparks' : ''}");
     _checkAchievements();
     notifyListeners();
     return message;
@@ -8459,6 +8467,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       riftClearsToday = 0;
       dailyCacheClaimed = false;
       dailyGoalCoinsClaimed = {};
+      cosmeticSparksFromAdsToday = 0;
       lastDailyReset = now;
       changed = true;
     }
@@ -9793,6 +9802,20 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     riftBonusAttemptsToday++;
     everWatchedRiftAd = true;
     message = tr("🎬 Reklama dokoukána! +1 pokus do Trhliny Osudu dnes ($riftBonusAttemptsToday/$riftMaxBonusAdsPerDay bonusů).", "🎬 Ad watched! +1 Rift of Fate attempt today ($riftBonusAttemptsToday/$riftMaxBonusAdsPerDay bonuses).");
+    _checkAchievements();
+    notifyListeners();
+  }
+
+  // Skutečné přehrání reklamy řeší RewardedAdService (viz UI) - tahle metoda jen aplikuje
+  // odměnu po potvrzeném zhlédnutí (onUserEarnedReward), stejný vzor jako grantRiftAttemptFromAd/
+  // rerollMarketSlotFromAd. +1 Jiskra za každé zhlédnutí, max 10 denně (reset spolu s ostatními
+  // denními věcmi v _checkQuestResets()).
+  void grantCosmeticSparkFromAd() {
+    if (!canWatchAdForCosmeticSpark) return;
+    cosmeticSparks += 1;
+    cosmeticSparksFromAdsToday++;
+    everWatchedRiftAd = true; // sdílí achievement "adSupporter" se všemi zdroji rewarded reklam
+    message = tr("🎬 Reklama dokoukána! +1 Jiskra ($cosmeticSparksFromAdsToday/$cosmeticSparksMaxPerDay dnes, celkem: $cosmeticSparks ✦).", "🎬 Ad watched! +1 Spark ($cosmeticSparksFromAdsToday/$cosmeticSparksMaxPerDay today, total: $cosmeticSparks ✦).");
     _checkAchievements();
     notifyListeners();
   }

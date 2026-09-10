@@ -1399,11 +1399,15 @@ class _BasicAttackSkinOverlayState extends State<BasicAttackSkinOverlay> with Si
         );
       },
     );
-    return IgnorePointer(
-      child: widget.portraitTop != null && widget.portraitHeight != null
-          ? Positioned(top: widget.portraitTop!, left: 0, right: 0, height: widget.portraitHeight!, child: burst)
-          : burst,
-    );
+    // Positioned MUSÍ být přímým potomkem Stacku (jinak Flutter neví, jak jeho souřadnice
+    // aplikovat - "Incorrect use of ParentDataWidget") - dřív byl obalený v IgnorePointer, který
+    // sedí MEZI Positioned a Stackem. Teď je pořadí obrácené: Positioned navrch (přímo vrácený
+    // z build(), takže ho okolní Stack vidí přímo), IgnorePointer uvnitř něj jako child.
+    final ignoring = IgnorePointer(child: burst);
+    if (widget.portraitTop != null && widget.portraitHeight != null) {
+      return Positioned(top: widget.portraitTop!, left: 0, right: 0, height: widget.portraitHeight!, child: ignoring);
+    }
+    return ignoring;
   }
 }
 
@@ -5810,7 +5814,36 @@ class CustomizationScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(tr('Kosmetika', 'Cosmetics'))),
+      appBar: AppBar(
+        title: Text(tr('Kosmetika', 'Cosmetics')),
+        actions: [
+          Consumer<GameState>(
+            builder: (context, state, _) => Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Row(children: [
+                const Icon(Icons.auto_awesome, color: Color(0xFFE040FB), size: 18),
+                const SizedBox(width: 4),
+                Text('${state.cosmeticSparks}', style: const TextStyle(color: Color(0xFFE040FB), fontWeight: FontWeight.bold, fontSize: 15)),
+                const SizedBox(width: 8),
+                // Jiskry se získávají JEN zhlédnutím reklamy (viz konverzace), max 10 denně -
+                // žádný jiný zdroj (ne level, ne achievementy, ne zlato/krystaly), takže tlačítko
+                // je tady vždycky po ruce, přímo v hlavičce obchodu, ne schované jinde.
+                IconButton(
+                  tooltip: state.canWatchAdForCosmeticSpark
+                      ? tr('Zhlédnout reklamu za +1 Jiskru (${state.cosmeticSparksFromAdsToday}/${GameState.cosmeticSparksMaxPerDay} dnes)', 'Watch ad for +1 Spark (${state.cosmeticSparksFromAdsToday}/${GameState.cosmeticSparksMaxPerDay} today)')
+                      : tr('Dnešní limit reklam vyčerpán (${GameState.cosmeticSparksMaxPerDay}/${GameState.cosmeticSparksMaxPerDay})', 'Daily ad limit reached (${GameState.cosmeticSparksMaxPerDay}/${GameState.cosmeticSparksMaxPerDay})'),
+                  icon: Icon(Icons.play_circle_fill, color: state.canWatchAdForCosmeticSpark ? const Color(0xFF00C853) : Colors.grey),
+                  onPressed: state.canWatchAdForCosmeticSpark
+                      ? () {
+                          RewardedAdService.instance.show(onReward: () => state.grantCosmeticSparkFromAd());
+                        }
+                      : null,
+                ),
+              ]),
+            ),
+          ),
+        ],
+      ),
       body: Consumer<GameState>(builder: (context, state, _) {
         final shopFrames = kCosmeticShopCatalog.where((c) => c.category == CosmeticCategory.frame).toList();
         final shopSkins = kCosmeticShopCatalog.where((c) => c.category == CosmeticCategory.attackSkin).toList();
@@ -6072,8 +6105,8 @@ class CustomizationScreen extends StatelessWidget {
                           return _pickerSwatch(
                             selected: icon == entry.key,
                             locked: !unlocked,
-                            priceLabel: unlocked ? null : '${GameState.buttonIconUnlockPrice} 🪙',
-                            onTap: unlocked ? () => s.setCustomSlotIcon(slotKey, entry.key) : () => s.unlockButtonIconWithGold(entry.key.name),
+                            priceLabel: unlocked ? null : '${GameState.buttonIconUnlockPrice} ✦',
+                            onTap: unlocked ? () => s.setCustomSlotIcon(slotKey, entry.key) : () => s.unlockButtonIconWithSparks(entry.key.name),
                             child: standaloneAccentIcon(entry.key, unlocked ? (buttonColor ?? const Color(0xFFFFB100)) : Colors.grey, size: 28),
                             label: entry.value,
                           );
@@ -6096,8 +6129,8 @@ class CustomizationScreen extends StatelessWidget {
                           return _pickerSwatch(
                             selected: buttonColor == entry.value,
                             locked: !unlocked,
-                            priceLabel: unlocked ? null : (achievementOnly ? tr('Achievement', 'Achievement') : '${GameState.buttonColorUnlockPrice} 🪙'),
-                            onTap: unlocked ? () => s.setCustomSlotButtonColor(slotKey, entry.value) : () => s.unlockButtonColorWithGold(entry.key),
+                            priceLabel: unlocked ? null : (achievementOnly ? tr('Achievement', 'Achievement') : '${GameState.buttonColorUnlockPrice} ✦'),
+                            onTap: unlocked ? () => s.setCustomSlotButtonColor(slotKey, entry.value) : () => s.unlockButtonColorWithSparks(entry.key),
                             child: Container(width: 26, height: 26, decoration: BoxDecoration(shape: BoxShape.circle, color: unlocked ? entry.value : Colors.grey.shade800, border: Border.all(color: Colors.white24))),
                             label: entry.key,
                           );
@@ -6122,8 +6155,8 @@ class CustomizationScreen extends StatelessWidget {
                           return _pickerSwatch(
                             selected: glowColor == entry.value,
                             locked: !unlocked,
-                            priceLabel: unlocked ? null : (achievementOnly ? tr('Achievement', 'Achievement') : '${GameState.buttonColorUnlockPrice} 🪙'),
-                            onTap: unlocked ? () => s.setCustomSlotGlowColor(slotKey, entry.value) : () => s.unlockButtonColorWithGold(entry.key),
+                            priceLabel: unlocked ? null : (achievementOnly ? tr('Achievement', 'Achievement') : '${GameState.buttonColorUnlockPrice} ✦'),
+                            onTap: unlocked ? () => s.setCustomSlotGlowColor(slotKey, entry.value) : () => s.unlockButtonColorWithSparks(entry.key),
                             child: Container(width: 26, height: 26, decoration: BoxDecoration(shape: BoxShape.circle, color: unlocked ? entry.value : Colors.grey.shade800, boxShadow: unlocked ? [BoxShadow(color: entry.value.withOpacity(.8), blurRadius: 6)] : null)),
                             label: entry.key,
                           );
@@ -6208,7 +6241,7 @@ class CustomizationScreen extends StatelessWidget {
               Text(tr('Již brzy 💳', 'Coming soon 💳'), style: const TextStyle(fontSize: 9, color: Colors.grey), textAlign: TextAlign.center)
             else if (price != null)
               Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(price.crystalPrice > 0 ? '${price.crystalPrice} 💎' : '${price.goldPrice} 🪙', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: accent)),
+                Text('${price.sparkPrice} ✦', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: accent)),
               ])
             else
               const Icon(Icons.lock, size: 14, color: Colors.grey),
@@ -7351,15 +7384,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
           // (16+16=32px) zůstala. OverflowBox je jediný způsob, jak layoutovat dítě ŠIRŠÍ, než
           // rodič dovoluje - výchozí `alignment: Alignment.center` navíc rozloží přebytečnou
           // šířku rovnoměrně na obě strany, takže ani netřeba ruční -16 posun.
-          OverflowBox(
-            minWidth: 0,
-            maxWidth: MediaQuery.sizeOf(context).width,
-            child: EquippedGearScene(
-              state: state,
-              onItemTap: (ctx, item) => _showItemDetailDialog(ctx, state, item),
-              title: tr("Batoh (${state.bagItemCount}/${state.maxInventorySize})", "Bag (${state.bagItemCount}/${state.maxInventorySize})"),
-              onExpand: state.upgradeInventoryCapacity,
-              expandTooltip: tr("Zvětšit batoh (+5 míst, ${(state.maxInventorySize - 15) * 50} 🪙)", "Expand bag (+5 slots, ${(state.maxInventorySize - 15) * 50} 🪙)"),
+          //
+          // OverflowBox obalený navíc v SizedBox(height: 600) - položky ListView si normálně
+          // určují výšku samy, takže OverflowBox by dostal shora NEOMEZENOU výškovou constraint
+          // (0..Infinity), což vedlo na "RenderConstrainedOverflowBox object was given an
+          // infinite size" z Flutter logu. PŘEDCHOZÍ pokus opravit to přímými minHeight/maxHeight
+          // parametry NA SAMOTNÉM OverflowBoxu batoh úplně rozbil (scéna zmizela) - správně je
+          // dát OverflowBoxu už OMEZENOU constraint SHORA (přes obalující SizedBox), ne se snažit
+          // přepsat, jak OverflowBox sám hlásí svou velikost rodiči.
+          SizedBox(
+            height: 600,
+            child: OverflowBox(
+              minWidth: 0,
+              maxWidth: MediaQuery.sizeOf(context).width,
+              child: EquippedGearScene(
+                state: state,
+                onItemTap: (ctx, item) => _showItemDetailDialog(ctx, state, item),
+                title: tr("Batoh (${state.bagItemCount}/${state.maxInventorySize})", "Bag (${state.bagItemCount}/${state.maxInventorySize})"),
+                onExpand: state.upgradeInventoryCapacity,
+                expandTooltip: tr("Zvětšit batoh (+5 míst, ${(state.maxInventorySize - 15) * 50} 🪙)", "Expand bag (+5 slots, ${(state.maxInventorySize - 15) * 50} 🪙)"),
+              ),
             ),
           ),
           const SizedBox(height: 15),
