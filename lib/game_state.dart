@@ -7287,11 +7287,27 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final chances = ((critChance + dodgeChance + blockChance) * 1000).round();
     final rawPower = (attack * 12 + defense * 6 + maxHp * 2 + chances).round();
     final recommended = recommendedGearScoreForFloor(floor);
-    return recommended > 0 ? ((rawPower / recommended) * 100).round() : rawPower;
+    // Škála 1000 = "na doporučené úrovni" (dřív 100) - viz konverzace "1000 úmyslně kvůli lepší
+    // citlivosti". Číselně čistě kosmetická změna (×1000 místo ×100), nemění to, co GS
+    // reprezentuje - jen dává jemnější rozlišení mezi blízkými hodnotami.
+    return recommended > 0 ? ((rawPower / recommended) * 1000).round() : rawPower;
   }
   int recommendedGearScoreForFloor(int targetFloor) {
-    final f=targetFloor.clamp(1,99999);
-    return (500+165*f+5.5*f*f).round();
+    final f = targetFloor.clamp(1, 99999);
+    int tierLevel = 0;
+    if (pekloMode && pekloUnlocked) tierLevel = 3;
+    else if (atLeastPredpekli && predpekliUnlocked) tierLevel = 2;
+    else if (atLeastHardcore) tierLevel = 1;
+    final effectiveFloor = f + 100 * tierLevel;
+    // BUG FIX 2 (viz konverzace - "síla nepřátel zůstane jak je, jen GS uprav ať roste stejným
+    // tempem"): stará křivka rostla KVADRATICKY (500+165f+5.5f²), ale skutečná síla nepřítele
+    // roste EXPONENCIÁLNĚ (1.1^(floor-1) v rámci vrstvy - viz Lair/Tower/Rift formule). Mezi
+    // patrem 10 a 100 tak nepřítel zesílí ~6264×, zatímco stará "doporučená" křivka rostla jen
+    // ~27× - GS=100 tak znamenalo něco úplně jiného na nízkém a na vysokém patře. Nová křivka
+    // roste stejným tempem 1.1^(f-1) jako nepřítel, ukotvená na stejné hodnotě jako stará
+    // křivka měla na patru 1 (670,5), ať staré nízkopatrové kalibrace zůstanou zhruba platné.
+    const double anchorAtFloor1 = 670.5; // = stará 500+165×1+5.5×1² (patro 1, beze změny)
+    return (anchorAtFloor1 * pow(1.1, effectiveFloor - 1)).round();
   }
   // ===== SÍLA JEDNOTLIVÉHO ITEMU — pro srovnání "je tohle lepší než co mám nasazené?" =====
   // SPECIALIZAČNĚ VÁŽENÉ (ne jen class-přesně) - čte přímo ze specStatProfile, stejný zdroj
@@ -8366,6 +8382,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       rewardConquerorCoins: 4300000,
       requiredLevel: GameState.arenaUnlockLevel,
     ),
+    // BBB/CCC: testovací kódy (viz konverzace) - odměna odpovídá simulaci "1000×/10000× Normal
+    // Tower patro 1-100" (tower_sim.py), ať se dá rychle otestovat, jak daleko se s takovou
+    // zásobou zdrojů dostane hráč, bez nutnosti reálně 1000/10000× projít Věž. Krystaly/dust/
+    // suroviny/esence jsou průměry ze simulace (obsahují náhodu při 20-30% drop šancích), zlato
+    // je deterministické (přesně 5000/běh, žádná náhoda v té odměně).
+    PromoCodeDef(code: "BBB", description: tr("Testovací odměna: ekvivalent 1000× Normal Tower 1-100 (5M zlata, 599K krystalů, 750K Dustu, 151K Surovin, 106K Esence)", "Test reward: equivalent of 1000x Normal Tower 1-100 (5M gold, 599K crystals, 750K Dust, 151K Materials, 106K Essence)"), rewardGold: 5000000, rewardCrystals: 598608, rewardDust: 750015, rewardMaterials: 151003, rewardLegendaryEssence: 106488),
+    PromoCodeDef(code: "CCC", description: tr("Testovací odměna: ekvivalent 10000× Normal Tower 1-100 (50M zlata, 6M krystalů, 7,5M Dustu, 1,51M Surovin, 1,07M Esence)", "Test reward: equivalent of 10000x Normal Tower 1-100 (50M gold, 6M crystals, 7.5M Dust, 1.51M Materials, 1.07M Essence)"), rewardGold: 50000000, rewardCrystals: 6008214, rewardDust: 7499805, rewardMaterials: 1509961, rewardLegendaryEssence: 1065090),
   ];
 
   String redeemPromoCode(String input) {

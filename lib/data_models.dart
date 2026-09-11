@@ -1473,7 +1473,11 @@ class Item {
           return FantasyIconType.potionHealing;
       }
     }
-    if (setId != null) return FantasyIconType.markSetItem;
+    // BUG FIX (viz konverzace - "set item má špatnou ikonu, dva kroužky místo chrániče ramen"):
+    // tahle řádka dřív vracela obecnou "dva prstýnky" ikonu pro VŠECHNY set itemy bez ohledu na
+    // slot - úplně přeskočila switch podle slotu níž. Set itemy mají svůj vlastní vizuální
+    // příznak (barevný prstenec kolem ikony podle vzácnosti/setu), takže samotná ikona uvnitř
+    // má normálně ukazovat slot (meč/přilba/ramenní chrániče/...) jako u běžných itemů.
     switch (slot) {
       case EquipSlot.weapon:
         return FantasyIconType.slotWeapon;

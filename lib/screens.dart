@@ -392,12 +392,10 @@ class _SpellFxPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final spec = kSpellFxSpec[kind];
     final epic = spec?.epic ?? false;
-    _paintVignette(canvas, size, epic);
-    // Impact flash - PŘIDÁNO (viz konverzace, živý JS náhled odhalil, že celému systému chybí
-    // jeden ostrý "pop" moment v momentu vrcholu zásahu). Bez tohohle všechny efekty jen plynule
-    // najíždí a odeznívají easing křivkou - chybí základní VFX princip anticipace → impact flash
-    // → doznění. Sdílené pro všech 9 archetypů najednou, ne per-efekt duplikace. Vrchol kolem
-    // t=0.12-0.18 (dřív, než hlavní tvar dosáhne plné velikosti), krátký a ostrý - ne dlouhý fade.
+    // Tmavá viněta ODSTRANĚNA (viz konverzace - "obrázek tmavne, dost mi to vadí") - dřív tu
+    // byla _paintVignette(canvas, size, epic), co ztmavovala kartu při KAŽDÉM seslání spellu
+    // (24-40 % podle epic). Impact flash (viz níž) zůstává - ten je krátký/ostrý pop, ne plošné
+    // ztmavení celé karty přes většinu animace.
     _paintImpactFlash(canvas, size, spec?.secondary ?? Colors.white, epic);
     switch (kind) {
       case SpellFxKind.dkCursedStrike:
@@ -423,22 +421,6 @@ class _SpellFxPainter extends CustomPainter {
     _paintFilmGrain(canvas, size, epic);
   }
 
-  // ===== "ART" VRSTVA - společná pro všechny spelly, dělá to víc "malovaný"/kinematografický
-  // dojem místo čistě geometrických tvarů =====
-  // Měkká tmavá viněta po okrajích karty, zesiluje se do poloviny animace a pak zase mizí -
-  // dává vizuálu hloubku a soustředí pohled na střed dění, podobně jako filmový "bullet time".
-  void _paintVignette(Canvas canvas, Size size, bool epic) {
-    final bell = (sin(t.clamp(0.0, 1.0) * pi)).clamp(0.0, 1.0); // 0→1→0 přes celou animaci
-    final strength = bell * (epic ? 0.4 : 0.24);
-    if (strength <= 0.01) return;
-    final rect = Offset.zero & size;
-    final center = Offset(size.width / 2, size.height * 0.28); // top-biased - karta je teď vyšší (portrét+bary), efekt musí mířit na portrét, ne na střed celé karty
-    final maxR = size.longestSide * 0.75;
-    canvas.drawRect(rect, Paint()..shader = RadialGradient(
-      colors: [Colors.black.withOpacity(0), Colors.black.withOpacity(strength)],
-      stops: const [0.45, 1.0],
-    ).createShader(Rect.fromCircle(center: center, radius: maxR)));
-  }
 
   // Krátký ostrý "pop" v momentu vrcholu zásahu - na rozdíl od vignette výš (ta trvá přes CELOU
   // animaci jako zvonová křivka) žije tenhle impulz jen v úzkém okně kolem t=0.14, DŘÍV, než
@@ -2943,7 +2925,11 @@ class LairScreen extends StatelessWidget {
                         final cardBg = state.equippedCardBackgroundColor;
                         return Card(
                       color: cardBg != null ? Color.alphaBlend(cardBg.withOpacity(.4), const Color(0xFF1E1E24)) : null,
-                      shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFF1E88E5), width: 1), borderRadius: BorderRadius.circular(8)),
+                      // Okraj teď reaguje na zvolené pozadí karty (viz konverzace - "pozadí karty
+                      // nefunguje") - dřív byl napevno modrý bez ohledu na volbu, takže i
+                      // funkční volba byla vizuálně skoro neznatelná (gradient/blend samotný je
+                      // z velké části zakrytý portrétem a stat bary).
+                      shape: RoundedRectangleBorder(side: BorderSide(color: cardBg ?? const Color(0xFF1E88E5), width: cardBg != null ? 2 : 1), borderRadius: BorderRadius.circular(8)),
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
                         child: Column(
@@ -3344,7 +3330,9 @@ class EndlessScaleScreen extends StatelessWidget {
                       final cardBg = state.equippedCardBackgroundColor;
                       return Card(
                     color: cardBg != null ? Color.alphaBlend(cardBg.withOpacity(.4), const Color(0xFF1E1E24)) : null,
-                    shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFF1E88E5), width: 1), borderRadius: BorderRadius.circular(8)),
+                    // Okraj reaguje na zvolené pozadí karty (viz konverzace, stejná oprava jako
+                    // v Doupěti výš).
+                    shape: RoundedRectangleBorder(side: BorderSide(color: cardBg ?? const Color(0xFF1E88E5), width: cardBg != null ? 2 : 1), borderRadius: BorderRadius.circular(8)),
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
                       child: Column(
@@ -3558,7 +3546,9 @@ class WorldBossScreen extends StatelessWidget {
                       final cardBg = s.equippedCardBackgroundColor;
                       return Card(
                     color: cardBg != null ? Color.alphaBlend(cardBg.withOpacity(.4), const Color(0xFF1E1E24)) : null,
-                    shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFF1E88E5), width: 1), borderRadius: BorderRadius.circular(8)),
+                    // Okraj reaguje na zvolené pozadí karty (viz konverzace, stejná oprava jako
+                    // v Doupěti výš).
+                    shape: RoundedRectangleBorder(side: BorderSide(color: cardBg ?? const Color(0xFF1E88E5), width: cardBg != null ? 2 : 1), borderRadius: BorderRadius.circular(8)),
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
                       child: Column(
@@ -4055,7 +4045,9 @@ class _RiftScreenState extends State<RiftScreen> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [cardBg != null ? cardBg.withOpacity(.85) : const Color(0xFF14314D), const Color(0xFF1E1E24)]),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF1E88E5).withOpacity(.6)),
+                        // Okraj reaguje na zvolené pozadí karty (viz konverzace - "pozadí karty
+                        // nefunguje", stejná oprava jako v ostatních 4 bojových obrazovkách).
+                        border: Border.all(color: (cardBg ?? const Color(0xFF1E88E5)).withOpacity(cardBg != null ? 0.9 : 0.6), width: cardBg != null ? 2 : 1),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5315,9 +5307,11 @@ class TowerScreen extends StatelessWidget {
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       gradient: RadialGradient(center: Alignment.topLeft, radius: 1.3, colors: [(cardBg ?? heroAccent).withOpacity(cardBg != null ? 0.30 : 0.16), const Color(0xFF141019)]),
-                      border: Border.all(color: heroAccent.withOpacity(.5)),
+                      // Okraj reaguje na zvolené pozadí karty (viz konverzace - "pozadí karty
+                      // nefunguje") - dřív byl napevno heroAccent bez ohledu na volbu.
+                      border: Border.all(color: (cardBg ?? heroAccent).withOpacity(cardBg != null ? 0.9 : 0.5), width: cardBg != null ? 2 : 1),
                       borderRadius: BorderRadius.circular(13),
-                      boxShadow: [BoxShadow(color: heroAccent.withOpacity(.35), blurRadius: 18, spreadRadius: -6)],
+                      boxShadow: [BoxShadow(color: (cardBg ?? heroAccent).withOpacity(.35), blurRadius: 18, spreadRadius: -6)],
                     ),
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -8747,7 +8741,7 @@ class _BankScreenState extends State<BankScreen> {
             borderRadius: BorderRadius.circular(14),
             child: SizedBox(
               width: double.infinity,
-              height: 130,
+              height: 200,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -8769,14 +8763,8 @@ class _BankScreenState extends State<BankScreen> {
             ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          child: Text(
-            tr('Trvalé úložiště nezávislé na tvojí aktuální třídě/buildu - itemy i zlato.', 'Permanent storage independent of your current class/build - items and gold.'),
-            style: const TextStyle(color: Colors.grey, fontSize: 12),
-            textAlign: TextAlign.center,
-          ),
-        ),
+        // Popisný text schován (viz konverzace "schovej ten text") - portrét + jméno teď
+        // mluví samy za sebe, bez vysvětlivky pod nimi.
         TabBar(
           labelColor: FantasyColors.gold,
           unselectedLabelColor: Colors.grey,

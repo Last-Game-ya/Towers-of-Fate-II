@@ -2408,10 +2408,16 @@ class BattlePassFramePainter extends CustomPainter {
       ..strokeWidth = ringWidth
       ..shader = SweepGradient(colors: [style.color, Color.lerp(style.color, Colors.white, .35)!, style.color, Color.lerp(style.color, Colors.black, .25)!]).createShader(Rect.fromCircle(center: center, radius: r));
     canvas.drawCircle(center, r, ringPaint);
-    // Druhý, tenčí vnitřní prstenec - jen u top-tier rámů (battlepass/ember/void/celestial),
-    // ať mají skutečně jinou konstrukci, ne jen jinou barvu stejného jednoduchého kruhu.
+    // PŘEPRACOVÁNO (viz konverzace - "dvě čáry, vnitřní vadí, vrstvi je na sebe s jiným
+    // odstínem, ať to působí plasticky"): dřív druhý tenký prstenec kreslil VIDITELNĚ ODDĚLENOU
+    // čáru s mezerou uvnitř hlavního prstenu. Teď se místo toho VRSTVÍ dva tenčí tahy PŘÍMO NA
+    // stejný pás hlavního prstenu (jeden lehce k vnějšímu okraji ve světlejším odstínu, druhý
+    // lehce k vnitřnímu okraji v tmavším) - stejný trik jako zkosená/vypouklá kovová obruč,
+    // žádná druhá samostatná linka, žádná mezera. Zaoblení (kruh) i celková konstrukce beze
+    // změny - jen jak se ten "top-tier" vzhled kreslí.
     if (style.doubleRing) {
-      canvas.drawCircle(center, r - ringWidth * 1.8, Paint()..style = PaintingStyle.stroke..strokeWidth = ringWidth * .45..color = Color.lerp(style.color, Colors.white, .5)!.withOpacity(.8));
+      canvas.drawCircle(center, r + ringWidth * 0.16, Paint()..style = PaintingStyle.stroke..strokeWidth = ringWidth * 0.38..color = Color.lerp(style.color, Colors.white, .5)!.withOpacity(.6));
+      canvas.drawCircle(center, r - ringWidth * 0.22, Paint()..style = PaintingStyle.stroke..strokeWidth = ringWidth * 0.32..color = Color.lerp(style.color, Colors.black, .4)!.withOpacity(.55));
     }
     // Klenoty po obvodu - počet podle vzácnosti (0 = žádné u nejlevnějších kovových rámů). Na
     // nejmenších avatarech (kompaktní 26px combat header) se všechny přiblíží pod ~2px a spíš
@@ -2442,34 +2448,44 @@ class BattlePassFramePainter extends CustomPainter {
       ..strokeWidth = ringWidth
       ..shader = SweepGradient(colors: [style.color, Color.lerp(style.color, Colors.white, .35)!, style.color, Color.lerp(style.color, Colors.black, .25)!]).createShader(rect);
     canvas.drawRRect(rrect, ringPaint);
+    // Stejné přepracování jako u kruhové varianty výš (vrstvené odstíny místo oddělené druhé
+    // čáry) - zaoblení rohů (cornerRadius) zůstává úplně beze změny, jen se jinak kreslí ten
+    // "top-tier" lesk uvnitř stejného pásu.
     if (style.doubleRing) {
-      final innerRect = rect.deflate(ringWidth * 1.8);
-      canvas.drawRRect(RRect.fromRectAndRadius(innerRect, Radius.circular((cornerRadius - ringWidth * 1.8).clamp(0, cornerRadius))), Paint()..style = PaintingStyle.stroke..strokeWidth = ringWidth * .45..color = Color.lerp(style.color, Colors.white, .5)!.withOpacity(.8));
+      final outerRRect = RRect.fromRectAndRadius(rect.inflate(ringWidth * 0.16), Radius.circular(cornerRadius + ringWidth * 0.16));
+      final innerRRect = RRect.fromRectAndRadius(rect.deflate(ringWidth * 0.22), Radius.circular((cornerRadius - ringWidth * 0.22).clamp(0, cornerRadius)));
+      canvas.drawRRect(outerRRect, Paint()..style = PaintingStyle.stroke..strokeWidth = ringWidth * 0.38..color = Color.lerp(style.color, Colors.white, .5)!.withOpacity(.6));
+      canvas.drawRRect(innerRRect, Paint()..style = PaintingStyle.stroke..strokeWidth = ringWidth * 0.32..color = Color.lerp(style.color, Colors.black, .4)!.withOpacity(.55));
     }
     if (style.gems > 0) {
       final gemR = 4.5 * scale, gemR2 = 3.6 * scale, gemHighlight = 1.1 * scale;
-      // Body po obvodu obdélníku, rozmístěné rovnoměrně - PŘEPOČÍTÁNO (viz konverzace o rámu,
-      // co "nelícoval"): dřív rozmisťovalo klenoty podél obvodu OSTRÉHO obdélníku, ale rám se
-      // kreslí se ZAOBLENÝMI rohy (cornerRadius). Klenot, co vyšel přesně do rohu (typicky i=0
-      // vždy padl přesně na ostrý roh), tak "vlál" mimo skutečnou zaoblenou čáru rámu misto na
-      // ní. Teď se počítá jen po ROVNÝCH úsecích mezi rohy (obvod zmenšený o zaoblení v každém
-      // rohu), takže žádný klenot nikdy nepadne do zaobleného rohu samotného.
-      final w = rect.width, h = rect.height;
-      final cr = cornerRadius.clamp(0.0, (w < h ? w : h) / 2 - 1);
-      final segTop = w - 2 * cr, segRight = h - 2 * cr, segBottom = w - 2 * cr, segLeft = h - 2 * cr;
-      final usablePerimeter = segTop + segRight + segBottom + segLeft;
-      for (int i = 0; i < style.gems; i++) {
-        final dist = (i / style.gems) * usablePerimeter;
-        Offset p;
-        if (dist < segTop) {
-          p = Offset(rect.left + cr + dist, rect.top);
-        } else if (dist < segTop + segRight) {
-          p = Offset(rect.right, rect.top + cr + (dist - segTop));
-        } else if (dist < segTop + segRight + segBottom) {
-          p = Offset(rect.right - cr - (dist - segTop - segRight), rect.bottom);
-        } else {
-          p = Offset(rect.left, rect.bottom - cr - (dist - segTop - segRight - segBottom));
+      // PŘEPRACOVÁNO (viz konverzace - "vnitřní část zasahuje do HP baru"): dřív se klenoty
+      // rozmisťovaly ROVNOMĚRNĚ po celém obvodu karty - u vysoké karty (portrét+HP+Štít+Temná
+      // Síla) to posadilo klenot uprostřed LEVÉ/PRAVÉ hrany přímo do výšky HP baru, protože to
+      // je karty vertikální střed. Teď klenoty sedí jen V ROZÍCH (a případné navíc klenoty nad
+      // 4 se přidají podél HORNÍ hrany, tj. přes portrét, ne přes stat bary) - roh nikdy nemůže
+      // spadnout doprostřed obsahu, ať je karta jakkoli vysoká.
+      final cr = cornerRadius.clamp(0.0, (rect.width < rect.height ? rect.width : rect.height) / 2 - 1);
+      final corners = [
+        Offset(rect.left + cr * 0.35, rect.top + cr * 0.35),
+        Offset(rect.right - cr * 0.35, rect.top + cr * 0.35),
+        Offset(rect.right - cr * 0.35, rect.bottom - cr * 0.35),
+        Offset(rect.left + cr * 0.35, rect.bottom - cr * 0.35),
+      ];
+      final points = <Offset>[];
+      for (int i = 0; i < style.gems && i < 4; i++) {
+        points.add(corners[i]);
+      }
+      if (style.gems > 4) {
+        // Extra klenoty navíc nad 4 (jen 6-gem top-tier rám) - podél HORNÍ hrany mezi rohy,
+        // nikdy podél boční hrany.
+        final extra = style.gems - 4;
+        for (int i = 0; i < extra; i++) {
+          final fx = (i + 1) / (extra + 1);
+          points.add(Offset(rect.left + cr + (rect.width - 2 * cr) * fx, rect.top));
         }
+      }
+      for (final p in points) {
         canvas.drawCircle(p, gemR, Paint()..color = style.color.withOpacity(.5)..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 * scale));
         canvas.drawCircle(p, gemR2, Paint()..color = Color.lerp(style.color, Colors.white, .2)!);
         canvas.drawCircle(p - Offset(0.7 * scale, 0.7 * scale), gemHighlight, Paint()..color = Colors.white.withOpacity(.75));
@@ -5091,22 +5107,28 @@ const List<EquipSceneSlot> equipSceneSlots = [
   // obou žádný item nepřekáží přesnému měření). Rám má přesně 200-210px výšku, odznak typu
   // slotu 33-45px pod horním okrajem - z týhle kalibrace jsou dopočítané všechny ostatní rámy
   // matematicky (stejný rozestup), ne odhadem z jednotlivých překrývajících se itemů.
-  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.170, dy: 0.211),
+  // Levý sloupec - Zbroj potvrzena jako dobře seřízená (uživatel), takže zůstává beze změny a
+  // slouží jako referenční bod. Zbraň posunuta o 2mm nahoru (explicitní zadání). Zbylé 4
+  // (helma/rukavice/boty/prsten) - první odhad (nahoru) byl OPAČNÝ směr, uživatel potvrdil, že
+  // potřebují posun DOLŮ - teď posunuté od původních hodnot o stejnou velikost kroku opačným
+  // směrem (dolů, ne nahoru).
+  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.170, dy: 0.190),
   EquipSceneSlot(slot: EquipSlot.armor, dx: 0.170, dy: 0.313),
-  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.170, dy: 0.414),
-  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.170, dy: 0.516),
-  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.170, dy: 0.618),
-  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.170, dy: 0.720),
-  // Pravý sloupec (dx ~0.787), shora dolů.
-  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.787, dy: 0.174),
-  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.787, dy: 0.271),
-  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.787, dy: 0.368),
-  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.787, dy: 0.465),
+  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.170, dy: 0.435),
+  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.170, dy: 0.537),
+  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.170, dy: 0.639),
+  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.170, dy: 0.741),
+  // Pravý sloupec (dx ~0.787), shora dolů. Celý posunutý o 10mm dolů (viz konverzace, ~175px
+  // při odhadu ~444 PPI/1668px výška scény → Δdy ≈ 0,105).
+  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.787, dy: 0.279),
+  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.787, dy: 0.376),
+  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.787, dy: 0.473),
+  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.787, dy: 0.570),
   // Pár malých rámů dole vpravo - dva sloty Přívěsku vedle sebe. Změřeno přímo (diamant byl
   // vidět naplněný na jednom ze screenshotů), ne dopočítáno - tyhle 2 mají jinou (nižší) výšku
   // rámu než hlavní sloty výš, takže stejná matematika by tu neseděla.
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.711, dy: 0.620, accessoryIndex: 0),
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.863, dy: 0.620, accessoryIndex: 1),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.711, dy: 0.725, accessoryIndex: 0),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.863, dy: 0.725, accessoryIndex: 1),
 ];
 
 /// Malovaná scéna "Nasazené vybavení" v Batohu - stejný jazyk jako SceneMapView níž
@@ -5851,7 +5873,7 @@ class AdventureScreen extends StatelessWidget {
           label: tr('Věž Osudu', 'Tower of Fate'),
           description: tr('Hlavní věž - postupuj patro po patře, bojuj s nepřáteli a bossy, sbírej vybavení a levuj postavu. Tvůj hlavní zdroj postupu ve hře, dostupný od začátku.',
               'The main tower - climb floor by floor, fight enemies and bosses, collect gear and level up your character. Your main source of progress in the game, available from the start.'),
-          dx: 0.50, dy: 0.264, prominence: 1.4,
+          dx: 0.50, dy: 0.244, prominence: 1.4,
           // Věž je hlavní herní smyčka - tap rovnou otevírá TowerScreen, bez info bottom-sheetu.
           skipMenu: true,
           onTap: () => openWorldScreen(context, tr('Věž Osudu', 'Tower of Fate'), const TowerScreen(), theme: const Color(0xFF1E88E5)),
@@ -5910,7 +5932,7 @@ class AdventureScreen extends StatelessWidget {
                 'Once a day, it wakes. Enormous, burning, merciless. Whoever brings it down earns a reward worth remembering - gold, power essence, rune stones. And if one attempt is not enough, I know a way to beg for another - just watch a few pictures.'),
             npcName: tr('Wardek, Hlasatel Zkázy', 'Wardek, Herald of Doom'),
             npcPortrait: 'assets/images/npc/doom_herald.png',
-            dx: 0.50, dy: 0.62, prominence: 1.15,
+            dx: 0.50, dy: 0.553, prominence: 1.15,
             onTap: () {
               if (!state.worldBossUnlocked) return;
               state.markHubTileSeen('worldboss');
@@ -5931,7 +5953,7 @@ class AdventureScreen extends StatelessWidget {
                 'The rift shifts every day - different challenges, different modifiers, a limited number of entries. Those who make it through find chests of magic dust and crystals... and sometimes gear rare enough you will not find it anywhere else. But your attempts are not endless, so spend them wisely.'),
             npcName: tr('Vesper, Strážkyně Trhlin', 'Vesper, Keeper of the Rift'),
             npcPortrait: 'assets/images/npc/rift_keeper.png',
-            dx: 0.15, dy: 0.78, prominence: 0.95,
+            dx: 0.15, dy: 0.746, prominence: 0.95,
             onTap: () {
               if (!state.riftUnlocked) return;
               state.markHubTileSeen('rift');
@@ -6242,7 +6264,7 @@ class _RuneWizardScreenState extends State<RuneWizardScreen> with SingleTickerPr
                 borderRadius: BorderRadius.circular(14),
                 child: SizedBox(
                   width: double.infinity,
-                  height: 130,
+                  height: 200,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
