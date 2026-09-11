@@ -4712,7 +4712,8 @@ enum _ClassSelectPhase { browsing, fadingOut, story1, story2 }
 // trvá jen pár vteřin, takže nemá smysl kvůli tomu dělat z celé _ClassSelectionScreenState
 // TickerProvider.
 class _AwakeningAmbientOverlay extends StatefulWidget {
-  const _AwakeningAmbientOverlay();
+  final bool showEyes;
+  const _AwakeningAmbientOverlay({this.showEyes = false});
   @override
   State<_AwakeningAmbientOverlay> createState() => _AwakeningAmbientOverlayState();
 }
@@ -4733,8 +4734,45 @@ class _AwakeningAmbientOverlayState extends State<_AwakeningAmbientOverlay> with
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(animation: _c, builder: (context, _) => CustomPaint(painter: _AwakeningAmbientPainter(_c.value), size: Size.infinite));
+    return Stack(children: [
+      AnimatedBuilder(animation: _c, builder: (context, _) => CustomPaint(painter: _AwakeningAmbientPainter(_c.value), size: Size.infinite)),
+      // Žhnoucí oči ve tmě chodby - viz konverzace "oživíš obrázek po výběru class". Zobrazí se
+      // JEN v momentu, kdy se objeví text o krocích blížících se ze tmy (story2), ať to přímo
+      // reaguje na příběh, ne jen obecná atmosféra. Plynulé prolnutí (AnimatedOpacity), uvnitř
+      // ještě vlastní jemný pulz jasu (_c animace, sdílená s pochodněmi/vzdáleným světlem výš).
+      AnimatedOpacity(
+        opacity: widget.showEyes ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 1200),
+        curve: Curves.easeIn,
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (context, _) => CustomPaint(painter: _ApproachingEyesPainter(_c.value), size: Size.infinite),
+        ),
+      ),
+    ]);
   }
+}
+
+class _ApproachingEyesPainter extends CustomPainter {
+  final double t;
+  const _ApproachingEyesPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Pozice v tmavé části chodby, pod vzdáleným modrobílým světlem a nad textem - v hloubce
+    // scény, kde by se logicky skrýval přibližující se nepřítel.
+    final center = Offset(size.width * 0.47, size.height * 0.40);
+    final eyeSpacing = size.width * 0.028;
+    final pulse = 0.6 + 0.4 * (0.5 + 0.5 * sin(t * 2 * pi * 1.6));
+    for (final dx in [-eyeSpacing, eyeSpacing]) {
+      final p = center + Offset(dx, 0);
+      canvas.drawCircle(p, size.width * 0.022, Paint()..color = const Color(0xFFB4321A).withOpacity(0.45 * pulse)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.02));
+      canvas.drawOval(Rect.fromCenter(center: p, width: size.width * 0.013, height: size.width * 0.007), Paint()..color = const Color(0xFFFF5A32).withOpacity(0.85 * pulse));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ApproachingEyesPainter old) => old.t != t;
 }
 
 class _AwakeningAmbientPainter extends CustomPainter {
@@ -5014,7 +5052,7 @@ class _ClassSelectionScreenState extends State<_ClassSelectionScreen> {
                   // Vlastní krátkodobý StatefulWidget se svým TickerProviderStateMixin - obrazovka
                   // žije jen pár vteřin (fade in/out mezi story1/story2/blank), takže nemá smysl
                   // kvůli tomu měnit _ClassSelectionScreenState na TickerProvider.
-                  const Positioned.fill(child: IgnorePointer(child: _AwakeningAmbientOverlay())),
+                  Positioned.fill(child: IgnorePointer(child: _AwakeningAmbientOverlay(showEyes: _phase == _ClassSelectPhase.story2))),
                   // Jemná dodatečná vinětka - obrázek je sám skoro černý, tohle jen zajistí, že
                   // text zůstane čitelný i kdyby byla nějaká část pozadí světlejší, než čekáme.
                   const DecoratedBox(decoration: BoxDecoration(color: Colors.black26)),
@@ -5285,36 +5323,16 @@ class TowerScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (state.portraitCombatMode) ...[
-                            // BUG FIX (viz konverzace - "není vidět obrázek specializace"):
-                            // podmínka byla obráceně (`!= 0`), takže se malý kroužek s ikonou
-                            // spec relikvie zobrazoval PRÁVĚ TEHDY, když hráč specializaci MÁ
-                            // zvolenou - a schovával tím skutečný portrét. Ten kroužek má naopak
-                            // sloužit jako dočasná náhrada, DOKUD hráč žádnou specializaci nemá.
-                            if (state.specialization == 0)
-                              Center(
-                                child: Column(children: [
-                                  SizedBox(
-                                    width: 64, height: 64,
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [state.currentSpecRelic.color.withOpacity(.5), const Color(0xFF14181C)]), border: Border.all(color: state.currentSpecRelic.color.withOpacity(.7), width: 2), boxShadow: [BoxShadow(color: state.currentSpecRelic.color.withOpacity(.6), blurRadius: 14)]),
-                                          child: specRelicIconWidget(state.currentSpecRelic.kind, state.currentSpecRelic.color, size: 32),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(mainAxisSize: MainAxisSize.min, children: [
-                                    Text(state.heroName.isNotEmpty ? state.heroName : tr("Hrdina", "Hero"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: heroAccent)),
-                                    const SizedBox(width: 5),
-                                    Text('Lv. ${state.level}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: heroAccent.withOpacity(.85))),
-                                  ]),
-                                ]),
-                              )
-                            else if (kClassPortraitAssets[state.heroClass] != null)
+                            // BUG FIX 2 (viz konverzace - "portrét zmizel, když nemám
+                            // specializaci"): moje předchozí oprava (`!=0`→`==0`) byla založená
+                            // na špatné diagnóze. specializationPortraitFor() UŽ SÁM O SOBĚ padá
+                            // zpátky na obecný portrét třídy, když spec==0 (viz data_models.dart)
+                            // - nikdy nevrací null pro platnou třídu. Podmínka na specialization
+                            // tu neměla být VŮBEC - správný gate je jen "existuje portrét pro
+                            // tuhle třídu", ne "je zvolená specializace". Malý kroužek s ikonou
+                            // spec relikvie je teď skutečně jen krajní fallback pro třídu bez
+                            // JAKÉHOKOLIV portrétu (kClassPortraitAssets bez záznamu).
+                            if (kClassPortraitAssets[state.heroClass] != null)
                               // Velký obdélníkový portrét přes celou šířku karty místo dřívějšího
                               // malého 64px kulatého avataru (min. 2x větší) - skutečná ilustrace
                               // třídy jako dominantní vizuál karty, jméno přes gradientní scrim
@@ -6530,15 +6548,15 @@ class CustomizationScreen extends StatelessWidget {
                       ),
                       for (final entry in kSelectableButtonColors.entries)
                         Builder(builder: (context) {
-                          // Odemčení barvy je sdílené mezi Barvou tlačítka a Barvou záře výš -
-                          // je to o VLASTNICTVÍ té barvy, ne o dvou oddělených sadách.
-                          final unlocked = s.isButtonColorUnlocked(entry.key);
+                          // Odemčení barvy záře je teď VLASTNÍ sada, oddělená od Barvy tlačítka
+                          // výš (viz konverzace - "musím odemknout pro každý blok zvlášť").
+                          final unlocked = s.isGlowColorUnlocked(entry.key);
                           final achievementOnly = GameState.achievementOnlyButtonColors.contains(entry.key);
                           return _pickerSwatch(
                             selected: glowColor == entry.value,
                             locked: !unlocked,
                             priceLabel: unlocked ? null : (achievementOnly ? tr('Achievement', 'Achievement') : '${GameState.buttonColorUnlockPrice} ✦'),
-                            onTap: unlocked ? () => s.setCustomSlotGlowColor(slotKey, entry.value) : () => s.unlockButtonColorWithSparks(entry.key),
+                            onTap: unlocked ? () => s.setCustomSlotGlowColor(slotKey, entry.value) : () => s.unlockGlowColorWithSparks(entry.key),
                             child: Container(width: 26, height: 26, decoration: BoxDecoration(shape: BoxShape.circle, color: unlocked ? entry.value : Colors.grey.shade800, boxShadow: unlocked ? [BoxShadow(color: entry.value.withOpacity(.8), blurRadius: 6)] : null)),
                             label: entry.key,
                           );

@@ -5035,17 +5035,25 @@ class _SceneBuildingMarker extends StatelessWidget {
             // Popisek jen u odemčené budovy - u zamčené (Město i Dobrodružství) žádný extra
             // text na mapě: cedule (_WoodenClosedSign) už má "ZAVŘENO" vypálené v obrázku, a
             // konkrétní level odemčení se ukazuje jen v info sheetu po ťuknutí, ne tady navrch.
+            // Umístěn POD tap-zónou budovy (Positioned, ne vycentrovaný ve Stacku jako dřív) -
+            // viz konverzace "ať je budova lépe vidět" - dřív popisek ležel přímo přes budovu.
             if (!spot.locked)
-              Container(
-                constraints: BoxConstraints(maxWidth: tapW - 12),
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(color: Colors.black.withOpacity(.6), borderRadius: BorderRadius.circular(6)),
-                child: Text(
-                  spot.label,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFF1E6D0), height: 1.1),
+              Positioned(
+                top: tapH + 2,
+                left: -20, right: -20,
+                child: Center(
+                  child: Container(
+                    constraints: BoxConstraints(maxWidth: tapW + 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(color: Colors.black.withOpacity(.6), borderRadius: BorderRadius.circular(6)),
+                    child: Text(
+                      spot.label,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFF1E6D0), height: 1.1),
+                    ),
+                  ),
                 ),
               ),
           ],
@@ -5076,24 +5084,29 @@ class EquipSceneSlot {
 /// klidně přeskupte, pokud bude sedět jinak vizuálně (např. helma nahoře by dávala smysl blíž
 /// hlavě postavy).
 const List<EquipSceneSlot> equipSceneSlots = [
-  // Levý sloupec (dx ~0.20), shora dolů - třetí přeměření, tentokrát na screenshotu POŘÍZENÉM
-  // AŽ PO opravě OverflowBox/SizedBox (skutečně plnokrevná scéna 0-100% šířky obrazovky, ne
-  // dřívější (šířka-32px) render, na který mířila předchozí dvě kola). Detekce barevných pixelů
-  // ikony vůči celé ploše scény (ne odhad), takže by tohle mělo sedět přesně.
-  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.183, dy: 0.139),
-  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.203, dy: 0.286),
-  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.181, dy: 0.377),
-  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.220, dy: 0.505),
-  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.207, dy: 0.636),
-  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.196, dy: 0.740),
-  // Pravý sloupec (dx ~0.76), shora dolů.
-  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.786, dy: 0.184),
-  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.772, dy: 0.300),
-  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.744, dy: 0.382),
-  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.766, dy: 0.541),
-  // Pár malých rámů dole vpravo - dva sloty Přívěsku vedle sebe.
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.770, dy: 0.676, accessoryIndex: 0),
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.885, dy: 0.666, accessoryIndex: 1),
+  // Čtvrté přeměření (viz konverzace - "ladíme to už po několikáté", "itemy jsou vykreslené
+  // nad a mimo střed rámečku") - tentokrát NE podle pozice itemů (ty byly celou dobu součástí
+  // problému - vykreslují se pár desítek px výš/vpravo od skutečného středu svého rámu), ale
+  // podle SAMOTNÝCH RÁMŮ, změřených ze DVOU prázdných slotů (helma vlevo, relikvie vpravo - u
+  // obou žádný item nepřekáží přesnému měření). Rám má přesně 200-210px výšku, odznak typu
+  // slotu 33-45px pod horním okrajem - z týhle kalibrace jsou dopočítané všechny ostatní rámy
+  // matematicky (stejný rozestup), ne odhadem z jednotlivých překrývajících se itemů.
+  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.170, dy: 0.211),
+  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.170, dy: 0.313),
+  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.170, dy: 0.414),
+  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.170, dy: 0.516),
+  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.170, dy: 0.618),
+  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.170, dy: 0.720),
+  // Pravý sloupec (dx ~0.787), shora dolů.
+  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.787, dy: 0.174),
+  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.787, dy: 0.271),
+  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.787, dy: 0.368),
+  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.787, dy: 0.465),
+  // Pár malých rámů dole vpravo - dva sloty Přívěsku vedle sebe. Změřeno přímo (diamant byl
+  // vidět naplněný na jednom ze screenshotů), ne dopočítáno - tyhle 2 mají jinou (nižší) výšku
+  // rámu než hlavní sloty výš, takže stejná matematika by tu neseděla.
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.711, dy: 0.620, accessoryIndex: 0),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.863, dy: 0.620, accessoryIndex: 1),
 ];
 
 /// Malovaná scéna "Nasazené vybavení" v Batohu - stejný jazyk jako SceneMapView níž

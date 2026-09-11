@@ -761,6 +761,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         "customSlotGlowColor": customSlotGlowColor,
         "unlockedButtonIcons": unlockedButtonIcons.toList(),
         "unlockedButtonColorNames": unlockedButtonColorNames.toList(),
+        "unlockedGlowColorNames": unlockedGlowColorNames.toList(),
         "redeemedPromoCodes": redeemedPromoCodes.toList(),
         "introSeen": introSeen,
         "introTutorialDone": introTutorialDone,
@@ -967,6 +968,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     unlockedButtonIcons = Set<String>.from((json["unlockedButtonIcons"] as List?) ?? const ['default']);
     if (unlockedButtonIcons.isEmpty) unlockedButtonIcons.add('default');
     unlockedButtonColorNames = Set<String>.from((json["unlockedButtonColorNames"] as List?) ?? const ['Výchozí']);
+    unlockedGlowColorNames = Set<String>.from((json["unlockedGlowColorNames"] as List?) ?? const ['Výchozí']);
     if (unlockedButtonColorNames.isEmpty) unlockedButtonColorNames.add('Výchozí');
     redeemedPromoCodes = Set<String>.from((json["redeemedPromoCodes"] as List?) ?? const []);
     introSeen = json["introSeen"] as bool? ?? false;
@@ -1855,14 +1857,21 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   // jen je dá odemknutí Ascension I-IV (viz achievementOnlyButtonColors a _unlockAchievement).
   Set<String> unlockedButtonIcons = {'default'};
   Set<String> unlockedButtonColorNames = {'Výchozí'};
+  // Odemčení BARVY TLAČÍTKA a BARVY ZÁŘE jsou teď ZÁMĚRNĚ oddělené sady (viz konverzace - "cílem
+  // je, aby to bylo tak, že musím odemknout pro každý blok zvlášť") - dřív sdílely jednu sadu
+  // (vlastnictví barvy samo o sobě), teď je to dvojí investice, i pro stejnou barvu.
+  Set<String> unlockedGlowColorNames = {'Výchozí'};
   static const int buttonIconUnlockPrice = 20;
   static const int buttonColorUnlockPrice = 15;
   // Tyhle 4 barvy jsou vyhrazené pro achievementy (Ascension I-IV) - i kdyby měl hráč dost
-  // Jisker, nejdou koupit v pickeru, jen se zobrazí požadavek na achievement.
+  // Jisker, nejdou koupit v pickeru, jen se zobrazí požadavek na achievement. Achievement
+  // odemkne OBOJÍ (tlačítko i záři) najednou - je to jednorázový milník, ne nákup, takže nemá
+  // smysl to dělit na dva samostatné achievementy za tu samou barvu.
   static const Set<String> achievementOnlyButtonColors = {'Bílá', 'Červená', 'Oranžová', 'Černá'};
 
   bool isButtonIconUnlocked(String accentName) => accentName == 'default' || unlockedButtonIcons.contains(accentName);
   bool isButtonColorUnlocked(String colorName) => colorName == 'Výchozí' || unlockedButtonColorNames.contains(colorName);
+  bool isGlowColorUnlocked(String colorName) => colorName == 'Výchozí' || unlockedGlowColorNames.contains(colorName);
 
   void unlockButtonIconWithSparks(String accentName) {
     if (isButtonIconUnlocked(accentName)) return;
@@ -1891,7 +1900,25 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
     cosmeticSparks -= buttonColorUnlockPrice;
     unlockedButtonColorNames.add(colorName);
-    message = tr("✨ Barva odemčena!", "✨ Color unlocked!");
+    message = tr("✨ Barva tlačítka odemčena!", "✨ Button color unlocked!");
+    notifyListeners();
+  }
+
+  void unlockGlowColorWithSparks(String colorName) {
+    if (isGlowColorUnlocked(colorName)) return;
+    if (achievementOnlyButtonColors.contains(colorName)) {
+      message = tr("Tuhle barvu odemkne jen achievement Ascension.", "This color only unlocks via the Ascension achievement.");
+      notifyListeners();
+      return;
+    }
+    if (cosmeticSparks < buttonColorUnlockPrice) {
+      message = tr("Nedostatek Jisker (potřeba: $buttonColorUnlockPrice ✦).", "Not enough Sparks (need: $buttonColorUnlockPrice ✦).");
+      notifyListeners();
+      return;
+    }
+    cosmeticSparks -= buttonColorUnlockPrice;
+    unlockedGlowColorNames.add(colorName);
+    message = tr("✨ Barva záře odemčena!", "✨ Glow color unlocked!");
     notifyListeners();
   }
 
@@ -8234,7 +8261,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     AchievementId.riftPusher100: AchievementDef(id: AchievementId.riftPusher100, name: tr("Roztrhávač reality", "Reality Render"), description: tr("Zdolej Trhlinu Osudu tier 100.", "Clear Rift of Fate tier 100."), title: tr("Roztrhávač reality", "Reality Render"), rewardDust: 8000),
     AchievementId.magePioneer: AchievementDef(id: AchievementId.magePioneer, name: tr("Arkánový učeň", "Arcane Apprentice"), description: tr("Dosáhni 5. patra s Mágem.", "Reach floor 5 as a Mage."), title: tr("Arkánový učeň", "Arcane Apprentice"), rewardGold: 200),
     AchievementId.duelistPioneer: AchievementDef(id: AchievementId.duelistPioneer, name: tr("První výpad", "First Lunge"), description: tr("Dosáhni 5. patra se Šermířem.", "Reach floor 5 as a Duelist."), title: tr("Čepel Osudu", "Blade of Fate"), rewardGold: 200),
-    AchievementId.survivor20: AchievementDef(id: AchievementId.survivor20, name: tr("Přeživší", "Survivor"), description: tr("Zemři 20×. Odemyká Offline Progress.", "Die 20 times. Unlocks Offline Progress."), title: tr("Přeživší", "Survivor"), rewardDust: 500),
+    AchievementId.survivor20: AchievementDef(id: AchievementId.survivor20, name: tr("Přeživší", "Survivor"), description: tr("Zemři 20×.", "Die 20 times."), title: tr("Přeživší", "Survivor"), rewardDust: 500),
     AchievementId.survivor100: AchievementDef(id: AchievementId.survivor100, name: tr("Veterán smrti", "Veteran of Death"), description: tr("Zemři 100×.", "Die 100 times."), title: tr("Veterán smrti", "Veteran of Death"), rewardDust: 3000),
     AchievementId.promoRedeemer: AchievementDef(id: AchievementId.promoRedeemer, name: tr("Šťastlivec", "Lucky One"), description: tr("Uplatni svůj první promo kód.", "Redeem your first promo code."), title: tr("Šťastlivec", "Lucky One")),
     AchievementId.masterSmith: AchievementDef(id: AchievementId.masterSmith, name: tr("Mistr kovář", "Master Blacksmith"), description: tr("Dosáhni blacksmith ranku 50.", "Reach blacksmith rank 50."), title: tr("Mistr kovář", "Master Blacksmith"), rewardDust: 2000),
@@ -8419,7 +8446,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final def = achievementDefs[id]!;
     gold += def.rewardGold;
     magicDust += def.rewardDust;
-    if (def.rewardButtonColor != null) unlockedButtonColorNames.add(def.rewardButtonColor!);
+    if (def.rewardButtonColor != null) {
+      unlockedButtonColorNames.add(def.rewardButtonColor!);
+      unlockedGlowColorNames.add(def.rewardButtonColor!);
+    }
     if (def.rewardAuraId != null) unlockedAuras.add(def.rewardAuraId!);
     if (def.rewardFrameId != null) unlockedFrames.add(def.rewardFrameId!);
     if (def.rewardCardBackgroundId != null) unlockedCardBackgrounds.add(def.rewardCardBackgroundId!);
