@@ -875,6 +875,10 @@ enum AchievementId {
   allCursesTried,
   gemSocketed,
   riftPusher10,
+  // Dokončení Lair 100 (Normal) bez jediné smrti v CELÉ historii účtu (viz konverzace) -
+  // vzhledem k tomu, že smrt v týhle hře vždy resetuje postup (viz confirmDeath/resetGame),
+  // "bez jediné smrti" = totalDeaths == 0 v momentu, kdy je Lair 100 poprvé poražen.
+  lairFlawless100,
   // 4 nové achievementy vázané na sezóny Trhliny Osudu (viz konverzace) - Trhlina má 4 rotující
   // sezóny (bastion/plague/precision/chaos, viz RiftSeasonTheme), tady je to napojené na
   // permanentní riftTier rekord (40/60/80/100), ne na aktuálně běžící sezónu.
@@ -955,6 +959,8 @@ class AchievementDef {
   final String title; // kosmetický titul udělený po odemčení
   final int rewardGold;
   final int rewardDust;
+  // Krystaly jako odměna za achievement (viz konverzace "Bez poskvrny" - Lair 100 bez smrti).
+  final int rewardCrystals;
   // Volitelná odměna navíc - odemkne konkrétní barvu pro Skin tlačítek spellů (per-slot picker,
   // viz kSelectableButtonColors) - klíč musí přesně sedět s klíčem v té mapě. Na rozdíl od
   // ostatních barev, co jdou koupit za zlato, tyhle 4 (vázané na Ascension I-IV) jdou získat
@@ -975,6 +981,7 @@ class AchievementDef {
     required this.title,
     this.rewardGold = 0,
     this.rewardDust = 0,
+    this.rewardCrystals = 0,
     this.rewardButtonColor,
     this.rewardAuraId,
     this.rewardFrameId,

@@ -4792,6 +4792,10 @@ class SceneBuildingSpot {
   // teď napsaný jako přímá řeč tohoto NPC, ne jako neutrální popis budovy.
   final String? npcName;
   final String? npcPortrait;
+  // Posun POUZE popisku (ne budovy/tap-zóny) - viz konverzace "posun nápis, ne budovu". Ve
+  // fracích 0..1 stejné scény jako dx/dy, přičte se k vypočtené pozici popisku pod budovou.
+  final double labelOffsetDx;
+  final double labelOffsetDy;
   const SceneBuildingSpot({
     required this.iconType,
     required this.accent,
@@ -4812,6 +4816,8 @@ class SceneBuildingSpot {
     this.skipMenu = false,
     this.npcName,
     this.npcPortrait,
+    this.labelOffsetDx = 0,
+    this.labelOffsetDy = 0,
   });
 }
 
@@ -5055,8 +5061,8 @@ class _SceneBuildingMarker extends StatelessWidget {
             // viz konverzace "ať je budova lépe vidět" - dřív popisek ležel přímo přes budovu.
             if (!spot.locked)
               Positioned(
-                top: tapH + 2,
-                left: -20, right: -20,
+                top: tapH + 2 + spot.labelOffsetDy,
+                left: -20 + spot.labelOffsetDx, right: -20 - spot.labelOffsetDx,
                 child: Center(
                   child: Container(
                     constraints: BoxConstraints(maxWidth: tapW + 40),
@@ -5114,16 +5120,16 @@ const List<EquipSceneSlot> equipSceneSlots = [
   // směrem (dolů, ne nahoru).
   EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.170, dy: 0.190),
   EquipSceneSlot(slot: EquipSlot.armor, dx: 0.170, dy: 0.313),
-  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.170, dy: 0.435),
-  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.170, dy: 0.537),
-  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.170, dy: 0.639),
-  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.170, dy: 0.741),
+  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.170, dy: 0.466),
+  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.170, dy: 0.568),
+  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.170, dy: 0.691),
+  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.170, dy: 0.835),
   // Pravý sloupec (dx ~0.787), shora dolů. Celý posunutý o 10mm dolů (viz konverzace, ~175px
   // při odhadu ~444 PPI/1668px výška scény → Δdy ≈ 0,105).
-  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.787, dy: 0.279),
-  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.787, dy: 0.376),
-  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.787, dy: 0.473),
-  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.787, dy: 0.570),
+  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.801, dy: 0.237),
+  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.816, dy: 0.365),
+  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.801, dy: 0.515),
+  EquipSceneSlot(slot: EquipSlot.relic, dx: 0.816, dy: 0.633),
   // Pár malých rámů dole vpravo - dva sloty Přívěsku vedle sebe. Změřeno přímo (diamant byl
   // vidět naplněný na jednom ze screenshotů), ne dopočítáno - tyhle 2 mají jinou (nižší) výšku
   // rámu než hlavní sloty výš, takže stejná matematika by tu neseděla.
@@ -6014,6 +6020,7 @@ class CityScreen extends StatelessWidget {
           npcName: tr('Kapitánka Sera', 'Captain Sera'),
           npcPortrait: 'assets/images/npc/companions_captain.png',
           dx: 0.20, dy: 0.22, prominence: 0.9, tapWidth: 133, tapHeight: 150,
+          labelOffsetDx: 18.9, labelOffsetDy: -7.6, // popisek: 5mm doprava, 2mm nahoru
           onTap: () {
             if (state.companionsTileLocked) return;
             state.markHubTileSeen('companions');
@@ -6029,6 +6036,7 @@ class CityScreen extends StatelessWidget {
           npcName: tr('Posel Toma', 'Messenger Toma'),
           npcPortrait: 'assets/images/npc/quest_herald.png',
           dx: 0.68, dy: 0.31, prominence: 0.85, tapWidth: 82, tapHeight: 135,
+          labelOffsetDx: -15.1, labelOffsetDy: -37.8, // popisek: 4mm doleva, 10mm nahoru
           onTap: () => openWorldScreen(context, tr('Questy', 'Quests'), const QuestScreen()),
         ),
         SceneBuildingSpot(
@@ -6059,6 +6067,7 @@ class CityScreen extends StatelessWidget {
           npcName: tr('Ellinor, Alchymistka', 'Ellinor, the Alchemist'),
           npcPortrait: 'assets/images/npc/alchemist.png',
           dx: 0.13, dy: 0.50, prominence: 0.95, tapWidth: 100, tapHeight: 121,
+          labelOffsetDx: 11.3, labelOffsetDy: -37.8, // popisek: 3mm doprava, 10mm nahoru
           onTap: () => openWorldScreen(context, tr('Alchymie', 'Alchemy'), const AlchemistScreen()),
         ),
         SceneBuildingSpot(
@@ -6074,6 +6083,7 @@ class CityScreen extends StatelessWidget {
           npcName: tr('Kupec Dorin', 'Merchant Dorin'),
           npcPortrait: 'assets/images/npc/merchant.png',
           dx: 0.80, dy: 0.46, prominence: 1.0, tapWidth: 110, tapHeight: 100,
+          labelOffsetDy: -18.9, // popisek: 5mm nahoru
           onTap: () {
             if (!state.marketUnlocked) return;
             state.markHubTileSeen('market');
@@ -6136,6 +6146,7 @@ class CityScreen extends StatelessWidget {
           npcName: tr('Mistr Zlaťák', 'Master Goldstack'),
           npcPortrait: 'assets/images/npc/banker.png',
           dx: 0.50, dy: 0.21, prominence: 0.7, tapWidth: 121, tapHeight: 129,
+          labelOffsetDy: -37.8, // popisek: 10mm nahoru
           onTap: () {
             if (!state.bankUnlocked) return;
             state.markHubTileSeen('bank');
@@ -6272,7 +6283,7 @@ class _RuneWizardScreenState extends State<RuneWizardScreen> with SingleTickerPr
                       // sedí níž, takže s topCenter byl skoro celý oříznutý/schovaný pod
                       // tlačítky Runy/Osudové volby hned pod portrétem (viz konverzace - "obličej
                       // je překrytý tlačítky", ne že by chyběl v samotném obrázku).
-                      LivingPortrait(assetPath: 'assets/images/npc/matus.png', accent: FantasyColors2.runeIce, mode: PortraitLifeMode.subtle, alignment: Alignment.bottomCenter),
+                      LivingPortrait(assetPath: 'assets/images/npc/matus.png', accent: FantasyColors2.runeIce, mode: PortraitLifeMode.subtle, alignment: const Alignment(0, 0.4)),
                       DecoratedBox(decoration: BoxDecoration(border: Border.all(color: FantasyColors2.runeIce.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
                       Positioned(
                         left: 0, right: 0, bottom: 0,

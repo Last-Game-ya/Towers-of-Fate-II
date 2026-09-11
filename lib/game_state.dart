@@ -3804,15 +3804,23 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   static const List<EquipSlot> _hardcoreSetSlots = [EquipSlot.armor, EquipSlot.accessory, EquipSlot.gloves, EquipSlot.boots, EquipSlot.helmet, EquipSlot.belt, EquipSlot.cloak, EquipSlot.shoulders];
 
   Item _createHardcoreSetItem(HardcoreSetDef def, EquipSlot slot, int powerLevel) {
-    // Mainstat 2pc bonus (def.statName) se od teď počítá ŽIVĚ (statValue × level × počet
-    // nasazených kusů - viz GameState._activeEliteSetMainStatBonus), ne zapečený do itemu -
-    // proto ho tenhle item na rozdíl od dřívějška NEDOSTÁVÁ. Vitality zůstává baked-in, ale
-    // odvozená přímo z def.statValue × level (bez tier multiplikátoru primaryAmount, který
-    // sloužil hlavně mainstatu), aby item pořád nesl nějaké HP i sám o sobě.
-    final vitalityFromHp = max(1, (def.statValue * level * 0.15).round());
-    // Třetí stat navíc (viz stejná poznámka u _createSetItem výš).
+    // PŘEPRACOVÁNO (viz konverzace - "modrý set má jen Vitalitu, chci tři staty jako legendární
+    // item"): item teď nese 3 staty se STEJNÝMI váhami jako běžný legendární drop (3,2×/2,6×/
+    // 2,1×, viz generateBossLoot Rarity.legendary), + Rychlost útoku beze změny. Set bonus (2pc
+    // živě počítaný, viz _activeEliteSetMainStatBonus) zůstává NAVRCH jako samostatná odměna za
+    // nošení víc kusů najednou - stejný vzor jako klasické Diablo-style sety (item má svoje
+    // vlastní staty, set bonus je bonus za nošení víc kusů, ne náhrada za staty na itemu).
+    // "power" = stejná základna jako dřív (def.statValue × level), × stejný tier multiplikátor
+    // jako klasický zelený set (Hardcore ×1,5 - viz _createSetItem/primaryAmount výš).
+    final power = def.statValue * level * 1.5;
+    final statPool = <String>["Strength", "Agility", "Wisdom", "Vitality", "Armor"]..remove(def.statName)..shuffle();
     final attackSpeedBonus = max(1, (level / 20).round());
-    final stats = <String, int>{"Vitality": vitalityFromHp, "Attack Speed": attackSpeedBonus};
+    final stats = <String, int>{
+      def.statName: max(1, (3.2 * power).round()),
+      statPool[0]: max(1, (2.6 * power).round()),
+      statPool[1]: max(1, (2.1 * power).round()),
+      "Attack Speed": attackSpeedBonus,
+    };
     return Item(
       name: "${def.name}: ${slotDisplayName(slot)}",
       value: 1000 * powerLevel,
@@ -4344,11 +4352,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Item _createPredpekliSetItem(HardcoreSetDef def, EquipSlot slot, int powerLevel) {
-    // Mainstat 2pc bonus se počítá živě (viz _createHardcoreSetItem výš) - item nese jen Vitality.
-    final vitalityFromHp = max(1, (def.statValue * level * 0.20).round());
-    // Třetí stat navíc (viz stejná poznámka u _createSetItem výš).
+    // Stejné přepracování jako _createHardcoreSetItem výš - tier multiplikátor ×2,5 (Předpeklí).
+    final power = def.statValue * level * 2.5;
+    final statPool = <String>["Strength", "Agility", "Wisdom", "Vitality", "Armor"]..remove(def.statName)..shuffle();
     final attackSpeedBonus = max(1, (level / 20).round());
-    final stats = <String, int>{"Vitality": vitalityFromHp, "Attack Speed": attackSpeedBonus};
+    final stats = <String, int>{
+      def.statName: max(1, (3.2 * power).round()),
+      statPool[0]: max(1, (2.6 * power).round()),
+      statPool[1]: max(1, (2.1 * power).round()),
+      "Attack Speed": attackSpeedBonus,
+    };
     return Item(
       name: "${def.name}: ${slotDisplayName(slot)}",
       value: 1500 * powerLevel,
@@ -4402,11 +4415,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Item _createPekloSetItem(HardcoreSetDef def, EquipSlot slot, int powerLevel) {
-    // Mainstat 2pc bonus se počítá živě (viz _createHardcoreSetItem výš) - item nese jen Vitality.
-    final vitalityFromHp = max(1, (def.statValue * level * 0.25).round());
-    // Třetí stat navíc (viz stejná poznámka u _createSetItem výš).
+    // Stejné přepracování jako _createHardcoreSetItem výš - tier multiplikátor ×4,5 (Peklo).
+    final power = def.statValue * level * 4.5;
+    final statPool = <String>["Strength", "Agility", "Wisdom", "Vitality", "Armor"]..remove(def.statName)..shuffle();
     final attackSpeedBonus = max(1, (level / 20).round());
-    final stats = <String, int>{"Vitality": vitalityFromHp, "Attack Speed": attackSpeedBonus};
+    final stats = <String, int>{
+      def.statName: max(1, (3.2 * power).round()),
+      statPool[0]: max(1, (2.6 * power).round()),
+      statPool[1]: max(1, (2.1 * power).round()),
+      "Attack Speed": attackSpeedBonus,
+    };
     return Item(
       name: "${def.name}: ${slotDisplayName(slot)}",
       value: 2000 * powerLevel,
@@ -7672,7 +7690,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     // Stejná oprava jako u basicAttackRoleMod výš - tank koeficient smí platit až po skutečné
     // volbě specializace (specialization != 0), ne z fallbacku na spec 1 pro nezvolený stav.
     final effectiveTankCoefficient = specialization != 0 ? specStatProfile.tankArmorCoefficient : 1.0;
-    double base = (baseArmorFlat + _itemStatSum("Armor") * armorPerItemPoint) * effectiveTankCoefficient;
+    // BUG FIX (viz konverzace - "Armor vs Atk škálování je mazec"): Armor dřív čerpala VÝHRADNĚ
+    // z item statu "Armor" - samostatný náhodný roll na itemech, co vůbec neškáluje s Paragonem
+    // ani s Vitalitou/Silou tak jako physAtk/magAtk (ty jsou masivně zesílené paragonMultiplierFor
+    // přes Strength/Wisdom). Výsledek: hráč mohl mít stovky milionů Atk a jen tisíce Armor,
+    // zatímco nepřítel roste u obojího proporcionálně stejným vzorcem. Teď Armor navíc čerpá i z
+    // Vitality (stejný zdroj jako max HP, viz totalVitality*8 tam) - "výdrž" stat teď sytí obojí,
+    // takže Armor nemůže zaostat o řády bez ohledu na to, jaké konkrétní itemy padly.
+    double base = (baseArmorFlat + _itemStatSum("Armor") * armorPerItemPoint + totalVitality * 2) * effectiveTankCoefficient;
     if (hasGodClass) base *= 1.5;
     if (hasRank100Class) base *= 2.0;
     if (gearSetDefHpBonus > 0) base *= (1 + gearSetDefHpBonus);
@@ -8264,6 +8289,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     AchievementId.allCursesTried: AchievementDef(id: AchievementId.allCursesTried, name: tr("Mistr prokletí", "Master of Curses"), description: tr("Vyzkoušej všech 6 Prokletí Osudu.", "Try all 6 Curses of Fate."), title: tr("Mistr prokletí", "Master of Curses"), rewardDust: 3000),
     AchievementId.gemSocketed: AchievementDef(id: AchievementId.gemSocketed, name: tr("První gem", "First Gem"), description: tr("Vsaď první gem do Prstenu Osudu.", "Socket your first gem into the Ring of Fate."), title: tr("Klenotník", "Jeweler")),
     AchievementId.riftPusher10: AchievementDef(id: AchievementId.riftPusher10, name: tr("Trhlinář", "Rift Pusher"), description: tr("Zdolej Trhlinu Osudu tier 10.", "Clear Rift of Fate tier 10."), title: tr("Trhlinář", "Rift Pusher"), rewardGold: 500),
+    AchievementId.lairFlawless100: AchievementDef(id: AchievementId.lairFlawless100, name: tr("Bez poskvrny", "Flawless"), description: tr("Poraz Doupě bosse patro 100 (Normal), aniž bys v CELÉ historii tohoto účtu jedinkrát zemřel.", "Defeat Boss Lair floor 100 (Normal) without ever having died in this account's entire history."), title: tr("Bezúhonný", "Flawless"), rewardCrystals: 500),
     // 4 achievementy za Trhlinu (viz konverzace) - VŠECHNY čtyři dají STEJNÝ univerzální
     // fialový set (aura+rám+pozadí+skin), ne sezónní barvy - ty jsou vyhrazené pro Battle Pass
     // (viz battlePassRewardFor). Sdílené ID napříč všemi 4 - idempotentní (opakované odemčení
@@ -8469,6 +8495,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final def = achievementDefs[id]!;
     gold += def.rewardGold;
     magicDust += def.rewardDust;
+    crystals += def.rewardCrystals;
     if (def.rewardButtonColor != null) {
       unlockedButtonColorNames.add(def.rewardButtonColor!);
       unlockedGlowColorNames.add(def.rewardButtonColor!);
@@ -9416,6 +9443,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       fateRingDropped = true;
       _addGuaranteedFateRing();
       hardcoreUnlocked = true;
+      // "Bez poskvrny" (viz konverzace) - tohle je přesně první porážka Lair 100 na Normal,
+      // dřív, než se vůbec stihne odemknout Hardcore. totalDeaths je permanentní čítač napříč
+      // celou historií účtu (smrt vždy resetuje postup, viz confirmDeath), takže totalDeaths==0
+      // tady znamená doslova "nikdy v historii tohohle účtu nezemřel".
+      if (totalDeaths == 0) _unlockAchievement(AchievementId.lairFlawless100);
       _queueContextTip(TutorialTipId.tipHardcoreUnlocked);
       message = tr("💍 PRSTEN OSUDU! Získal jsi artefakt s 6 gem sloty!\n"
           "☠ Vše, co jsi dosud zažil, byl Normal. Odemčen Hardcore Mode - probouzíš se do skutečného Osudu.",

@@ -8748,7 +8748,7 @@ class _BankScreenState extends State<BankScreen> {
                   // alignment: center místo výchozího topCenter - u tohohle konkrétního
                   // obrázku topCenter tlačilo oko/ucho na kraj kontejneru místo vystředění
                   // tváře (viz konverzace "obličej není vidět, useknutý").
-                  LivingPortrait(assetPath: 'assets/images/npc/banker.png', accent: FantasyColors.gold, mode: PortraitLifeMode.subtle, alignment: Alignment.center),
+                  LivingPortrait(assetPath: 'assets/images/npc/banker.png', accent: FantasyColors.gold, mode: PortraitLifeMode.subtle, alignment: const Alignment(0, -0.4)),
                   DecoratedBox(decoration: BoxDecoration(border: Border.all(color: FantasyColors.gold.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
                   Positioned(
                     left: 0, right: 0, bottom: 0,
@@ -8998,6 +8998,54 @@ class ProfileScreen extends StatelessWidget {
         if (state.isHubTileRevealed(GameState.riftUnlockLevel)) _riftSeasonPanel(state),
         if (state.totalDeaths > 0) _p(_altCatchUpPanel(context,state)),
         _p(const PromoCodePanel()),
+        // Dobrovolný reset "jako by hrdina zemřel" (viz konverzace - roleplay tlačítko pro
+        // hráče, co nechtějí riskovat NÁHODNOU smrt v boji, ale chtějí si tu chvíli zvolit sami).
+        // Volá PŘESNĚ tu samou confirmDeath() jako skutečná smrt - stejné důsledky (půlka zlata,
+        // patro 1, reset talentů, nová postava), jen spuštěné z menu místo 0 HP v boji.
+        if (state.heroClass != HeroClass.none)
+          _p(FantasyPanel(
+            title: tr('RESET VZPOMÍNEK', 'MEMORY RESET'),
+            titleIcon: Icons.skull,
+            accent: const Color(0xFF8B0000),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tr(
+                    'Ukonči život tohoto hrdiny dobrovolně, se stejnými následky jako skutečná smrt (polovina zlata, patro 1, reset talentů) - roleplay volba pro ty, co nechtějí nechat konec náhodě v boji.',
+                    "End this hero's life voluntarily, with the same consequences as an actual death (half gold, floor 1, talent reset) - a roleplay choice for those who don't want to leave the ending to chance in combat.",
+                  ),
+                  style: const TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFFF5252), side: const BorderSide(color: Color(0xFF8B0000))),
+                    icon: const Icon(Icons.skull),
+                    label: Text(tr('Resetovat vzpomínky', "Reset memories")),
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (dialogContext) => AlertDialog(
+                          title: Text(tr('Opravdu?', 'Are you sure?')),
+                          content: Text(tr(
+                            'Tohle se nedá vzít zpět - hrdina "${state.heroName.isNotEmpty ? state.heroName : ''}" zemře stejně, jako by padl v boji. Polovina zlata propadne, patro Věže se vrátí na 1, talenty se resetují (level zůstává). Chceš pokračovat?',
+                            'This cannot be undone - the hero "${state.heroName.isNotEmpty ? state.heroName : ''}" will die exactly as if fallen in combat. Half your gold is lost, Tower floor resets to 1, talents reset (level stays). Continue?',
+                          )),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(tr('Zrušit', 'Cancel'))),
+                            TextButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(tr('Ano, ukončit', 'Yes, end it'), style: const TextStyle(color: Color(0xFFFF5252)))),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) state.confirmDeath();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          )),
         _p(FantasyPanel(
           title:tr('OFFLINE PROGRESS', 'OFFLINE PROGRESS'),
           titleIcon: state.offlineProgressUnlocked ? Icons.bedtime : Icons.lock,
@@ -9211,7 +9259,7 @@ class ProfileScreen extends StatelessWidget {
     });
   }
   Widget _stats(GameState s)=>FantasyPanel(title:tr('STATY','STATS'),titleIcon:Icons.sports_martial_arts,child:Column(children:[
-    FantasyStatTile(icon:Icons.fitness_center,color:Colors.redAccent,label:tr('Síla','Strength'),value:s.totalStrength.round().toString()),FantasyStatTile(icon:Icons.directions_run,color:Colors.lightGreenAccent,label:tr('Hbitost','Agility'),value:s.totalAgility.round().toString()),FantasyStatTile(icon:Icons.auto_awesome,color:Colors.lightBlueAccent,label:tr('Moudrost','Wisdom'),value:s.totalWisdom.round().toString()),FantasyStatTile(icon:Icons.favorite,color:Colors.red,label:tr('Vitalita','Vitality'),value:s.totalVitality.round().toString()),FantasyStatTile(icon:Icons.gps_fixed,color:FantasyColors.gold,label:tr('Kritická šance','Crit Chance'),value:'${(s.critChance*100).toStringAsFixed(1)} %'),FantasyStatTile(icon:Icons.air,color:Colors.cyan,label:tr('Úhyb','Dodge'),value:'${(s.dodgeChance*100).toStringAsFixed(1)} %'),FantasyStatTile(icon:Icons.shield,color:Colors.blueGrey,label:tr('Blok','Block'),value:'${(s.blockChance*100).toStringAsFixed(1)} %'),]));
+    FantasyStatTile(icon:Icons.fitness_center,color:Colors.redAccent,label:tr('Síla','Strength'),value:s.totalStrength.round().toString()),FantasyStatTile(icon:Icons.directions_run,color:Colors.lightGreenAccent,label:tr('Hbitost','Agility'),value:s.totalAgility.round().toString()),FantasyStatTile(icon:Icons.auto_awesome,color:Colors.lightBlueAccent,label:tr('Moudrost','Wisdom'),value:s.totalWisdom.round().toString()),FantasyStatTile(icon:Icons.favorite,color:Colors.red,label:tr('Vitalita','Vitality'),value:s.totalVitality.round().toString()),FantasyStatTile(icon:Icons.gps_fixed,color:FantasyColors.gold,label:tr('Kritická šance','Crit Chance'),value:'${(s.critChance*100).toStringAsFixed(1)} %'),FantasyStatTile(icon:Icons.air,color:Colors.cyan,label:tr('Úhyb','Dodge'),value:'${(s.dodgeChance*100).toStringAsFixed(1)} %'),FantasyStatTile(icon:Icons.shield,color:Colors.blueGrey,label:tr('Blok','Block'),value:'${(s.blockChance*100).toStringAsFixed(1)} %'),FantasyStatTile(icon:Icons.bolt,color:Colors.amberAccent,label:tr('Rychlost útoku','Attack Speed'),value:'${(s.extraAttackChance*100).toStringAsFixed(1)} %'),]));
   Widget _talents(GameState s)=>FantasyPanel(title:tr('TALENTY','TALENTS'),titleIcon:Icons.account_tree,child:Column(children:[
     // Výrazný badge s počtem volných bodů - dřív bylo číslo jen schované v nadpisu panelu
     // (mohlo se ztratit/přeříznout na užších obrazovkách). Zlatě svítí, když je co utratit;
@@ -9701,7 +9749,12 @@ class ProfileScreen extends StatelessWidget {
           Text(def.name, style: const TextStyle(color: Color(0xFF00F0FF), fontWeight: FontWeight.bold, fontSize: 16)),
           Text(tr("Nasazeno: $count/8 kusů (mainStat živě: statValue × level × nasazené kusy, od 2 ks)", "Equipped: $count/8 pieces (mainStat live: statValue × level × equipped pieces, from 2 pcs)"), style: const TextStyle(color: Colors.grey, fontSize: 12)),
           const Divider(),
-          tierRow(2, def.twoPieceDesc),
+          // Popisek 2pc řádku ukazoval STATICKÝ text ("+22 Wisdom") místo ŽIVĚ přepočítané
+          // hodnoty (viz konverzace - "22 Wisdom je nesmysl, moc málo") - přitom bonus samotný
+          // (viz _activeEliteSetMainStatBonus) se dávno počítal správně live, jen popisek u něj
+          // pořád ukazoval holé def.statValue bez × level × count. Reálná hodnota u postavy
+          // level 34 s 2 kusy by byla 22×34×2 = 1496, ne 22.
+          tierRow(2, def.twoPieceDesc.replaceFirst('+${def.statValue} ${def.statName}', '+${def.statValue * s.level * 2} ${def.statName}')),
           tierRow(4, def.fourPieceDesc),
           tierRow(6, def.sixPieceDesc),
           tierRow(8, def.eightPieceDesc),
@@ -9758,7 +9811,7 @@ class ProfileScreen extends StatelessWidget {
           Text(def.name, style: const TextStyle(color: Color(0xFFB026FF), fontWeight: FontWeight.bold, fontSize: 16)),
           Text(tr("Nasazeno: $count/8 kusů (mainStat živě: statValue × level × nasazené kusy, od 2 ks)", "Equipped: $count/8 pieces (mainStat live: statValue × level × equipped pieces, from 2 pcs)"), style: const TextStyle(color: Colors.grey, fontSize: 12)),
           const Divider(),
-          tierRow(2, def.twoPieceDesc),
+          tierRow(2, def.twoPieceDesc.replaceFirst('+${def.statValue} ${def.statName}', '+${def.statValue * s.level * 2} ${def.statName}')),
           tierRow(4, def.fourPieceDesc),
           tierRow(6, def.sixPieceDesc),
           tierRow(8, def.eightPieceDesc),
@@ -9815,7 +9868,7 @@ class ProfileScreen extends StatelessWidget {
           Text(def.name, style: const TextStyle(color: Color(0xFFFF3D00), fontWeight: FontWeight.bold, fontSize: 16)),
           Text(tr("Nasazeno: $count/8 kusů (mainStat živě: statValue × level × nasazené kusy, od 2 ks)", "Equipped: $count/8 pieces (mainStat live: statValue × level × equipped pieces, from 2 pcs)"), style: const TextStyle(color: Colors.grey, fontSize: 12)),
           const Divider(),
-          tierRow(2, def.twoPieceDesc),
+          tierRow(2, def.twoPieceDesc.replaceFirst('+${def.statValue} ${def.statName}', '+${def.statValue * s.level * 2} ${def.statName}')),
           tierRow(4, def.fourPieceDesc),
           tierRow(6, def.sixPieceDesc),
           tierRow(8, def.eightPieceDesc),
