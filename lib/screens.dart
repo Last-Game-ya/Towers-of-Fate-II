@@ -1440,6 +1440,147 @@ class _BasicAttackSkinOverlayState extends State<BasicAttackSkinOverlay> with Si
   }
 }
 
+// Zlaťáky vyskakující po KAŽDÉM skutečném zásahu Poklad-skřeta v Trhlině (viz konverzace) -
+// nezastavuje scénu, při rychlých zásazích za sebou se výbuchy klidně překrývají (na rozdíl od
+// BasicAttackSkinOverlay/SpellFxOverlay výš, co běží jen JEDNA instance najednou, tady může být
+// aktivních víc _ActiveCoinBurst současně - každý má vlastní krátkou AnimationController, co se
+// po doběhnutí sama zahodí). 3 vizuálně odlišné varianty animace, střídané postupně po kruhu
+// (ne náhodně - ať se hráč nedočká 2x stejné za sebou hned vedle sebe).
+class _ActiveCoinBurst {
+  final AnimationController controller;
+  final int variant;
+  final int seed;
+  _ActiveCoinBurst(this.controller, this.variant, this.seed);
+}
+
+class TreasureGoblinCoinsOverlay extends StatefulWidget {
+  final GameState state;
+  const TreasureGoblinCoinsOverlay({super.key, required this.state});
+  @override
+  State<TreasureGoblinCoinsOverlay> createState() => _TreasureGoblinCoinsOverlayState();
+}
+
+class _TreasureGoblinCoinsOverlayState extends State<TreasureGoblinCoinsOverlay> with TickerProviderStateMixin {
+  int _lastSeen = -1;
+  int _variantCycle = 0;
+  final List<_ActiveCoinBurst> _bursts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _lastSeen = widget.state.treasureGoblinCoinFxSeq;
+    widget.state.addListener(_onStateChanged);
+  }
+
+  void _onStateChanged() {
+    final seq = widget.state.treasureGoblinCoinFxSeq;
+    if (seq != _lastSeen && mounted) {
+      _lastSeen = seq;
+      final variant = _variantCycle % 3;
+      _variantCycle++;
+      final controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+      late final _ActiveCoinBurst burst;
+      burst = _ActiveCoinBurst(controller, variant, seq);
+      setState(() => _bursts.add(burst));
+      controller.forward().whenComplete(() {
+        if (mounted) setState(() => _bursts.remove(burst));
+        controller.dispose();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.state.removeListener(_onStateChanged);
+    for (final b in _bursts) {
+      b.controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Stack(children: [
+        for (final b in _bursts)
+          AnimatedBuilder(
+            animation: b.controller,
+            builder: (context, _) => CustomPaint(painter: _CoinBurstPainter(t: b.controller.value, variant: b.variant, seed: b.seed), size: Size.infinite),
+          ),
+      ]),
+    );
+  }
+}
+
+class _CoinBurstPainter extends CustomPainter {
+  final double t;
+  final int variant;
+  final int seed;
+  const _CoinBurstPainter({required this.t, required this.variant, required this.seed});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width * 0.5, size.height * 0.38);
+    final rnd = Random(seed * 97 + variant);
+    const coinCount = 9;
+    const gold = Color(0xFFFFD54F);
+    const goldDark = Color(0xFFB8860B);
+    for (int i = 0; i < coinCount; i++) {
+      final localSeed = rnd.nextDouble();
+      Offset pos;
+      double opacity;
+      double rotation;
+      double scale;
+      switch (variant) {
+        case 0:
+          // Fontána - vystřelí šikmo nahoru vějířem, pak padají zpátky dolů s gravitací
+          // (parabola), rotují při pádu. Nejvíc "živelná" ze tří variant.
+          final angle = (-pi / 2) + (localSeed - 0.5) * pi * 0.95;
+          final speed = 55.0 + localSeed * 45.0;
+          final dx = cos(angle) * speed * t;
+          final dy = sin(angle) * speed * t + 0.5 * 230 * t * t;
+          pos = center + Offset(dx, dy);
+          opacity = (1 - t).clamp(0.0, 1.0);
+          rotation = t * 7 * (localSeed > 0.5 ? 1 : -1);
+          scale = 1.0;
+          break;
+        case 1:
+          // Prstenec - všechny mince vystřelí rovnoměrně do kruhu naráz a rychle odeznějí,
+          // jako náhlý "loot pop" - nejrychlejší a nejčitelnější ze tří variant.
+          final angle = (i / coinCount) * 2 * pi + localSeed * 0.35;
+          final dist = Curves.easeOut.transform(t.clamp(0.0, 1.0)) * (35 + localSeed * 30);
+          pos = center + Offset(cos(angle), sin(angle)) * dist;
+          opacity = (1 - (t / 0.75).clamp(0.0, 1.0));
+          rotation = angle;
+          scale = 1 - t * 0.25;
+          break;
+        default:
+          // Sprška - mince "prší" shora dolů přes zásah, mírně kmitají do stran - jako by
+          // skřet vychrlil hromádku mincí, ne že by explodovaly ze zásahu.
+          final startY = -35.0 - localSeed * 35.0;
+          final fallY = startY + t * 95;
+          final driftX = sin(t * pi * 2.4 + localSeed * 9) * 7;
+          pos = center + Offset((localSeed - 0.5) * 55 + driftX, fallY);
+          opacity = (1 - t).clamp(0.0, 1.0) * (t < 0.12 ? t / 0.12 : 1.0);
+          rotation = t * 5;
+          scale = 1.0;
+      }
+      if (opacity <= 0.01) continue;
+      canvas.save();
+      canvas.translate(pos.dx, pos.dy);
+      canvas.rotate(rotation);
+      final coinScale = scale * (0.7 + localSeed * 0.5);
+      canvas.drawCircle(Offset.zero, 5.0 * coinScale, Paint()..color = gold.withOpacity(opacity));
+      canvas.drawCircle(Offset.zero, 5.0 * coinScale, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.1..color = goldDark.withOpacity(opacity));
+      canvas.drawLine(Offset(-2.2 * coinScale, 0), Offset(2.2 * coinScale, 0), Paint()..color = goldDark.withOpacity(opacity * 0.7)..strokeWidth = 0.8);
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CoinBurstPainter old) => old.t != t;
+}
+
 class _CombatFxOverlayState extends State<CombatFxOverlay> {
   final Set<int> _shownBurstIds = {};
   final Set<int> _shownSpellFxIds = {};
@@ -1590,12 +1731,23 @@ class _TreasureChestPainter extends CustomPainter {
     final bodyW = size.width * 0.60;
     final bodyH = size.height * 0.32;
     final bodyRect = Rect.fromCenter(center: Offset(cx, baseY - bodyH / 2), width: bodyW, height: bodyH);
+    final light = Color.lerp(accent, Colors.white, .55)!;
 
+    // VÍC GLOW VRSTEV (viz konverzace "víc glow efektů") - dřív jen jeden velký ambientní kruh,
+    // teď navíc těsnější "core" glow za zámkem, ať má scéna hloubku (vzdálená atmosféra +
+    // blízký intenzivní zdroj), stejný trik jako spell efekty jinde ve hře.
     final glowOpacity = openT > 0 ? (openT < 0.75 ? openT / 0.75 : (1 - (openT - 0.75) / 0.25 * 0.5)) : (0.22 + 0.18 * idleT);
     canvas.drawCircle(
       Offset(cx, baseY - bodyH * 0.65),
       size.width * 0.55,
       Paint()..shader = RadialGradient(colors: [accent.withOpacity(glowOpacity.clamp(0, 1) * 0.55), accent.withOpacity(0)]).createShader(Rect.fromCircle(center: Offset(cx, baseY - bodyH * 0.65), radius: size.width * 0.55)),
+    );
+    canvas.drawCircle(
+      Offset(cx, bodyRect.top - 2),
+      size.width * (0.16 + 0.03 * idleT),
+      Paint()
+        ..shader = RadialGradient(colors: [light.withOpacity((0.35 + 0.25 * idleT) * (openT > 0 ? 1 - openT * .3 : 1)), light.withOpacity(0)]).createShader(Rect.fromCircle(center: Offset(cx, bodyRect.top - 2), radius: size.width * 0.16))
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
 
     // Tělo truhly
@@ -1603,11 +1755,22 @@ class _TreasureChestPainter extends CustomPainter {
     canvas.drawRRect(bodyRRect, Paint()..shader = const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF6B4226), Color(0xFF3E2412)]).createShader(bodyRect));
     canvas.drawRRect(bodyRRect, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = accent.withOpacity(.9));
 
-    // Dřevěné pruhy (planky)
+    // Dřevěné pruhy (planky) + JEMNÁ KRESBA SLOJÍ navíc (víc linek, viz konverzace) - tenké
+    // zvlněné linky uvnitř každého prkna, ať dřevo nepůsobí jako plochá barva.
     final plankPaint = Paint()..color = Colors.black.withOpacity(.22)..strokeWidth = 1;
+    final grainPaint = Paint()..color = Colors.black.withOpacity(.13)..strokeWidth = .8..style = PaintingStyle.stroke;
     for (int i = 1; i < 5; i++) {
       final x = bodyRect.left + bodyRect.width * i / 5;
       canvas.drawLine(Offset(x, bodyRect.top + 3), Offset(x, bodyRect.bottom - 3), plankPaint);
+    }
+    for (int i = 0; i < 5; i++) {
+      final x0 = bodyRect.left + bodyRect.width * i / 5 + bodyRect.width / 10;
+      final grain = Path()
+        ..moveTo(x0 - 6, bodyRect.top + bodyRect.height * 0.25)
+        ..quadraticBezierTo(x0 + 4, bodyRect.top + bodyRect.height * 0.45, x0 - 5, bodyRect.top + bodyRect.height * 0.68)
+        ..moveTo(x0 + 5, bodyRect.top + bodyRect.height * 0.15)
+        ..quadraticBezierTo(x0 - 3, bodyRect.top + bodyRect.height * 0.4, x0 + 6, bodyRect.top + bodyRect.height * 0.85);
+      canvas.drawPath(grain, grainPaint);
     }
 
     // Zlaté kovové pásy + nýty
@@ -1616,17 +1779,73 @@ class _TreasureChestPainter extends CustomPainter {
     final band2 = Rect.fromLTWH(bodyRect.left - 2, bodyRect.top + bodyRect.height * 0.72, bodyRect.width + 4, 5);
     canvas.drawRect(band1, bandPaint);
     canvas.drawRect(band2, bandPaint);
+    // Tenká zářící linka podél horní hrany každého pásu (rim-light) - přidává lesk kovu.
+    for (final band in [band1, band2]) {
+      canvas.drawLine(Offset(band.left, band.top + .5), Offset(band.right, band.top + .5), Paint()..color = light.withOpacity(.6)..strokeWidth = .8);
+    }
     final rivetPaint = Paint()..color = accent.withOpacity(.85);
     for (final band in [band1, band2]) {
       for (double fx = 0.08; fx <= 0.92; fx += 0.28) {
         canvas.drawCircle(Offset(band.left + band.width * fx, band.center.dy), 1.7, rivetPaint);
       }
+      // Malé kosočtvercové (polygon) akcenty mezi nýty - viz konverzace "víc polygonů".
+      for (double fx = 0.22; fx <= 0.78; fx += 0.28) {
+        final p = Offset(band.left + band.width * fx, band.center.dy);
+        final diamond = Path()
+          ..moveTo(p.dx, p.dy - 3.2)
+          ..lineTo(p.dx + 2.4, p.dy)
+          ..lineTo(p.dx, p.dy + 3.2)
+          ..lineTo(p.dx - 2.4, p.dy)
+          ..close();
+        canvas.drawPath(diamond, Paint()..color = light.withOpacity(.7));
+      }
     }
 
-    // Zámek
+    // ROHOVÉ KOVOVÉ ÚCHYTY (polygon brackets) - nové, viz konverzace "víc polygonů". Faceted
+    // trojúhelníkové chrániče v každém rohu těla, jako skutečné kovové kování na truhle.
+    void cornerBracket(Offset corner, double dx, double dy) {
+      final bracket = Path()
+        ..moveTo(corner.dx, corner.dy)
+        ..lineTo(corner.dx + dx * 13, corner.dy)
+        ..lineTo(corner.dx + dx * 9, corner.dy + dy * 5)
+        ..lineTo(corner.dx + dx * 4, corner.dy + dy * 4)
+        ..lineTo(corner.dx, corner.dy + dy * 13)
+        ..close();
+      canvas.drawPath(bracket, Paint()..color = accent.withOpacity(.85));
+      canvas.drawPath(bracket, Paint()..style = PaintingStyle.stroke..strokeWidth = .8..color = light.withOpacity(.6));
+    }
+    cornerBracket(Offset(bodyRect.left, bodyRect.top), 1, 1);
+    cornerBracket(Offset(bodyRect.right, bodyRect.top), -1, 1);
+    cornerBracket(Offset(bodyRect.left, bodyRect.bottom), 1, -1);
+    cornerBracket(Offset(bodyRect.right, bodyRect.bottom), -1, -1);
+
+    // Zámek - PŘEKRESLENO: dřív jen kulatý zámek s tečkou, teď fasetovaný (hexagonální) drahokam
+    // s vlastním jasnějším jádrem, obklopený runovými ryskami (stejný jazyk jako runy jinde ve
+    // hře - jen rovné čárky, žádné křivky).
     final lockCenter = Offset(cx, bodyRect.top - 1);
     canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: lockCenter, width: 20, height: 16), const Radius.circular(3)), Paint()..color = accent);
-    canvas.drawCircle(lockCenter.translate(0, -2), 3, Paint()..color = const Color(0xFF2A1A0A));
+    final gemR = 4.2;
+    final hex = Path();
+    for (int i = 0; i < 6; i++) {
+      final a = -pi / 2 + i * (pi / 3);
+      final p = lockCenter.translate(-2, 0) + Offset(cos(a), sin(a)) * gemR;
+      if (i == 0) {
+        hex.moveTo(p.dx, p.dy);
+      } else {
+        hex.lineTo(p.dx, p.dy);
+      }
+    }
+    hex.close();
+    canvas.drawPath(hex, Paint()..color = const Color(0xFF2A1A0A));
+    canvas.drawPath(hex, Paint()..style = PaintingStyle.stroke..strokeWidth = .9..color = light.withOpacity(.8 + .2 * idleT));
+    canvas.drawCircle(lockCenter.translate(-2, -1), 1.1, Paint()..color = light.withOpacity(.9));
+    // Runové rysky vyzařující ze zámku - 4 krátké čárky, jemně pulzují s idleT.
+    for (int i = 0; i < 4; i++) {
+      final a = i * (pi / 2) + pi / 4;
+      final inner = lockCenter.translate(-2, 0) + Offset(cos(a), sin(a)) * (gemR + 1.5);
+      final outer = lockCenter.translate(-2, 0) + Offset(cos(a), sin(a)) * (gemR + 4.2 + idleT * 1.2);
+      canvas.drawLine(inner, outer, Paint()..color = light.withOpacity(.5 + .3 * idleT)..strokeWidth = 1);
+    }
 
     // Vnitřní záře skrz škvíru (viditelná až se víko pootevře)
     if (openT > 0.15) {
@@ -1652,6 +1871,22 @@ class _TreasureChestPainter extends CustomPainter {
     canvas.drawRRect(lidRRect, Paint()..shader = const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF7A5230), Color(0xFF4A2C16)]).createShader(lidRectClosed));
     canvas.drawRRect(lidRRect, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = accent.withOpacity(.9));
     canvas.drawRect(Rect.fromLTWH(lidRectClosed.left - 2, lidRectClosed.bottom - 6, lidRectClosed.width + 4, 5), bandPaint);
+    // Faceted diamantový akcent uprostřed víka + dvojice runových čárek po stranách - navíc
+    // dekorace na samotném víku, ať není prázdné, ladí se zámkem pod ním.
+    final lidGemC = Offset(cx, lidRectClosed.top + lidRectClosed.height * 0.42);
+    final lidGem = Path()
+      ..moveTo(lidGemC.dx, lidGemC.dy - 5)
+      ..lineTo(lidGemC.dx + 3.6, lidGemC.dy)
+      ..lineTo(lidGemC.dx, lidGemC.dy + 5)
+      ..lineTo(lidGemC.dx - 3.6, lidGemC.dy)
+      ..close();
+    canvas.drawPath(lidGem, Paint()..color = light.withOpacity(.55 + .25 * idleT));
+    canvas.drawPath(lidGem, Paint()..style = PaintingStyle.stroke..strokeWidth = .8..color = accent);
+    for (final side in [-1.0, 1.0]) {
+      final base = lidGemC.translate(side * 11, 0);
+      canvas.drawLine(base.translate(0, -4), base.translate(0, 4), Paint()..color = accent.withOpacity(.55)..strokeWidth = 1.1);
+      canvas.drawLine(base.translate(side * -3, -4), base, Paint()..color = accent.withOpacity(.55)..strokeWidth = 1.1);
+    }
     canvas.restore();
   }
 
@@ -3902,6 +4137,7 @@ class _RiftScreenState extends State<RiftScreen> {
                       );
                     }),
                     BasicAttackSkinOverlay(state: state),
+                    TreasureGoblinCoinsOverlay(state: state),
                     ]),
                   ),
                 ],
@@ -4469,6 +4705,64 @@ class _ClassOption {
 
 enum _ClassSelectPhase { browsing, fadingOut, story1, story2 }
 
+// Ambientní oživení "probuzení v Chodbě" scény (viz konverzace) - dýchající vzdálené
+// modrobílé světlo na konci chodby (matchuje záhadnou tečku na obrázku) + dvě nezávisle
+// poblikávající teplé pochodně po stranách (matchují oranžové odlesky na podlaze). Krátký,
+// samostatný widget se svou vlastní AnimationController smyčkou - obrazovka, na které žije,
+// trvá jen pár vteřin, takže nemá smysl kvůli tomu dělat z celé _ClassSelectionScreenState
+// TickerProvider.
+class _AwakeningAmbientOverlay extends StatefulWidget {
+  const _AwakeningAmbientOverlay();
+  @override
+  State<_AwakeningAmbientOverlay> createState() => _AwakeningAmbientOverlayState();
+}
+
+class _AwakeningAmbientOverlayState extends State<_AwakeningAmbientOverlay> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(animation: _c, builder: (context, _) => CustomPaint(painter: _AwakeningAmbientPainter(_c.value), size: Size.infinite));
+  }
+}
+
+class _AwakeningAmbientPainter extends CustomPainter {
+  final double t;
+  const _AwakeningAmbientPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Vzdálené světlo na konci chodby - pomalu "dýchá" (jas i trochu velikost), jako záhadný
+    // plamínek/duch daleko v temnotě, ne mechanicky pravidelný puls.
+    final farLight = Offset(size.width * 0.545, size.height * 0.205);
+    final breathe = 0.5 + 0.5 * sin(t * 2 * pi * 0.4);
+    canvas.drawCircle(farLight, size.width * (0.012 + 0.006 * breathe), Paint()..color = const Color(0xFFAEE7FF).withOpacity(0.5 + 0.3 * breathe)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.03));
+    canvas.drawCircle(farLight, size.width * (0.035 + 0.012 * breathe), Paint()..color = const Color(0xFF6FB8D6).withOpacity(0.18 + 0.12 * breathe)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.06));
+    // Dvě pochodně po stranách (oranžové odlesky na podlaze/zdi z obrázku) - nezávislý
+    // nepravidelný flicker, jiná fáze pro každou, ať nemrkají synchronně.
+    final torchRnd = Random(17);
+    for (final spot in [Offset(size.width * 0.015, size.height * 0.60), Offset(size.width * 0.985, size.height * 0.575)]) {
+      final seed = torchRnd.nextDouble() * 10;
+      final flick = 0.55 + 0.45 * sin(t * 2 * pi * (3.2 + seed % 1.5) + seed);
+      canvas.drawCircle(spot, size.width * 0.045 * flick, Paint()..color = const Color(0xFFFF8A3D).withOpacity(0.16 * flick)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.05));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AwakeningAmbientPainter old) => old.t != t;
+}
+
 class _ClassSelectionScreen extends StatefulWidget {
   final GameState state;
   final Widget? bossGuide;
@@ -4548,7 +4842,14 @@ class _ClassSelectionScreenState extends State<_ClassSelectionScreen> {
         ],
       ),
     );
-    controller.dispose();
+    // Controller se NESMÍ zahodit hned po showDialog() - Future se dokončí ve chvíli
+    // Navigator.pop(), ale samotná route ještě chvíli dohrává zavírací (fade/scale) animaci a
+    // TextField/EditableText uvnitř ji po tu dobu pořád může využívat (focus/selection listenery
+    // na controlleru). Okamžitý dispose() způsoboval "TextEditingController was used after being
+    // disposed" - a to dál kaskádovitě strhávalo _dependents.isEmpty assertion a Duplicate
+    // GlobalKeys/_Theater pády (viz konverzace - všechny tři chyby chodily vždycky pohromadě).
+    // Fire-and-forget zpoždění dá animaci čas doběhnout, než se controller fakticky uvolní.
+    Future.delayed(const Duration(milliseconds: 300), controller.dispose);
     final trimmed = name?.trim() ?? '';
     if (trimmed.isEmpty) return _promptNameIfNeeded(); // prázdné jméno nepustíme dál, zeptáme se znovu
     // Krátká prodleva, než dialog dokončí svou zavírací animaci (Navigator.pop dokončí Future
@@ -4707,6 +5008,13 @@ class _ClassSelectionScreenState extends State<_ClassSelectionScreen> {
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stack) => const ColoredBox(color: Colors.black),
                   ),
+                  // Ambientní oživení scény (viz konverzace "můžeš tento screen oživit") -
+                  // dýchající vzdálené světlo na konci chodby + 2 poblikávající pochodně po
+                  // stranách, ať to nepůsobí jako úplně statický obrázek s textem přes něj.
+                  // Vlastní krátkodobý StatefulWidget se svým TickerProviderStateMixin - obrazovka
+                  // žije jen pár vteřin (fade in/out mezi story1/story2/blank), takže nemá smysl
+                  // kvůli tomu měnit _ClassSelectionScreenState na TickerProvider.
+                  const Positioned.fill(child: IgnorePointer(child: _AwakeningAmbientOverlay())),
                   // Jemná dodatečná vinětka - obrázek je sám skoro černý, tohle jen zajistí, že
                   // text zůstane čitelný i kdyby byla nějaká část pozadí světlejší, než čekáme.
                   const DecoratedBox(decoration: BoxDecoration(color: Colors.black26)),
@@ -4977,7 +5285,12 @@ class TowerScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (state.portraitCombatMode) ...[
-                            if (state.specialization != 0)
+                            // BUG FIX (viz konverzace - "není vidět obrázek specializace"):
+                            // podmínka byla obráceně (`!= 0`), takže se malý kroužek s ikonou
+                            // spec relikvie zobrazoval PRÁVĚ TEHDY, když hráč specializaci MÁ
+                            // zvolenou - a schovával tím skutečný portrét. Ten kroužek má naopak
+                            // sloužit jako dočasná náhrada, DOKUD hráč žádnou specializaci nemá.
+                            if (state.specialization == 0)
                               Center(
                                 child: Column(children: [
                                   SizedBox(
@@ -5836,9 +6149,37 @@ class CustomizationScreen extends StatelessWidget {
   ];
 
   // BP-exkluzivní položky (nedají se koupit, jen Battle Pass) - zvlášť od kCosmeticShopCatalog,
-  // který obsahuje jen to, co jde koupit za zlato/krystaly/reálné peníze.
-  static const List<(String, String, String)> _bpOnlyFrames = [('battlepass_frame', 'Zlatý rám (Battle Pass)', 'Golden frame (Battle Pass)')];
-  static const List<(String, String, String)> _bpOnlyAttackSkins = [('battlepass_attack_skin', 'Sezónní čepel/aura (Battle Pass)', 'Season blade/aura (Battle Pass)')];
+  // který obsahuje jen to, co jde koupit za zlato/krystaly/reálné peníze. 4 sezónní sety Trhliny
+  // Osudu (Bašta/Mor/Přesnost/Chaos, viz konverzace) + 1 univerzální fialový za achievementy.
+  static const List<(String, String, String)> _bpOnlyFrames = [
+    ('battlepass_frame', 'Zlatý rám (Battle Pass)', 'Golden frame (Battle Pass)'),
+    ('bp_bastion_frame', 'Rám Bašty (Battle Pass)', 'Bastion frame (Battle Pass)'),
+    ('bp_plague_frame', 'Rám Moru (Battle Pass)', 'Plague frame (Battle Pass)'),
+    ('bp_precision_frame', 'Rám Přesnosti (Battle Pass)', 'Precision frame (Battle Pass)'),
+    ('bp_chaos_frame', 'Rám Chaosu (Battle Pass)', 'Chaos frame (Battle Pass)'),
+    ('rift_universal_frame', 'Rám Trhliny (Achievement)', 'Rift frame (Achievement)'),
+  ];
+  static const List<(String, String, String)> _bpOnlyAttackSkins = [
+    ('bp_bastion_skin', 'Zásah Bašty (Battle Pass)', 'Bastion strike (Battle Pass)'),
+    ('bp_plague_skin', 'Zásah Moru (Battle Pass)', 'Plague strike (Battle Pass)'),
+    ('bp_precision_skin', 'Zásah Přesnosti (Battle Pass)', 'Precision strike (Battle Pass)'),
+    ('bp_chaos_skin', 'Zásah Chaosu (Battle Pass)', 'Chaos strike (Battle Pass)'),
+    ('rift_universal_skin', 'Zásah Trhliny (Achievement)', 'Rift strike (Achievement)'),
+  ];
+  static const List<(String, String, String)> _bpOnlyAuras = [
+    ('bp_bastion_aura', 'Aura Bašty (Battle Pass)', 'Bastion aura (Battle Pass)'),
+    ('bp_plague_aura', 'Aura Moru (Battle Pass)', 'Plague aura (Battle Pass)'),
+    ('bp_precision_aura', 'Aura Přesnosti (Battle Pass)', 'Precision aura (Battle Pass)'),
+    ('bp_chaos_aura', 'Aura Chaosu (Battle Pass)', 'Chaos aura (Battle Pass)'),
+    ('rift_universal_aura', 'Aura Trhliny (Achievement)', 'Rift aura (Achievement)'),
+  ];
+  static const List<(String, String, String)> _bpOnlyCardBackgrounds = [
+    ('bp_bastion_bg', 'Pozadí Bašty (Battle Pass)', 'Bastion background (Battle Pass)'),
+    ('bp_plague_bg', 'Pozadí Moru (Battle Pass)', 'Plague background (Battle Pass)'),
+    ('bp_precision_bg', 'Pozadí Přesnosti (Battle Pass)', 'Precision background (Battle Pass)'),
+    ('bp_chaos_bg', 'Pozadí Chaosu (Battle Pass)', 'Chaos background (Battle Pass)'),
+    ('rift_universal_bg', 'Pozadí Trhliny (Achievement)', 'Rift background (Achievement)'),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -5894,7 +6235,7 @@ class CustomizationScreen extends StatelessWidget {
                 ),
                 for (final f in _bpOnlyFrames)
                   _cosmeticTile(
-                    label: tr(f.$2, f.$3), unlocked: state.unlockedFrames.contains(f.$1), equipped: state.equippedFrame == f.$1, accent: const Color(0xFFFFD54F), bpOnly: true,
+                    label: tr(f.$2, f.$3), unlocked: state.unlockedFrames.contains(f.$1), equipped: state.equippedFrame == f.$1, accent: f.$1 == 'battlepass_frame' ? const Color(0xFFFFD54F) : bpRiftCosmeticColor(f.$1), bpOnly: true,
                     preview: EquippedFrameOverlay(frameId: f.$1, child: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [FantasyColors.gold.withOpacity(.25), FantasyColors2.obsidian])))),
                     onTap: state.unlockedFrames.contains(f.$1) ? () => state.equipFrame(f.$1) : null,
                   ),
@@ -5928,10 +6269,10 @@ class CustomizationScreen extends StatelessWidget {
                 ),
                 for (final s in _bpOnlyAttackSkins)
                   _cosmeticTile(
-                    label: tr(s.$2, s.$3), unlocked: state.unlockedAttackSkins.contains(s.$1), equipped: state.equippedAttackSkin == s.$1, accent: const Color(0xFF8B5CF6), bpOnly: true,
+                    label: tr(s.$2, s.$3), unlocked: state.unlockedAttackSkins.contains(s.$1), equipped: state.equippedAttackSkin == s.$1, accent: attackSkinAccent(s.$1), bpOnly: true,
                     preview: Row(mainAxisSize: MainAxisSize.min, children: [
-                      SizedBox(width: 30, height: 60, child: CustomPaint(painter: const AttackSkinIconPainter(physical: true))),
-                      SizedBox(width: 30, height: 60, child: CustomPaint(painter: const AttackSkinIconPainter(physical: false))),
+                      SizedBox(width: 30, height: 60, child: CustomPaint(painter: AttackSkinIconPainter(physical: true, skinId: s.$1))),
+                      SizedBox(width: 30, height: 60, child: CustomPaint(painter: AttackSkinIconPainter(physical: false, skinId: s.$1))),
                     ]),
                     onTap: state.unlockedAttackSkins.contains(s.$1) ? () => state.equipAttackSkin(s.$1) : null,
                   ),
@@ -5960,6 +6301,12 @@ class CustomizationScreen extends StatelessWidget {
                   preview: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, color: FantasyColors2.obsidian)),
                   onTap: () => state.equipAura('default'),
                 ),
+                for (final a in _bpOnlyAuras)
+                  _cosmeticTile(
+                    label: tr(a.$2, a.$3), unlocked: state.unlockedAuras.contains(a.$1), equipped: state.equippedAura == a.$1, accent: bpRiftCosmeticColor(a.$1), bpOnly: true,
+                    preview: Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: bpRiftCosmeticColor(a.$1).withOpacity(.7), blurRadius: 16, spreadRadius: 3)], color: bpRiftCosmeticColor(a.$1).withOpacity(.35))),
+                    onTap: state.unlockedAuras.contains(a.$1) ? () => state.equipAura(a.$1) : null,
+                  ),
                 for (final c in shopAuras)
                   _cosmeticTile(
                     label: c.name, unlocked: state.unlockedAuras.contains(c.id), equipped: state.equippedAura == c.id, accent: c.accent,
@@ -6017,6 +6364,12 @@ class CustomizationScreen extends StatelessWidget {
                   preview: Container(width: 64, height: 64, decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF6A4FB0), Color(0xFF1A1511)]), border: Border.all(color: const Color(0xFFFFB100).withOpacity(.4)))),
                   onTap: () => state.equipCardBackground('default'),
                 ),
+                for (final b in _bpOnlyCardBackgrounds)
+                  _cosmeticTile(
+                    label: tr(b.$2, b.$3), unlocked: state.unlockedCardBackgrounds.contains(b.$1), equipped: state.equippedCardBackground == b.$1, accent: bpRiftCosmeticColor(b.$1), bpOnly: true,
+                    preview: Container(width: 64, height: 64, decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [bpRiftCosmeticColor(b.$1).withOpacity(.9), const Color(0xFF141019)]), border: Border.all(color: bpRiftCosmeticColor(b.$1).withOpacity(.6)))),
+                    onTap: state.unlockedCardBackgrounds.contains(b.$1) ? () => state.equipCardBackground(b.$1) : null,
+                  ),
                 for (final c in shopCardBackgrounds)
                   _cosmeticTile(
                     label: c.name, unlocked: state.unlockedCardBackgrounds.contains(c.id), equipped: state.equippedCardBackground == c.id, accent: c.accent,
@@ -8380,7 +8733,10 @@ class _BankScreenState extends State<BankScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  LivingPortrait(assetPath: 'assets/images/npc/banker.png', accent: FantasyColors.gold, mode: PortraitLifeMode.subtle),
+                  // alignment: center místo výchozího topCenter - u tohohle konkrétního
+                  // obrázku topCenter tlačilo oko/ucho na kraj kontejneru místo vystředění
+                  // tváře (viz konverzace "obličej není vidět, useknutý").
+                  LivingPortrait(assetPath: 'assets/images/npc/banker.png', accent: FantasyColors.gold, mode: PortraitLifeMode.subtle, alignment: Alignment.center),
                   DecoratedBox(decoration: BoxDecoration(border: Border.all(color: FantasyColors.gold.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
                   Positioned(
                     left: 0, right: 0, bottom: 0,

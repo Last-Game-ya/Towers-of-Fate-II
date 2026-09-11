@@ -875,6 +875,10 @@ enum AchievementId {
   allCursesTried,
   gemSocketed,
   riftPusher10,
+  // 4 nové achievementy vázané na sezóny Trhliny Osudu (viz konverzace) - Trhlina má 4 rotující
+  // sezóny (bastion/plague/precision/chaos, viz RiftSeasonTheme), tady je to napojené na
+  // permanentní riftTier rekord (40/60/80/100), ne na aktuálně běžící sezónu.
+  riftSeasonBastion, riftSeasonPlague, riftSeasonPrecision, riftSeasonChaos,
   riftPusher50,
   riftPusher100,
   // ===== ROZŠÍŘENÍ =====
@@ -956,6 +960,14 @@ class AchievementDef {
   // ostatních barev, co jdou koupit za zlato, tyhle 4 (vázané na Ascension I-IV) jdou získat
   // JEN dosažením achievementu - viz konverzace "každá barva se musí odemknout".
   final String? rewardButtonColor;
+  // Kosmetické sety navázané na sezóny Trhliny Osudu (viz konverzace "achievement za rift 40/
+  // 60/80/100, reward odpovídající sezóně") - aura/rám/pozadí karty/skin základního útoku,
+  // stejný vzor jako u Battle Passu, jen NENÍ v kCosmeticShopCatalog (nejde koupit, jen za
+  // achievement).
+  final String? rewardAuraId;
+  final String? rewardFrameId;
+  final String? rewardCardBackgroundId;
+  final String? rewardAttackSkinId;
   const AchievementDef({
     required this.id,
     required this.name,
@@ -964,6 +976,10 @@ class AchievementDef {
     this.rewardGold = 0,
     this.rewardDust = 0,
     this.rewardButtonColor,
+    this.rewardAuraId,
+    this.rewardFrameId,
+    this.rewardCardBackgroundId,
+    this.rewardAttackSkinId,
   });
 }
 
@@ -2056,6 +2072,9 @@ const List<CosmeticShopItem> kCosmeticShopCatalog = [
   CosmeticShopItem(id: 'skin_shadow', category: CosmeticCategory.attackSkin, name: 'Stínový řez', description: 'Útok se na okamžik rozpustí ve stínu.', accent: Color(0xFF5E35B1), sparkPrice: 150),
   CosmeticShopItem(id: 'skin_infernal', category: CosmeticCategory.attackSkin, name: 'Pekelný plamen', description: 'Ohnivá exploze při každém zásahu.', accent: Color(0xFFE64A19), sparkPrice: 220),
   CosmeticShopItem(id: 'skin_radiant', category: CosmeticCategory.attackSkin, name: 'Zářný úder', description: 'Čisté zlaté světlo, oslepující nepřátele.', accent: Color(0xFFFFC107), sparkPrice: 320),
+  CosmeticShopItem(id: 'skin_blood', category: CosmeticCategory.attackSkin, name: 'Krvavý úder', description: 'Karmínový cákanec při každém zásahu.', accent: Color(0xFFB71C1C), sparkPrice: 70),
+  CosmeticShopItem(id: 'skin_thorn', category: CosmeticCategory.attackSkin, name: 'Trnitý zásah', description: 'Temně zelené trny vyrazí z místa dopadu.', accent: Color(0xFF33691E), sparkPrice: 180),
+  CosmeticShopItem(id: 'skin_void', category: CosmeticCategory.attackSkin, name: 'Temnota Propasti', description: 'Útok na okamžik roztrhne realitu do čiré černoty.', accent: Color(0xFF3D0A66), sparkPrice: 280),
   CosmeticShopItem(id: 'skin_cosmic', category: CosmeticCategory.attackSkin, name: 'Kosmický zásah', description: 'Vyhrazeno pro ty, co podpoří hru přímo.', accent: Color(0xFFE91E63), isPremiumOnly: true),
   // ----- AURY (jen v obchodě, ne přes Battle Pass) -----
   CosmeticShopItem(id: 'aura_ember', category: CosmeticCategory.aura, name: 'Aura žhavých uhlíků', description: 'Teplá oranžová záře kolem portrétu v boji.', accent: Color(0xFFFF7043), sparkPrice: 25),

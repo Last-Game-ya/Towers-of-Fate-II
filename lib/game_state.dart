@@ -16,11 +16,42 @@ class BattlePassReward {
   // Kosmetický skin základního útoku (premium větev, level 40) - odemkne OBĚ varianty
   // (fyzickou i magickou), hra sama vybere podle typu útoku aktuální třídy.
   final String? cosmeticAttackSkinId;
+  // Kosmetická aura (premium větev, level 10) a pozadí karty (premium větev, level 30) - viz
+  // konverzace "premium BP dej 5 spark na úroveň, na 10 aura/20 rám/30 pozadí/40 skin, v
+  // souladu graficky s rift sezónou". Stejný vzor jako cosmeticFrameId/cosmeticAttackSkinId
+  // výš - id NENÍ v kCosmeticShopCatalog (nejde koupit zvlášť, jen přes Battle Pass), takže se
+  // musí přidat i speciální case do equippedAuraColor/equippedCardBackgroundColor.
+  final String? cosmeticAuraId;
+  final String? cosmeticCardBackgroundId;
+  // Jiskry (viz cosmeticSparks) - 5 na KAŽDÉ prémiové úrovni (viz konverzace), ne jen na
+  // milnících jako ostatní kosmetika výš.
+  final int sparks;
   // Permanentní pasivní bonus vlastnictví Premium (ne jednorázová odměna k vyzvednutí) - zatím
   // jen level 1 Premium: +20 % Quest XP. Zobrazuje se jako trvalý štítek na dlaždici, funguje
   // bez ohledu na to, jestli hráč level 1 fyzicky "vyzvedl" (viz _addBattlePassRenown).
   final int questXpBonusPercent;
-  const BattlePassReward({this.gold = 0, this.dust = 0, this.crystals = 0, required this.premium, required this.level, this.isChest = false, this.cosmeticFrameId, this.cosmeticAttackSkinId, this.questXpBonusPercent = 0});
+  const BattlePassReward({this.gold = 0, this.dust = 0, this.crystals = 0, required this.premium, required this.level, this.isChest = false, this.cosmeticFrameId, this.cosmeticAttackSkinId, this.cosmeticAuraId, this.cosmeticCardBackgroundId, this.sparks = 0, this.questXpBonusPercent = 0});
+}
+
+// Barva pro BP/achievement-exkluzivní kosmetiku Trhliny Osudu (mimo kCosmeticShopCatalog) -
+// sdílená mezi Kosmetikou (náhledy dlaždic) a equippedAuraColor/equippedCardBackgroundColor
+// getterama výš, ať se paleta nemusí duplikovat na dvou místech. Používá se pro aury a pozadí
+// karty (rámy/skiny mají svoje vlastní _frameStyleFor/attackSkinAccent v ui_design.dart).
+Color bpRiftCosmeticColor(String id) {
+  switch (id) {
+    case 'bp_bastion_aura': case 'bp_bastion_bg': case 'bp_bastion_frame': case 'bp_bastion_skin':
+      return const Color(0xFF4A90D9);
+    case 'bp_plague_aura': case 'bp_plague_bg': case 'bp_plague_frame': case 'bp_plague_skin':
+      return const Color(0xFF6B8B3A);
+    case 'bp_precision_aura': case 'bp_precision_bg': case 'bp_precision_frame': case 'bp_precision_skin':
+      return const Color(0xFFE0A030);
+    case 'bp_chaos_aura': case 'bp_chaos_bg': case 'bp_chaos_frame': case 'bp_chaos_skin':
+      return const Color(0xFFFF3D7A);
+    case 'rift_universal_aura': case 'rift_universal_bg': case 'rift_universal_frame': case 'rift_universal_skin':
+      return const Color(0xFF9D7BFF);
+    default:
+      return const Color(0xFF9D7BFF);
+  }
 }
 
 class GameState extends ChangeNotifier with WidgetsBindingObserver {
@@ -1338,11 +1369,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (elapsed.inMinutes < offlineMinMinutesToTrigger) return;
     final cappedMinutes = elapsed.inMinutes.clamp(0, offlineMaxHours * 60);
     final hours = cappedMinutes / 60.0;
-    // Ztrojnásobeno (viz offlineUnlockDeaths=1 - odemyká se hned po 1. smrti, ať to za tu
-    // rychlejší dostupnost hráči stojí za to sledovat). Zhlédnutí rewarded reklamy dá navíc
-    // ještě jednou tolik (viz claimOfflineProgress(doubled:true)).
-    final goldEarned = (hours * 3 * (20 + level * 0.5)).round();
-    final dustEarned = (hours * 3 * (10 + level * 0.2)).round();
+    // ZTROJNÁSOBENO (viz offlineUnlockDeaths=1) a pak JEŠTĚ JEDNOU ZTROJNÁSOBENO (viz konverzace
+    // "dej větší reward za afk *3") - dohromady tedy 9× základ. Zhlédnutí rewarded reklamy dá
+    // navíc ještě jednou tolik (viz claimOfflineProgress(doubled:true)).
+    final goldEarned = (hours * 9 * (20 + level * 0.5)).round();
+    final dustEarned = (hours * 9 * (10 + level * 0.2)).round();
     if (goldEarned <= 0 && dustEarned <= 0) return;
     final wasCapped = elapsed.inMinutes > offlineMaxHours * 60;
     pendingOfflineGold = goldEarned;
@@ -1799,6 +1830,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   Color? get equippedCardBackgroundColor {
     if (equippedCardBackground == 'default') return null;
+    if (equippedCardBackground.startsWith('bp_') || equippedCardBackground.startsWith('rift_universal_')) {
+      return bpRiftCosmeticColor(equippedCardBackground);
+    }
     for (final c in kCosmeticShopCatalog) {
       if (c.id == equippedCardBackground) return c.accent;
     }
@@ -1929,6 +1963,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   // pokud hráč nemá žádnou nasazenou - používá combat karta Věže/Lairu pro glow kolem portrétu.
   Color? get equippedAuraColor {
     if (equippedAura == 'default') return null;
+    if (equippedAura.startsWith('bp_') || equippedAura.startsWith('rift_universal_')) {
+      return bpRiftCosmeticColor(equippedAura);
+    }
     for (final c in kCosmeticShopCatalog) {
       if (c.id == equippedAura) return c.accent;
     }
@@ -2048,7 +2085,48 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     return BattlePassReward(
       gold: gold, dust: dust, crystals: crystals, premium: true, level: level,
       isChest: isChestLevel,
-      cosmeticAttackSkinId: isMaxLevel ? 'battlepass_attack_skin' : null,
+      // 4 KOMPLETNÍ sezónní sety Trhliny Osudu (aura+rám+pozadí+skin najednou, ne rozdělené po
+      // kusu jako dřív) - level 10 Bašta, 20 Mor (aktuální sezóna dle konverzace), 30 Přesnost,
+      // 40 Chaos. Achievementy za Trhlinu (viz kAchievementDefs) dávají místo toho JEDEN
+      // univerzální fialový set - sezónní barvy jsou vyhrazené jen pro Battle Pass.
+      cosmeticAuraId: level == 10
+          ? 'bp_bastion_aura'
+          : level == 20
+              ? 'bp_plague_aura'
+              : level == 30
+                  ? 'bp_precision_aura'
+                  : level == 40
+                      ? 'bp_chaos_aura'
+                      : null,
+      cosmeticFrameId: level == 10
+          ? 'bp_bastion_frame'
+          : level == 20
+              ? 'bp_plague_frame'
+              : level == 30
+                  ? 'bp_precision_frame'
+                  : level == 40
+                      ? 'bp_chaos_frame'
+                      : null,
+      cosmeticCardBackgroundId: level == 10
+          ? 'bp_bastion_bg'
+          : level == 20
+              ? 'bp_plague_bg'
+              : level == 30
+                  ? 'bp_precision_bg'
+                  : level == 40
+                      ? 'bp_chaos_bg'
+                      : null,
+      cosmeticAttackSkinId: level == 10
+          ? 'bp_bastion_skin'
+          : level == 20
+              ? 'bp_plague_skin'
+              : level == 30
+                  ? 'bp_precision_skin'
+                  : level == 40
+                      ? 'bp_chaos_skin'
+                      : null,
+      // 5 Jisker na KAŽDÉ prémiové úrovni (viz konverzace), ne jen na milnících.
+      sparks: 5,
       questXpBonusPercent: level == 1 ? 20 : 0,
     );
   }
@@ -2062,14 +2140,21 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     gold += reward.gold;
     magicDust += reward.dust;
     crystals += reward.crystals;
+    cosmeticSparks += reward.sparks;
     claimedSet.add(level);
     if (reward.cosmeticFrameId != null) unlockedFrames.add(reward.cosmeticFrameId!);
     if (reward.cosmeticAttackSkinId != null) unlockedAttackSkins.add(reward.cosmeticAttackSkinId!);
+    if (reward.cosmeticAuraId != null) unlockedAuras.add(reward.cosmeticAuraId!);
+    if (reward.cosmeticCardBackgroundId != null) unlockedCardBackgrounds.add(reward.cosmeticCardBackgroundId!);
     message = reward.cosmeticFrameId != null
         ? tr('Battle Pass odměna vyzvednuta: nový rám portrétu odemčen!', 'Battle Pass reward claimed: new portrait frame unlocked!')
         : reward.cosmeticAttackSkinId != null
             ? tr('Battle Pass odměna vyzvednuta: nový skin základního útoku odemčen!', 'Battle Pass reward claimed: new basic attack skin unlocked!')
-            : tr('Battle Pass odměna vyzvednuta: úroveň $level${premium ? " (prémiová)" : ""}!', 'Battle Pass reward claimed: level $level${premium ? " (premium)" : ""}!');
+            : reward.cosmeticAuraId != null
+                ? tr('Battle Pass odměna vyzvednuta: nová aura odemčena!', 'Battle Pass reward claimed: new aura unlocked!')
+                : reward.cosmeticCardBackgroundId != null
+                    ? tr('Battle Pass odměna vyzvednuta: nové pozadí karty odemčeno!', 'Battle Pass reward claimed: new card background unlocked!')
+                    : tr('Battle Pass odměna vyzvednuta: úroveň $level${premium ? " (prémiová)" : ""}!', 'Battle Pass reward claimed: level $level${premium ? " (premium)" : ""}!');
     notifyListeners();
   }
 
@@ -2306,7 +2391,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   static const int offlineUnlockDeaths = 1;
   bool get offlineProgressUnlocked => totalDeaths >= offlineUnlockDeaths;
   DateTime? lastActiveTimestamp;
-  static const int offlineMaxHours = 4; // strop - déle offline se nepočítá
+  static const int offlineMaxHours = 8; // strop - déle offline se nepočítá (viz konverzace, zvýšeno ze 4)
   static const int offlineMinMinutesToTrigger = 10; // kratší pauzy (přepnutí appky) nic negenerují
   int pendingOfflineGold = 0; // nevyzvednutá offline odměna - viz _computeOfflineProgress/claimOfflineProgress
   int pendingOfflineDust = 0;
@@ -2464,6 +2549,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   static const int treasureGoblinMaxTurns = 4;
   static const double treasureGoblinDodgeChance = 0.35;
   static const double treasureGoblinSpawnChance = 0.08; // 8 % šance při vstupu do Trhliny
+  // Zvýší se při KAŽDÉM skutečném zásahu Poklad-skřeta (ne při jeho úhybu) - viz konverzace
+  // "zlaté mince jako follow-up efekt k zásahu". UI (TreasureGoblinCoinsOverlay) na tohle
+  // poslouchá a přehraje krátký výbuch zlaťáků, jedna ze 3 variant animace střídaných po kruhu
+  // (viz _lastVariant tam) - scéna se kvůli tomu NEzastavuje, při rychlých zásazích za sebou se
+  // výbuchy klidně překrývají.
+  int treasureGoblinCoinFxSeq = 0;
   // Truhla po poražení Poklad-skřeta - odměna se nedá rovnou, čeká na kliknutí (otevření truhly),
   // aby hráč viděl konkrétní seznam kořisti, ne jen souhrnnou zprávu.
   bool riftChestPending = false;
@@ -8130,6 +8221,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     AchievementId.allCursesTried: AchievementDef(id: AchievementId.allCursesTried, name: tr("Mistr prokletí", "Master of Curses"), description: tr("Vyzkoušej všech 6 Prokletí Osudu.", "Try all 6 Curses of Fate."), title: tr("Mistr prokletí", "Master of Curses"), rewardDust: 3000),
     AchievementId.gemSocketed: AchievementDef(id: AchievementId.gemSocketed, name: tr("První gem", "First Gem"), description: tr("Vsaď první gem do Prstenu Osudu.", "Socket your first gem into the Ring of Fate."), title: tr("Klenotník", "Jeweler")),
     AchievementId.riftPusher10: AchievementDef(id: AchievementId.riftPusher10, name: tr("Trhlinář", "Rift Pusher"), description: tr("Zdolej Trhlinu Osudu tier 10.", "Clear Rift of Fate tier 10."), title: tr("Trhlinář", "Rift Pusher"), rewardGold: 500),
+    // 4 achievementy za Trhlinu (viz konverzace) - VŠECHNY čtyři dají STEJNÝ univerzální
+    // fialový set (aura+rám+pozadí+skin), ne sezónní barvy - ty jsou vyhrazené pro Battle Pass
+    // (viz battlePassRewardFor). Sdílené ID napříč všemi 4 - idempotentní (opakované odemčení
+    // stejného ID nic nepokazí), takže i hráč, co "přeskočí" nižší tier přímo na 100, set stejně
+    // dostane.
+    AchievementId.riftSeasonBastion: AchievementDef(id: AchievementId.riftSeasonBastion, name: tr("Trhlina: Patro 40", "Rift: Tier 40"), description: tr("Zdolej Trhlinu Osudu tier 40 - odemkni univerzální fialový set.", "Clear Rift of Fate tier 40 - unlock the universal purple set."), title: tr("Poutník Trhlinou I", "Rift Wanderer I"), rewardDust: 5000, rewardAuraId: 'rift_universal_aura', rewardFrameId: 'rift_universal_frame', rewardCardBackgroundId: 'rift_universal_bg', rewardAttackSkinId: 'rift_universal_skin'),
+    AchievementId.riftSeasonPlague: AchievementDef(id: AchievementId.riftSeasonPlague, name: tr("Trhlina: Patro 60", "Rift: Tier 60"), description: tr("Zdolej Trhlinu Osudu tier 60 - odemkni univerzální fialový set.", "Clear Rift of Fate tier 60 - unlock the universal purple set."), title: tr("Poutník Trhlinou II", "Rift Wanderer II"), rewardDust: 8000, rewardAuraId: 'rift_universal_aura', rewardFrameId: 'rift_universal_frame', rewardCardBackgroundId: 'rift_universal_bg', rewardAttackSkinId: 'rift_universal_skin'),
+    AchievementId.riftSeasonPrecision: AchievementDef(id: AchievementId.riftSeasonPrecision, name: tr("Trhlina: Patro 80", "Rift: Tier 80"), description: tr("Zdolej Trhlinu Osudu tier 80 - odemkni univerzální fialový set.", "Clear Rift of Fate tier 80 - unlock the universal purple set."), title: tr("Poutník Trhlinou III", "Rift Wanderer III"), rewardDust: 12000, rewardAuraId: 'rift_universal_aura', rewardFrameId: 'rift_universal_frame', rewardCardBackgroundId: 'rift_universal_bg', rewardAttackSkinId: 'rift_universal_skin'),
+    AchievementId.riftSeasonChaos: AchievementDef(id: AchievementId.riftSeasonChaos, name: tr("Trhlina: Patro 100", "Rift: Tier 100"), description: tr("Zdolej Trhlinu Osudu tier 100 - odemkni univerzální fialový set.", "Clear Rift of Fate tier 100 - unlock the universal purple set."), title: tr("Poutník Trhlinou IV", "Rift Wanderer IV"), rewardDust: 20000, rewardAuraId: 'rift_universal_aura', rewardFrameId: 'rift_universal_frame', rewardCardBackgroundId: 'rift_universal_bg', rewardAttackSkinId: 'rift_universal_skin'),
     AchievementId.riftPusher50: AchievementDef(id: AchievementId.riftPusher50, name: tr("Pán trhlin", "Lord of Rifts"), description: tr("Zdolej Trhlinu Osudu tier 50.", "Clear Rift of Fate tier 50."), title: tr("Pán trhlin", "Lord of Rifts"), rewardDust: 2000),
     AchievementId.riftPusher100: AchievementDef(id: AchievementId.riftPusher100, name: tr("Roztrhávač reality", "Reality Render"), description: tr("Zdolej Trhlinu Osudu tier 100.", "Clear Rift of Fate tier 100."), title: tr("Roztrhávač reality", "Reality Render"), rewardDust: 8000),
     AchievementId.magePioneer: AchievementDef(id: AchievementId.magePioneer, name: tr("Arkánový učeň", "Arcane Apprentice"), description: tr("Dosáhni 5. patra s Mágem.", "Reach floor 5 as a Mage."), title: tr("Arkánový učeň", "Arcane Apprentice"), rewardGold: 200),
@@ -8320,6 +8420,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     gold += def.rewardGold;
     magicDust += def.rewardDust;
     if (def.rewardButtonColor != null) unlockedButtonColorNames.add(def.rewardButtonColor!);
+    if (def.rewardAuraId != null) unlockedAuras.add(def.rewardAuraId!);
+    if (def.rewardFrameId != null) unlockedFrames.add(def.rewardFrameId!);
+    if (def.rewardCardBackgroundId != null) unlockedCardBackgrounds.add(def.rewardCardBackgroundId!);
+    if (def.rewardAttackSkinId != null) unlockedAttackSkins.add(def.rewardAttackSkinId!);
     activeTitle ??= id; // první odemčený achievement se rovnou nastaví jako aktivní titul
     message = tr("🏆 Achievement odemčen: ${def.name}! Titul „${def.title}“ k dispozici.", "🏆 Achievement unlocked: ${def.name}! Title \u201e${def.title}\u201c now available.");
     _triggerCelebration('ACHIEVEMENT!', subtitle: def.name, icon: Icons.emoji_events, color: const Color(0xFFFFD700));
@@ -8428,6 +8532,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (inventory.any((i) => i.isArtifact && i.gemSlots.any((g) => g != null))) _unlockAchievement(AchievementId.gemSocketed);
     if (riftTier >= 10) _unlockAchievement(AchievementId.riftPusher10);
+    if (riftTier >= 40) _unlockAchievement(AchievementId.riftSeasonBastion);
+    if (riftTier >= 60) _unlockAchievement(AchievementId.riftSeasonPlague);
+    if (riftTier >= 80) _unlockAchievement(AchievementId.riftSeasonPrecision);
+    if (riftTier >= 100) _unlockAchievement(AchievementId.riftSeasonChaos);
     if (riftTier >= 50) _unlockAchievement(AchievementId.riftPusher50);
     if (riftTier >= 100) _unlockAchievement(AchievementId.riftPusher100);
     // ===== ROZŠÍŘENÍ =====
@@ -10657,10 +10765,28 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     // Balance požadavek: soupeř má dvojnásobné HP a o 10 % větší Atk oproti kalibraci výš
     // (Osa 1/2 nad tím zůstávají beze změny - tohle je čistý multiplikátor navrch).
     arenaOpponentMaxHp = (arenaOpponentMaxHp * 2.0).toInt();
+    // Samostatný růst HP podle ligy (+5 %/liga, viz konverzace "větší růst HP enemy v rámci
+    // každé ligy") - záměrně ODDĚLENÝ od `mult` výš (ten škáluje ATK/Def stejně jako dřív), ať
+    // vyšší ligy znamenají delší, vytrvalostnější souboje, ne jen tvrdší rány. Gladiátorská liga
+    // (arenaIsGladiator) roste dál přes gladiatorBonus zabudovaný v `mult`/HP výpočtu výš, tahle
+    // přirážka se týká jen běžných lig 1-10 (arenaLeagueIndex).
+    if (!arenaIsGladiator) {
+      arenaOpponentMaxHp = (arenaOpponentMaxHp * (1 + 0.05 * arenaLeagueIndex)).toInt();
+    } else {
+      // Gladiátorská liga nemá arenaLeagueIndex škálování (je to jeden nejvyšší stupeň, ne
+      // 1-10 jako běžné ligy) - dostává místo toho flat +50 % HP navrch.
+      arenaOpponentMaxHp = (arenaOpponentMaxHp * 1.5).toInt();
+    }
     arenaOpponentHp = arenaOpponentMaxHp;
     arenaOpponentAtk = (arenaOpponentAtk * 1.1).toInt();
     arenaOpponentIsMagic = oppMagic;
     arenaCombatRoundCount = 0;
+    // BUG FIX (viz konverzace - "absorb se netestuje na 0 před každým novým soubojem"): tahle
+    // funkce resetovala SOUPEŘŮV štít (arenaOpponentShield) a spoustu dalších bojových
+    // proměnných, ale HRDINOVO vlastní hp/bonusShield vůbec nezmiňovala - takže zbytkový štít
+    // (a teoreticky i HP) z PŘEDCHOZÍHO boje (Věž/Doupě/cokoliv) přetekl do nové arény.
+    hp = maxHp;
+    bonusShield = 0;
     specRelicUsedArena = false; specRelicStacks = 0; specRelicDuration = 0; enemyStunTurns = 0; _dkBloodEmergencyShieldUsed = false; _dkBloodEnemyDmgReductionPct = 0; _dkPlagueStackCount = 0; _relicArmorShredAmount = 0; _relicArmorShredDebuffName = null; _guardianCheatDeathUsed = false; _duelistDanceFirstProcUsed = false;
     huntersMarkStacks = 0;
     arcaneChargeStacks = 0;
@@ -11230,6 +11356,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _applyDarknessSynergy(dealtDmg);
 
     if (isTreasureGoblinFight) {
+      treasureGoblinCoinFxSeq++;
       treasureGoblinTurnsLeft--;
       if (currentRiftGuardianHp > 0 && treasureGoblinTurnsLeft <= 0) {
         _handleTreasureGoblinEscape();

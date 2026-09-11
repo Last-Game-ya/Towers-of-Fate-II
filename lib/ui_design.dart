@@ -2127,7 +2127,11 @@ class LivingPortrait extends StatefulWidget {
   final Color accent;
   final PortraitLifeMode mode;
   final BorderRadius borderRadius;
-  const LivingPortrait({super.key, required this.assetPath, required this.accent, required this.mode, this.borderRadius = BorderRadius.zero});
+  // Zarovnání zdrojového obrázku uvnitř BoxFit.cover - výchozí topCenter sedí většině portrétů
+  // (širší/nižší kontejner, hlava nahoře v obrázku), ale ne všem - viz konverzace "Mistr Zlaťák
+  // je useknutý na okraj". Per-portrét override, ať se tím neovlivní zbytek, co je OK.
+  final Alignment alignment;
+  const LivingPortrait({super.key, required this.assetPath, required this.accent, required this.mode, this.borderRadius = BorderRadius.zero, this.alignment = Alignment.topCenter});
 
   @override
   State<LivingPortrait> createState() => _LivingPortraitState();
@@ -2178,7 +2182,7 @@ class _LivingPortraitState extends State<LivingPortrait> with SingleTickerProvid
             children: [
               Transform.translate(
                 offset: pan,
-                child: Transform.scale(scale: scale, child: Image.asset(widget.assetPath, fit: BoxFit.cover, alignment: Alignment.topCenter)),
+                child: Transform.scale(scale: scale, child: Image.asset(widget.assetPath, fit: BoxFit.cover, alignment: widget.alignment)),
               ),
               for (final m in _motes) _mote(m, t),
             ],
@@ -2341,6 +2345,16 @@ _FrameStyle _frameStyleFor(String frameId) {
   switch (frameId) {
     case 'battlepass_frame':
       return const _FrameStyle(color: Color(0xFFFFD54F), gems: 4, ringWidth: 3, doubleRing: true);
+    case 'bp_bastion_frame': // Sezóna Bašta
+      return const _FrameStyle(color: Color(0xFF4A90D9), gems: 4, ringWidth: 3, doubleRing: true);
+    case 'bp_plague_frame': // Sezóna Mor
+      return const _FrameStyle(color: Color(0xFF6B8B3A), gems: 4, ringWidth: 3, doubleRing: true);
+    case 'bp_precision_frame': // Sezóna Přesnost
+      return const _FrameStyle(color: Color(0xFFE0A030), gems: 4, ringWidth: 3, doubleRing: true);
+    case 'bp_chaos_frame': // Sezóna Chaos
+      return const _FrameStyle(color: Color(0xFFFF3D7A), gems: 4, ringWidth: 3, doubleRing: true);
+    case 'rift_universal_frame': // Achievement - univerzální fialová
+      return const _FrameStyle(color: Color(0xFF9D7BFF), gems: 4, ringWidth: 3, doubleRing: true);
     case 'frame_bronze':
       return const _FrameStyle(color: Color(0xFFCD7F32), gems: 0, ringWidth: 2.5);
     case 'frame_silver':
@@ -3843,12 +3857,20 @@ class EquippedFrameOverlay extends StatelessWidget {
 /// (náhled v obchodě/Profilu) tak CombatFxOverlay (přebarvení skutečné animace útoku v boji),
 /// ať obojí sedí na stejnou paletu a nejde to rozjet do dvou různých zdrojů pravdy.
 Color attackSkinAccent(String skinId, {bool physicalFallback = true}) => switch (skinId) {
+      'bp_bastion_skin' => const Color(0xFF4A90D9), // Sezóna Bašta
+      'bp_plague_skin' => const Color(0xFF6B8B3A), // Sezóna Mor
+      'bp_precision_skin' => const Color(0xFFE0A030), // Sezóna Přesnost
+      'bp_chaos_skin' => const Color(0xFFFF3D7A), // Sezóna Chaos
+      'rift_universal_skin' => const Color(0xFF9D7BFF), // Achievement - univerzální fialová
       'skin_frost' => const Color(0xFF81D4FA),
       'skin_venom' => const Color(0xFF8BC34A),
       'skin_storm' => const Color(0xFF00BCD4),
       'skin_shadow' => const Color(0xFF5E35B1),
       'skin_infernal' => const Color(0xFFE64A19),
       'skin_radiant' => const Color(0xFFFFC107),
+      'skin_blood' => const Color(0xFFB71C1C),
+      'skin_thorn' => const Color(0xFF33691E),
+      'skin_void' => const Color(0xFF3D0A66),
       'skin_cosmic' => const Color(0xFFE91E63),
       _ => physicalFallback ? const Color(0xFFFF8A3D) : const Color(0xFF8B5CF6),
     };
@@ -5058,20 +5080,20 @@ const List<EquipSceneSlot> equipSceneSlots = [
   // AŽ PO opravě OverflowBox/SizedBox (skutečně plnokrevná scéna 0-100% šířky obrazovky, ne
   // dřívější (šířka-32px) render, na který mířila předchozí dvě kola). Detekce barevných pixelů
   // ikony vůči celé ploše scény (ne odhad), takže by tohle mělo sedět přesně.
-  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.190, dy: 0.148),
-  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.209, dy: 0.302),
-  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.206, dy: 0.378),
-  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.219, dy: 0.516),
-  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.212, dy: 0.652),
-  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.207, dy: 0.761),
+  EquipSceneSlot(slot: EquipSlot.weapon, dx: 0.183, dy: 0.139),
+  EquipSceneSlot(slot: EquipSlot.armor, dx: 0.203, dy: 0.286),
+  EquipSceneSlot(slot: EquipSlot.helmet, dx: 0.181, dy: 0.377),
+  EquipSceneSlot(slot: EquipSlot.gloves, dx: 0.220, dy: 0.505),
+  EquipSceneSlot(slot: EquipSlot.boots, dx: 0.207, dy: 0.636),
+  EquipSceneSlot(slot: EquipSlot.ring, dx: 0.196, dy: 0.740),
   // Pravý sloupec (dx ~0.76), shora dolů.
-  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.771, dy: 0.205),
-  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.761, dy: 0.320),
-  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.752, dy: 0.402),
+  EquipSceneSlot(slot: EquipSlot.belt, dx: 0.786, dy: 0.184),
+  EquipSceneSlot(slot: EquipSlot.cloak, dx: 0.772, dy: 0.300),
+  EquipSceneSlot(slot: EquipSlot.shoulders, dx: 0.744, dy: 0.382),
   EquipSceneSlot(slot: EquipSlot.relic, dx: 0.766, dy: 0.541),
   // Pár malých rámů dole vpravo - dva sloty Přívěsku vedle sebe.
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.694, dy: 0.698, accessoryIndex: 0),
-  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.873, dy: 0.688, accessoryIndex: 1),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.770, dy: 0.676, accessoryIndex: 0),
+  EquipSceneSlot(slot: EquipSlot.accessory, dx: 0.885, dy: 0.666, accessoryIndex: 1),
 ];
 
 /// Malovaná scéna "Nasazené vybavení" v Batohu - stejný jazyk jako SceneMapView níž
@@ -5232,7 +5254,7 @@ class WorldBossBackdrop extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Positioned.fill(child: Image.asset('assets/images/scenes/worldboss_bg.png', fit: BoxFit.cover)),
+        Positioned.fill(child: Image.asset('assets/images/scenes/worldboss_bg.png', fit: BoxFit.cover, errorBuilder: (context, error, stack) => Container(color: const Color(0xFF1A0F0F)))),
         Positioned.fill(child: Container(color: Colors.black.withOpacity(0.35))),
         child,
       ],
@@ -5518,17 +5540,25 @@ class _SceneLifePainter extends CustomPainter {
           canvas.drawPath(path, Paint()..color = const Color(0xFFE1BEE7).withOpacity(sparkFlicker * 0.8)..style = PaintingStyle.stroke..strokeWidth = 1.4);
         }
       }
-      // Endless Scale (0.78, 0.83) - fialové "duše" pomalu stoupají z propasti nahoru po
-      // schodišti a mizí - klidnější, plynulý pohyb (na rozdíl od jisker/blesků jinde), ať to
-      // ladí s tichou hrozbou nekonečného souboje.
+      // Endless Scale (0.78, 0.83) - PŘEPRACOVÁNO (viz konverzace - "vpravo dole zatím bez
+      // efektu"): drobné 2,2px tečky byly na screenshotu prakticky neviditelné. Teď má vlastní
+      // základní pulzující záři u paty schodiště (stejný vzor jako Doupě/Trhlina Osudu mají),
+      // PLUS zesílené a zvětšené "duše" (5 místo 4, výraznější velikost/opacita), co teď navíc
+      // při stoupání mírně kmitají do stran (sway) - fialové "duše" pomalu stoupají z propasti
+      // nahoru po schodišti a mizí, klidnější plynulý pohyb (na rozdíl od jisker/blesků jinde),
+      // ať to ladí s tichou hrozbou nekonečného souboje.
       {
         final base = Offset(0.78 * size.width, 0.90 * size.height);
+        final basePulse = 0.5 + 0.5 * sin(t * 2 * pi * 0.4);
+        canvas.drawCircle(base, size.width * (0.05 + 0.018 * basePulse), Paint()..color = const Color(0xFF9575CD).withOpacity(0.16 + 0.14 * basePulse)..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.045));
         final soulRnd = Random(53);
-        for (int i = 0; i < 4; i++) {
-          final sp = (t * (0.12 + i * 0.03) + i * 0.27) % 1.0;
-          final sx = base.dx + (soulRnd.nextDouble() - 0.5) * size.width * 0.06 + sin(sp * 2 * pi) * 4;
-          final sy = base.dy - sp * size.height * 0.16;
-          canvas.drawCircle(Offset(sx, sy), 2.2 * (1 - sp * 0.6), Paint()..color = const Color(0xFF9575CD).withOpacity((1 - sp) * 0.5)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2));
+        for (int i = 0; i < 5; i++) {
+          final sp = (t * (0.12 + i * 0.03) + i * 0.22) % 1.0;
+          final sway = sin(sp * 2 * pi * 1.5 + i) * size.width * 0.02;
+          final sx = base.dx + (soulRnd.nextDouble() - 0.5) * size.width * 0.06 + sway;
+          final sy = base.dy - sp * size.height * 0.22;
+          final soulFade = (1 - sp) * (sp < 0.06 ? sp / 0.06 : 1.0);
+          canvas.drawCircle(Offset(sx, sy), 3.6 * (1 - sp * 0.5), Paint()..color = const Color(0xFFB388FF).withOpacity(soulFade * 0.75)..maskFilter = MaskFilter.blur(BlurStyle.normal, 3.5));
         }
       }
     } else {
@@ -5607,8 +5637,31 @@ class _SceneLifePainter extends CustomPainter {
             );
           }
         }
+        // Žhavé jiskřičky stoupající společně s kouřem/z komína - samostatné drobné zářící
+        // tečky (ne obláčky jako chimneySmoke), ať to "žije" a necítí se to jako plochý jednolitý
+        // dým. Kovárna dostává oranžové (žhavé uhlíky z výhně), Runový Kovář rudorůžové (magická
+        // výheň, viz konverzace "vymysli něco u runového kováře").
+        void chimneyEmbers(Offset origin, Color color, double seed) {
+          for (int i = 0; i < 5; i++) {
+            final phase = ((t * 0.55) + i * 0.19 + seed * 0.1) % 1.0;
+            final rise = phase * size.height * 0.11;
+            final sway = sin(phase * pi * 3.4 + i * 1.3 + seed) * size.width * 0.014;
+            final sparkR = size.width * 0.0035 * (1 - phase * 0.5);
+            final fade = (1 - phase) * (phase < 0.08 ? phase / 0.08 : 1.0);
+            canvas.drawCircle(
+              origin + Offset(sway, -rise), sparkR,
+              Paint()..color = color.withOpacity(0.85 * fade)..maskFilter = MaskFilter.blur(BlurStyle.normal, sparkR * 1.8),
+            );
+          }
+        }
         chimneySmoke(Offset(0.485 * size.width, 0.42 * size.height), const Color(0xFF3A342C), 7);
+        chimneyEmbers(Offset(0.485 * size.width, 0.42 * size.height), const Color(0xFFFFAB40), 23);
         chimneySmoke(Offset(0.101 * size.width, 0.315 * size.height), const Color(0xFF7CD68B), 13);
+        // Runový Kovář (0.87, 0.72) - žhavé uhlíky stoupající z jeho komína/špičky věže, rudo-
+        // růžová barva ladící s jeho magickou září (viz glowPoints/runeRiseLines výš pro stejnou
+        // budovu). Na rozdíl od Kovárny nemá klasický kouř - jen tyhle jiskřičky, ať je jasné, že
+        // jde o MAGICKOU výheň, ne obyčejné spalování.
+        chimneyEmbers(Offset(0.87 * size.width, 0.72 * size.height), const Color(0xFFFF5C7A), 41);
       }
       // Kronikář - kulatá věž s prosvětleným ciferníkem (vpravo nahoře, dx~0.90/dy~0.20 v
       // tap-zóně budovy) - hodinová ručička se pomalu, ale opravdu otáčí, ať ciferník nepůsobí
@@ -6180,7 +6233,11 @@ class _RuneWizardScreenState extends State<RuneWizardScreen> with SingleTickerPr
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      LivingPortrait(assetPath: 'assets/images/npc/matus.png', accent: FantasyColors2.runeIce, mode: PortraitLifeMode.subtle),
+                      // alignment: bottomCenter místo výchozího topCenter - obličej v obrázku
+                      // sedí níž, takže s topCenter byl skoro celý oříznutý/schovaný pod
+                      // tlačítky Runy/Osudové volby hned pod portrétem (viz konverzace - "obličej
+                      // je překrytý tlačítky", ne že by chyběl v samotném obrázku).
+                      LivingPortrait(assetPath: 'assets/images/npc/matus.png', accent: FantasyColors2.runeIce, mode: PortraitLifeMode.subtle, alignment: Alignment.bottomCenter),
                       DecoratedBox(decoration: BoxDecoration(border: Border.all(color: FantasyColors2.runeIce.withOpacity(.6), width: 2), borderRadius: BorderRadius.circular(14))),
                       Positioned(
                         left: 0, right: 0, bottom: 0,
