@@ -9005,7 +9005,7 @@ class ProfileScreen extends StatelessWidget {
         if (state.heroClass != HeroClass.none)
           _p(FantasyPanel(
             title: tr('RESET VZPOMÍNEK', 'MEMORY RESET'),
-            titleIcon: Icons.skull,
+            titleIcon: Icons.bolt,
             accent: const Color(0xFF8B0000),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
