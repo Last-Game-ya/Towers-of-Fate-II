@@ -9022,7 +9022,7 @@ class ProfileScreen extends StatelessWidget {
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFFF5252), side: const BorderSide(color: Color(0xFF8B0000))),
-                    icon: const Icon(Icons.skull),
+                    icon: const Icon(Icons.bolt),
                     label: Text(tr('Resetovat vzpomínky', "Reset memories")),
                     onPressed: () async {
                       final confirmed = await showDialog<bool>(
